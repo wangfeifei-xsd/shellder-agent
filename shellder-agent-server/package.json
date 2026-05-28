@@ -2,7 +2,7 @@
   "name": "shellder-agent-server",
   "version": "0.1.0",
   "private": true,
-  "description": "Agent 平台主后端 — REST + SSE",
+  "description": "shellder-agent 主后端 — REST + SSE",
   "scripts": {
     "build": "nest build",
     "start": "nest start",

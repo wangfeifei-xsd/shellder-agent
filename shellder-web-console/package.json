@@ -2,7 +2,7 @@
   "name": "shellder-web-console",
   "version": "0.1.0",
   "private": true,
-  "description": "Agent 平台 Web 管理后台",
+  "description": "shellder-agent Web 管理后台",
   "scripts": {
     "dev": "next dev -p ${WEB_CONSOLE_PORT:-3000}",
     "build": "next build",

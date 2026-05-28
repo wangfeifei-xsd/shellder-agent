@@ -2,7 +2,7 @@
   "name": "shellder-job-worker",
   "version": "0.1.0",
   "private": true,
-  "description": "Agent 平台异步 Worker — BullMQ",
+  "description": "shellder-agent 异步 Worker — BullMQ",
   "scripts": {
     "build": "nest build",
     "start": "nest start",

@@ -1,8 +1,8 @@
-# Agent 平台 V1（Shellder）
+# shellder-agent
 
-本目录为 **可运行代码 Monorepo 根目录**（推 GitHub / 本地 `npm` / `docker compose` 均在此执行）。
+本目录为 **shellder-agent 可运行代码 Monorepo 根目录**（推 GitHub / 本地 `npm` / `docker compose` 均在此执行）。
 
-Monorepo 包含 Web 管理后台、主后端与异步 Worker。产品文档见上级目录 [`project-analysis`](../project-analysis/)。
+Monorepo 包含 Web 管理后台（`shellder-web-console`）、主后端（`shellder-agent-server`）、异步 Worker（`shellder-job-worker`）。产品/架构文档见上级目录 [`project-analysis`](../project-analysis/)。
 
 ## 工程结构
 

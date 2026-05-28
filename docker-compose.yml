@@ -1,4 +1,4 @@
-name: agent-platform
+name: shellder-agent
 
 services:
   mysql:

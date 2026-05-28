@@ -1,4 +1,4 @@
-// Agent 平台 V1 — Prisma 基线（阶段 01）
+// shellder-agent — Prisma 基线（阶段 01）
 // 业务表从阶段 02（tenant）起按模块递增，见 project-sql/
 
 generator client {

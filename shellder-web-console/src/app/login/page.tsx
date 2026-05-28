@@ -8,7 +8,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-      <Card className="w-full max-w-md shadow-md" title="Agent 平台登录">
+      <Card className="w-full max-w-md shadow-md" title="shellder-agent 登录">
         <Typography.Paragraph type="secondary" className="mb-6">
           阶段 01 占位页。认证与用户模块将在阶段 03 实现。
         </Typography.Paragraph>

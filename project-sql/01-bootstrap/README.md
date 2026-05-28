@@ -2,7 +2,7 @@
 
 ## 作用
 
-- 初始化 Agent 平台 MySQL 数据库连接与 Prisma 迁移流水线
+- 初始化 shellder-agent MySQL 数据库连接与 Prisma 迁移流水线
 - **不包含**业务表；`tenant` 等表在 `02-tenant-management` 模块交付
 
 ## 依赖
