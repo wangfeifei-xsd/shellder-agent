@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: shellder-agent-server
+    static_configs:
+      - targets: ['shellder-agent-server:3001']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: shellder-job-worker
+    static_configs:
+      - targets: ['shellder-job-worker:3002']
+    metrics_path: /metrics
+    scrape_interval: 30s

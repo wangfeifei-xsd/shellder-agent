@@ -1,0 +1,24 @@
+{
+  "name": "agent-platform",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agent 平台 V1 — Shellder monorepo",
+  "workspaces": [
+    "shellder-web-console",
+    "shellder-agent-server",
+    "shellder-job-worker"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w shellder-web-console",
+    "dev:server": "npm run start:dev -w shellder-agent-server",
+    "dev:worker": "npm run start:dev -w shellder-job-worker",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "prisma:generate": "npm run prisma:generate -w shellder-agent-server",
+    "prisma:migrate": "npm run prisma:migrate -w shellder-agent-server",
+    "prisma:migrate:dev": "npm run prisma:migrate:dev -w shellder-agent-server"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
