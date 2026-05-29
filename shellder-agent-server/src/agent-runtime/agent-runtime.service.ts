@@ -8,6 +8,7 @@ import { AuditStatus, MessageType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { AuditService } from '../audit/audit.service';
+import { ApprovalService } from '../approval/approval.service';
 import { RoutingEngineService } from '../capability/routing-engine.service';
 import { SessionService } from '../session/session.service';
 import { AuthUser } from '../auth/jwt.types';
@@ -42,6 +43,7 @@ export class AgentRuntimeService {
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
     private readonly auditService: AuditService,
+    private readonly approvalService: ApprovalService,
     private readonly routingEngine: RoutingEngineService,
     private readonly sessionService: SessionService,
     private readonly sseEmitter: SseEmitterService,
@@ -354,9 +356,9 @@ export class AgentRuntimeService {
   }
 
   /**
-   * 确认中断处理（执行计划 §4.3）。
-   * 遇 needConfirmation 写确认类 Message，任务/会话状态 pending_confirm。
-   * 恢复执行接口预留（Phase 14 完善）。
+   * 确认中断处理（执行计划 §4.3 / Phase 14 审批中心）。
+   * 遇 needConfirmation 写确认类 Message，创建 approval 记录，
+   * 任务/会话状态 pending_confirm。
    */
   private async handleConfirmInterrupt(
     ctx: RuntimeContext,
@@ -389,12 +391,48 @@ export class AgentRuntimeService {
       },
     });
 
+    // Phase 14: 创建审批记录
+    let approvalId: string | undefined;
+    try {
+      const toolName = ctx.toolIds?.[0]
+        ? (await this.prisma.tool.findUnique({
+            where: { id: ctx.toolIds[0] },
+            select: { name: true },
+          }))?.name ?? ctx.toolIds[0]
+        : '未知动作';
+
+      const approval = await this.approvalService.create({
+        tenantId: ctx.tenantId,
+        sessionId: ctx.sessionId,
+        messageId: confirmMessage.id,
+        initiatorId: ctx.userId,
+        initiatorName: ctx.username,
+        actionType: toolName,
+        actionSummary: ctx.userMessage,
+        riskLevel: 'high',
+        impactScope: reason,
+        toolIds: ctx.toolIds,
+        requestContext: {
+          userMessage: ctx.userMessage,
+          capabilityType: ctx.capabilityType,
+          capabilityName: ctx.capabilityName,
+          toolIds: ctx.toolIds,
+          needConfirmation: ctx.needConfirmation,
+        },
+      });
+      approvalId = approval.id;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`创建审批记录失败: ${msg}`);
+    }
+
     emitSse({
       event: 'confirm_required',
       data: {
         toolName: ctx.toolIds?.[0] ?? '',
         reason,
         messageId: confirmMessage.id,
+        approvalId,
       },
     });
 
@@ -409,7 +447,7 @@ export class AgentRuntimeService {
     return {
       assistantMessageId: confirmMessage.id,
       capabilityType: ctx.capabilityType,
-      reply: { type: 'confirm_required', reason },
+      reply: { type: 'confirm_required', reason, approvalId },
     };
   }
 

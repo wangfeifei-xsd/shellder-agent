@@ -7,6 +7,7 @@ import {
   CloudServerOutlined,
   DashboardOutlined,
   DeploymentUnitOutlined,
+  ExperimentOutlined,
   FileProtectOutlined,
   KeyOutlined,
   MessageOutlined,
@@ -24,6 +25,7 @@ export const MENU_PERMISSION_KEY: Record<string, string> = {
   session: 'session',
   task: 'task',
   routing: 'routing',
+  capability: 'routing',
   skill: 'skill',
   tool: 'tool',
   connector: 'connector',
@@ -69,6 +71,14 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'capability',
+    icon: <ExperimentOutlined />,
+    label: '业务能力',
+    children: [
+      { key: '/capabilities', label: <Link href="/capabilities">能力演示</Link> },
+    ],
+  },
+  {
     key: 'skill',
     icon: <BookOutlined />,
     label: '技能书管理',
@@ -108,7 +118,10 @@ export const consoleMenuItems: MenuProps['items'] = [
     key: 'approval',
     icon: <FileProtectOutlined />,
     label: '审批中心',
-    children: [{ key: '/approvals', label: '待确认列表', disabled: true }],
+    children: [
+      { key: '/approvals', label: <Link href="/approvals">待确认列表</Link> },
+      { key: '/approvals/history', label: <Link href="/approvals/history">审批记录</Link> },
+    ],
   },
   {
     key: 'audit',

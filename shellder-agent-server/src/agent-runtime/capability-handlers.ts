@@ -7,10 +7,11 @@ import {
 } from './agent-runtime.types';
 
 /**
- * 能力 Handler 注册表 + Phase 12 Mock 骨架。
+ * 能力 Handler 注册表。
  *
- * Phase 13（四类业务能力）将为每种能力提供真实实现，
- * 通过 registerHandler() 替换此处的 Mock 逻辑。
+ * Phase 12 提供 Mock 骨架作为默认回退；
+ * Phase 13（BusinessCapabilityModule）在 onModuleInit 中通过
+ * registerCapabilityHandler() 注入真实实现，替换 Mock。
  */
 
 const logger = new Logger('CapabilityHandlers');

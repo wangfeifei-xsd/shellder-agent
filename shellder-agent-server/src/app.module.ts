@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AgentRuntimeModule } from './agent-runtime/agent-runtime.module';
+import { ApprovalModule } from './approval/approval.module';
 import { AuditModule } from './audit/audit.module';
 import { AuthModule } from './auth/auth.module';
+import { BusinessCapabilityModule } from './business-capability/business-capability.module';
 import { CapabilityModule } from './capability/capability.module';
 import { ConnectorModule } from './connector/connector.module';
 import { HealthModule } from './health/health.module';
@@ -35,7 +37,9 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
     CapabilityModule,
     SkillModule,
     KnowledgeModule,
+    ApprovalModule,
     AgentRuntimeModule,
+    BusinessCapabilityModule,
   ],
 })
 export class AppModule {}

@@ -88,6 +88,12 @@ export interface RuntimeContext {
 
 // ── 能力 Handler 接口 ─────────────────────────────────────
 
+/**
+ * 能力 Handler 执行结果。
+ *
+ * output 字段遵循统一结果结构（验收标准 5）：
+ * { capabilityType, data, citations?, steps?, status }
+ */
 export interface CapabilityHandlerResult {
   success: boolean;
   output?: unknown;

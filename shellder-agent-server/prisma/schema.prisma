@@ -52,6 +52,7 @@ model Tenant {
   kbDocuments        KbDocument[]
   kbChunks           KbChunk[]
   kbEmbeddingTasks   KbEmbeddingTask[]
+  approvals          Approval[]
 
   @@index([status])
   @@index([externalTenantId])
@@ -1123,4 +1124,77 @@ model KbEmbeddingTask {
   @@index([status])
   @@index([createdAt])
   @@map("kb_embedding_task")
+}
+
+// ───────────────────────────────────────────────────────────
+// 阶段 14 — 审批中心（功能清单 §1.8 / 架构 §4.5 人工确认）
+// 高风险动作人工确认全生命周期：待确认→已确认/已驳回/已超时。
+// 与 Agent Runtime 联动：确认中断时创建记录，确认后继续/驳回后失败。
+// 按租户隔离（实施规格 §1.4）：tenant_id 必须来自 tenant 表。
+// ───────────────────────────────────────────────────────────
+
+/// 审批状态
+enum ApprovalStatus {
+  pending   // 待确认
+  approved  // 已确认执行
+  rejected  // 已驳回
+  timeout   // 已超时
+}
+
+/// 风险等级（复用 ToolRiskLevel 语义）
+enum ApprovalRiskLevel {
+  low
+  medium
+  high
+}
+
+/// 审批记录（功能清单 §1.8 / 执行计划 §5）
+model Approval {
+  id              String             @id @default(uuid()) @db.Char(36)
+  tenantId        String             @map("tenant_id") @db.Char(36)
+  sessionId       String?            @map("session_id") @db.Char(36)
+  taskId          String?            @map("task_id") @db.Char(36)
+  messageId       String?            @map("message_id") @db.Char(36)
+  /// 发起人 user.id
+  initiatorId     String?            @map("initiator_id") @db.Char(36)
+  /// 发起人名称快照
+  initiatorName   String?            @map("initiator_name") @db.VarChar(128)
+  /// 动作类型 / Tool 名称
+  actionType      String             @map("action_type") @db.VarChar(128)
+  /// 动作摘要（操作背景、原始请求概要）
+  actionSummary   String?            @map("action_summary") @db.Text
+  riskLevel       ApprovalRiskLevel  @default(high) @map("risk_level")
+  /// 影响范围描述
+  impactScope     String?            @map("impact_scope") @db.VarChar(512)
+  /// 待执行 Tool ID 列表（JSON 数组）
+  toolIds         Json?              @map("tool_ids")
+  /// 原始请求上下文快照
+  requestContext  Json?              @map("request_context")
+  status          ApprovalStatus     @default(pending)
+  /// 审批人 user.id
+  reviewerId      String?            @map("reviewer_id") @db.Char(36)
+  /// 审批人名称快照
+  reviewerName    String?            @map("reviewer_name") @db.VarChar(128)
+  /// 审批意见
+  opinion         String?            @db.Text
+  reviewedAt      DateTime?          @map("reviewed_at")
+  /// 超时截止时间
+  expiredAt       DateTime?          @map("expired_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([sessionId])
+  @@index([taskId])
+  @@index([status])
+  @@index([initiatorId])
+  @@index([reviewerId])
+  @@index([actionType])
+  @@index([riskLevel])
+  @@index([tenantId, status])
+  @@index([createdAt])
+  @@index([reviewedAt])
+  @@map("approval")
 }
