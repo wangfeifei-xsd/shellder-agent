@@ -1,0 +1,8 @@
+-- 模块 07 — 工具注册与工具管理：初始化数据
+--
+-- 本模块无平台级初始化数据：
+-- - Tool 均为各租户在运行期按需注册（含入参 / 出参 Schema、连接器绑定、SQL 约束），不预置演示数据
+--   （执行计划 / 架构 §9：各租户 Query/Action/Workflow Tool 由项目接入时配置，不阻塞平台基线）。
+-- - 工具菜单权限（tool）与模块权限（tool.manage）已在 03-user-rbac 的权限目录中预置，无需在此追加。
+--
+-- 保留空文件以符合 implementation-constraints §2.3（每模块至少输出 schema/seed/README）。

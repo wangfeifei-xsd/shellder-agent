@@ -154,5 +154,10 @@ npm run prisma:migrate       # 部署（migrate deploy）
 ## 阶段进度
 
 - [x] **01** 工程脚手架与基础设施
-- [ ] 02 租户管理
+- [x] **02** 租户管理（`tenant` 表、Tenant Management API `/api/v1/tenants`、管理后台 §1.11）
+- [x] **03** 用户与权限（`user`/`role`/`user_role`/`user_tenant`、JWT 登录、RBAC、`/api/v1/auth`·`/users`·`/roles`·`/permission-policies`、管理后台 §1.10）
+- [x] **04** 审计模块与审计中心（`tool_call_audit`/`user_action_audit`/`external_call_audit`、`@Audit` 采集、`/api/v1/audit`、管理后台 §1.9）
+- [x] **05** 策略引擎与规则配置（`rule`/`rule_hit`、`PolicyService.evaluate`、`/api/v1/rules`·`/rule-hits`、管理后台 §1.7 规则部分）
 - …
+
+> 默认管理员：`admin / admin123`（首次启动自动创建，请尽快修改）。可用 `AUTH_BOOTSTRAP=false` 关闭自动创建，或用 `ADMIN_USERNAME` / `ADMIN_PASSWORD` 覆盖。

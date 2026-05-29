@@ -1,8 +1,10 @@
 import { Controller, Get, Header } from '@nestjs/common';
+import { Public } from '../auth/decorators/public.decorator';
 
 /** Prometheus 抓取占位（后续阶段补充业务指标） */
 @Controller()
 export class MetricsController {
+  @Public()
   @Get('metrics')
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   getMetrics() {

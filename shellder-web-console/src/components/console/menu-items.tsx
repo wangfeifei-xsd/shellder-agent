@@ -1,4 +1,5 @@
 import type { MenuProps } from 'antd';
+import Link from 'next/link';
 import {
   ApartmentOutlined,
   AuditOutlined,
@@ -14,7 +15,28 @@ import {
   ToolOutlined,
 } from '@ant-design/icons';
 
-/** 侧栏菜单占位（与架构 §6.1.1 对齐，链接待后续阶段实现） */
+/**
+ * 顶级菜单 key → RBAC 菜单权限 key 映射。
+ * 用于按当前用户权限过滤侧栏（缺失权限的菜单隐藏，对应路由后端返回 403）。
+ */
+export const MENU_PERMISSION_KEY: Record<string, string> = {
+  '/': 'workbench',
+  session: 'session',
+  task: 'task',
+  routing: 'routing',
+  skill: 'skill',
+  tool: 'tool',
+  connector: 'connector',
+  knowledge: 'knowledge',
+  approval: 'approval',
+  audit: 'audit',
+  user: 'user',
+  tenant: 'tenant',
+  openapi: 'openapi',
+  settings: 'settings',
+};
+
+/** 侧栏菜单（与架构 §6.1.1 对齐，链接随阶段推进逐步启用） */
 export const consoleMenuItems: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: '工作台' },
   {
@@ -22,7 +44,7 @@ export const consoleMenuItems: MenuProps['items'] = [
     icon: <MessageOutlined />,
     label: '会话管理',
     children: [
-      { key: '/sessions', label: '会话列表', disabled: true },
+      { key: '/sessions', label: <Link href="/sessions">会话列表</Link> },
       { key: '/sessions/debug', label: '调试台', disabled: true },
     ],
   },
@@ -30,37 +52,57 @@ export const consoleMenuItems: MenuProps['items'] = [
     key: 'task',
     icon: <DeploymentUnitOutlined />,
     label: '任务中心',
-    children: [{ key: '/tasks', label: '任务列表', disabled: true }],
+    children: [
+      { key: '/tasks', label: <Link href="/tasks">任务列表</Link> },
+      { key: '/tasks/tracking', label: <Link href="/tasks/tracking">长任务跟踪</Link> },
+      { key: '/tasks/logs', label: <Link href="/tasks/logs">执行日志</Link> },
+    ],
   },
   {
     key: 'routing',
     icon: <ApartmentOutlined />,
     label: '能力路由',
-    children: [{ key: '/routing', label: '路由规则', disabled: true }],
+    children: [
+      { key: '/routing/rules', label: <Link href="/routing/rules">路由规则</Link> },
+      { key: '/routing/test', label: <Link href="/routing/test">路由测试</Link> },
+      { key: '/routing/capabilities', label: <Link href="/routing/capabilities">能力目录</Link> },
+    ],
   },
   {
     key: 'skill',
     icon: <BookOutlined />,
     label: '技能书管理',
-    children: [{ key: '/skills', label: '技能书列表', disabled: true }],
+    children: [
+      { key: '/skills', label: <Link href="/skills">技能书列表</Link> },
+      { key: '/skills/executions', label: <Link href="/skills/executions">调用记录</Link> },
+    ],
   },
   {
     key: 'tool',
     icon: <ToolOutlined />,
     label: '工具管理',
-    children: [{ key: '/tools', label: '工具列表', disabled: true }],
+    children: [
+      { key: '/tools', label: <Link href="/tools">工具列表</Link> },
+      { key: '/tools/sql', label: <Link href="/tools/sql">SQL 查询工具</Link> },
+    ],
   },
   {
     key: 'connector',
     icon: <CloudServerOutlined />,
     label: '连接器管理',
-    children: [{ key: '/connectors', label: '连接器列表', disabled: true }],
+    children: [
+      { key: '/connectors', label: <Link href="/connectors">连接器列表</Link> },
+    ],
   },
   {
     key: 'knowledge',
     icon: <BookOutlined />,
     label: '知识库与规则',
-    children: [{ key: '/knowledge', label: '知识层管理', disabled: true }],
+    children: [
+      { key: '/rules', label: <Link href="/rules">规则配置</Link> },
+      { key: '/rule-hits', label: <Link href="/rule-hits">规则命中记录</Link> },
+      { key: '/knowledge', label: <Link href="/knowledge">知识库管理</Link> },
+    ],
   },
   {
     key: 'approval',
@@ -72,19 +114,40 @@ export const consoleMenuItems: MenuProps['items'] = [
     key: 'audit',
     icon: <AuditOutlined />,
     label: '审计中心',
-    children: [{ key: '/audit', label: '工具调用审计', disabled: true }],
+    children: [
+      { key: '/audit', label: <Link href="/audit">工具调用审计</Link> },
+      {
+        key: '/audit/user-actions',
+        label: <Link href="/audit/user-actions">用户操作审计</Link>,
+      },
+      {
+        key: '/audit/external-calls',
+        label: <Link href="/audit/external-calls">外部接口审计</Link>,
+      },
+      {
+        key: '/audit/risk-actions',
+        label: <Link href="/audit/risk-actions">风险动作审计</Link>,
+      },
+    ],
   },
   {
     key: 'user',
     icon: <TeamOutlined />,
     label: '用户与权限',
-    children: [{ key: '/users', label: '用户管理', disabled: true }],
+    children: [
+      { key: '/users', label: <Link href="/users">用户管理</Link> },
+      { key: '/roles', label: <Link href="/roles">角色管理</Link> },
+      { key: '/permissions', label: <Link href="/permissions">权限策略</Link> },
+    ],
   },
   {
     key: 'tenant',
     icon: <ApartmentOutlined />,
     label: '租户管理',
-    children: [{ key: '/tenants', label: '租户列表', disabled: true }],
+    children: [
+      { key: '/tenants', label: <Link href="/tenants">租户列表</Link> },
+      { key: '/tenants/new', label: <Link href="/tenants/new">新建租户</Link> },
+    ],
   },
   {
     key: 'openapi',

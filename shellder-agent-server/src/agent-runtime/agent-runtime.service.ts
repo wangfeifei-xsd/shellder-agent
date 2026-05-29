@@ -1,0 +1,477 @@
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { AuditStatus, MessageType, Prisma } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { PolicyService } from '../policy/policy.service';
+import { AuditService } from '../audit/audit.service';
+import { RoutingEngineService } from '../capability/routing-engine.service';
+import { SessionService } from '../session/session.service';
+import { AuthUser } from '../auth/jwt.types';
+import { SseEmitterService } from './sse-emitter.service';
+import { getCapabilityHandler } from './capability-handlers';
+import {
+  RuntimeContext,
+  SseEvent,
+  SendMessageMode,
+} from './agent-runtime.types';
+import { SendMessageDto } from './dto/send-message.dto';
+
+const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_MAX_RETRIES = 2;
+const CONTEXT_MESSAGE_LIMIT = 20;
+
+/**
+ * Agent Runtime 编排骨架（架构 §4.5 / 执行计划 §4.1）。
+ *
+ * 请求处理调用顺序（架构 §4.2）：
+ * 1. 接入层创建/复用 Session，用户消息写入 Message
+ * 2. Agent Runtime 装配上下文，调用 Capability Routing
+ * 3. 按能力类型执行（问答召回 / SQL Query / Action / Workflow 等）
+ * 4. Tool 执行前 Policy 校验；高风险经确认节点可继续
+ * 5. 结果写入 Message / Task；流式阶段 SSE 推送
+ */
+@Injectable()
+export class AgentRuntimeService {
+  private readonly logger = new Logger(AgentRuntimeService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly policyService: PolicyService,
+    private readonly auditService: AuditService,
+    private readonly routingEngine: RoutingEngineService,
+    private readonly sessionService: SessionService,
+    private readonly sseEmitter: SseEmitterService,
+  ) {}
+
+  /**
+   * 发送消息并触发 Agent 编排（POST /api/v1/sessions/:id/messages）。
+   *
+   * sync 模式：等待编排完成后返回完整回复。
+   * stream 模式：立即返回消息 ID，通过 SSE 推送流式结果。
+   */
+  async sendMessage(
+    user: AuthUser,
+    sessionId: string,
+    dto: SendMessageDto,
+  ): Promise<{
+    messageId: string;
+    assistantMessageId?: string;
+    taskId?: string;
+    capabilityType?: string;
+    reply?: unknown;
+  }> {
+    const session = await this.sessionService.getOrThrow(sessionId);
+    await this.sessionService.assertTenantAccess(user, session.tenantId);
+
+    if (session.status === 'completed' || session.status === 'cancelled') {
+      throw new BadRequestException({
+        code: 'SESSION_CLOSED',
+        message: '会话已结束，无法发送消息',
+      });
+    }
+    if (session.status === 'pending_confirm') {
+      throw new BadRequestException({
+        code: 'SESSION_PENDING_CONFIRM',
+        message: '会话等待人工确认中，请先完成确认操作',
+      });
+    }
+
+    // Step 1: 写入用户消息
+    const userMessage = await this.appendMessage(sessionId, 'user', {
+      text: dto.content,
+    });
+
+    const mode: SendMessageMode = dto.mode ?? 'stream';
+
+    if (mode === 'stream') {
+      // 异步编排，通过 SSE 推送
+      this.executeOrchestration(user, session, dto.content, userMessage.id)
+        .catch((err) => {
+          this.logger.error(`编排异常 session=${sessionId}: ${err.message}`, err.stack);
+          this.sseEmitter.emit(sessionId, {
+            event: 'error',
+            data: { code: 'RUNTIME_ERROR', message: err.message },
+          });
+        });
+
+      return {
+        messageId: userMessage.id,
+        capabilityType: session.capabilityType ?? undefined,
+      };
+    }
+
+    // sync 模式：等待编排完成
+    const result = await this.executeOrchestration(
+      user,
+      session,
+      dto.content,
+      userMessage.id,
+    );
+
+    return {
+      messageId: userMessage.id,
+      assistantMessageId: result.assistantMessageId,
+      taskId: result.taskId,
+      capabilityType: result.capabilityType,
+      reply: result.reply,
+    };
+  }
+
+  /**
+   * 核心编排流程。
+   */
+  private async executeOrchestration(
+    user: AuthUser,
+    session: { id: string; tenantId: string; userId: string },
+    userMessage: string,
+    userMessageId: string,
+  ): Promise<{
+    assistantMessageId?: string;
+    taskId?: string;
+    capabilityType?: string;
+    reply?: unknown;
+  }> {
+    const sessionId = session.id;
+    const tenantId = session.tenantId;
+    const emitSse = (event: SseEvent) => this.sseEmitter.emit(sessionId, event);
+
+    try {
+      // Step 2: 路由
+      const routingResult = await this.routingEngine.route(
+        tenantId,
+        userMessage,
+        user.id,
+      );
+
+      const capabilityType = routingResult.capabilityType;
+
+      // 更新 Session.capabilityType
+      await this.prisma.session.update({
+        where: { id: sessionId },
+        data: { capabilityType: capabilityType as any },
+      });
+
+      // 路由结果写入消息元数据（验收标准 2）
+      await this.appendMessage(sessionId, 'system', {
+        type: 'routing_result',
+        capabilityType,
+        capabilityName: routingResult.capabilityName,
+        reason: routingResult.reason,
+        candidates: routingResult.candidates,
+        needConfirmation: routingResult.needConfirmation,
+      });
+
+      // 构建运行时上下文
+      const ctx: RuntimeContext = {
+        sessionId,
+        tenantId,
+        userId: user.id,
+        username: user.username,
+        userMessage,
+        capabilityType,
+        capabilityName: routingResult.capabilityName,
+        routingReason: routingResult.reason,
+        routingCandidates: routingResult.candidates,
+        toolIds: routingResult.candidates?.[0]?.toolIds ?? [],
+        needConfirmation: routingResult.needConfirmation,
+        timeoutMs: DEFAULT_TIMEOUT_MS,
+        maxRetries: DEFAULT_MAX_RETRIES,
+      };
+
+      // Step 3: 路由级确认拦截检查
+      if (routingResult.needConfirmation) {
+        return await this.handleConfirmInterrupt(ctx, emitSse, '路由级确认');
+      }
+
+      // Step 4: Policy 校验（Tool 级别 — 如有 toolIds）
+      if (ctx.toolIds && ctx.toolIds.length > 0) {
+        for (const toolId of ctx.toolIds) {
+          const tool = await this.prisma.tool.findUnique({
+            where: { id: toolId },
+          });
+          if (!tool) continue;
+
+          const policyDecision = await this.policyService.evaluate({
+            tenantId,
+            userId: user.id,
+            toolName: tool.name,
+            toolId: tool.id,
+            riskLevel: tool.riskLevel as any,
+            needConfirmation: tool.needConfirmation,
+            capability: capabilityType,
+            permissionScope: tool.permissionScope,
+            requestSummary: userMessage,
+            sessionId,
+          });
+
+          if (!policyDecision.allow) {
+            // Policy 拒绝 — 不调用 Tool，返回明确错误事件（验收标准 3）
+            emitSse({
+              event: 'tool_end',
+              data: {
+                toolName: tool.name,
+                toolId: tool.id,
+                status: 'denied',
+                error: policyDecision.reason ?? 'Policy 拒绝',
+              },
+            });
+
+            await this.auditService.logToolCall({
+              tenantId,
+              toolId: tool.id,
+              toolName: tool.name,
+              callerUserId: user.id,
+              callerName: user.username,
+              sessionId,
+              requestSummary: userMessage,
+              status: AuditStatus.failed,
+              errorMessage: policyDecision.reason ?? 'Policy denied',
+              highRisk: policyDecision.highRisk,
+            });
+
+            const errorMsg = await this.appendMessage(sessionId, 'system', {
+              type: 'policy_denied',
+              toolName: tool.name,
+              reason: policyDecision.reason,
+            });
+
+            emitSse({
+              event: 'error',
+              data: {
+                code: 'POLICY_DENIED',
+                message: policyDecision.reason ?? `工具 ${tool.name} 被策略拒绝`,
+              },
+            });
+            emitSse({
+              event: 'done',
+              data: { messageId: errorMsg.id, capabilityType },
+            });
+
+            return {
+              assistantMessageId: errorMsg.id,
+              capabilityType,
+              reply: {
+                text: policyDecision.reason ?? `工具 ${tool.name} 被策略拒绝`,
+              },
+            };
+          }
+
+          // Policy 需要确认 — 确认中断
+          if (policyDecision.needConfirm) {
+            return await this.handleConfirmInterrupt(
+              ctx,
+              emitSse,
+              policyDecision.reason ?? `工具 ${tool.name} 需要人工确认`,
+            );
+          }
+        }
+      }
+
+      // Step 5: 执行能力 Handler
+      const handler = getCapabilityHandler(capabilityType);
+      if (!handler) {
+        throw new Error(`未注册的能力类型 Handler: ${capabilityType}`);
+      }
+
+      // 超时控制
+      const handlerResult = await this.withTimeout(
+        handler.execute(ctx, emitSse),
+        ctx.timeoutMs,
+        `能力 ${capabilityType} 执行超时（${ctx.timeoutMs}ms）`,
+      );
+
+      // Tool 调用审计（handler 内部可能调用了 Tool）
+      if (ctx.toolIds && ctx.toolIds.length > 0) {
+        for (const toolId of ctx.toolIds) {
+          const tool = await this.prisma.tool.findUnique({
+            where: { id: toolId },
+          });
+          if (!tool) continue;
+
+          await this.auditService.logToolCall({
+            tenantId,
+            toolId: tool.id,
+            toolName: tool.name,
+            callerUserId: user.id,
+            callerName: user.username,
+            sessionId,
+            requestSummary: userMessage,
+            status: handlerResult.success
+              ? AuditStatus.success
+              : AuditStatus.failed,
+            errorMessage: handlerResult.error ?? null,
+            highRisk: false,
+          });
+        }
+      }
+
+      // Step 6: 写入助手回复消息
+      const replyContent = handlerResult.output ?? {
+        text: handlerResult.textChunks?.join('') ?? '',
+      };
+      const assistantMessage = await this.appendMessage(
+        sessionId,
+        'system',
+        replyContent,
+      );
+
+      emitSse({
+        event: 'done',
+        data: {
+          messageId: assistantMessage.id,
+          capabilityType,
+          summary: typeof replyContent === 'object' && 'text' in (replyContent as any)
+            ? (replyContent as any).text
+            : undefined,
+        },
+      });
+
+      return {
+        assistantMessageId: assistantMessage.id,
+        capabilityType,
+        reply: replyContent,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`编排失败 session=${sessionId}: ${message}`);
+
+      emitSse({
+        event: 'error',
+        data: { code: 'RUNTIME_ERROR', message },
+      });
+
+      await this.prisma.session.update({
+        where: { id: sessionId },
+        data: { status: 'failed' },
+      });
+
+      throw err;
+    }
+  }
+
+  /**
+   * 确认中断处理（执行计划 §4.3）。
+   * 遇 needConfirmation 写确认类 Message，任务/会话状态 pending_confirm。
+   * 恢复执行接口预留（Phase 14 完善）。
+   */
+  private async handleConfirmInterrupt(
+    ctx: RuntimeContext,
+    emitSse: (event: SseEvent) => void,
+    reason: string,
+  ): Promise<{
+    assistantMessageId?: string;
+    taskId?: string;
+    capabilityType?: string;
+    reply?: unknown;
+  }> {
+    const confirmMessage = await this.appendMessage(
+      ctx.sessionId,
+      'confirmation',
+      {
+        type: 'confirm_required',
+        reason,
+        capabilityType: ctx.capabilityType,
+        toolIds: ctx.toolIds,
+        userMessage: ctx.userMessage,
+      },
+    );
+
+    // 更新会话状态为 pending_confirm
+    await this.prisma.session.update({
+      where: { id: ctx.sessionId },
+      data: {
+        status: 'pending_confirm',
+        hasConfirmation: true,
+      },
+    });
+
+    emitSse({
+      event: 'confirm_required',
+      data: {
+        toolName: ctx.toolIds?.[0] ?? '',
+        reason,
+        messageId: confirmMessage.id,
+      },
+    });
+
+    emitSse({
+      event: 'done',
+      data: {
+        messageId: confirmMessage.id,
+        capabilityType: ctx.capabilityType,
+      },
+    });
+
+    return {
+      assistantMessageId: confirmMessage.id,
+      capabilityType: ctx.capabilityType,
+      reply: { type: 'confirm_required', reason },
+    };
+  }
+
+  // ── 辅助方法 ──────────────────────────────────────────────
+
+  private async appendMessage(
+    sessionId: string,
+    type: MessageType | 'user' | 'system' | 'confirmation',
+    content: unknown,
+  ): Promise<{ id: string; seq: number }> {
+    const roleMap: Record<string, string> = {
+      user: 'user',
+      system: 'assistant',
+      tool: 'tool',
+      confirmation: 'system',
+    };
+
+    const lastMsg = await this.prisma.message.findFirst({
+      where: { sessionId },
+      orderBy: { seq: 'desc' },
+      select: { seq: true },
+    });
+    const nextSeq = (lastMsg?.seq ?? 0) + 1;
+
+    const [message] = await this.prisma.$transaction([
+      this.prisma.message.create({
+        data: {
+          sessionId,
+          type: type as MessageType,
+          role: (roleMap[type] ?? 'assistant') as any,
+          content: content as Prisma.InputJsonValue,
+          seq: nextSeq,
+        },
+      }),
+      this.prisma.session.update({
+        where: { id: sessionId },
+        data: { lastMessageAt: new Date() },
+      }),
+    ]);
+
+    return { id: message.id, seq: message.seq };
+  }
+
+  private withTimeout<T>(
+    promise: Promise<T>,
+    ms: number,
+    errorMessage: string,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(errorMessage));
+      }, ms);
+
+      promise
+        .then((result) => {
+          clearTimeout(timer);
+          resolve(result);
+        })
+        .catch((err) => {
+          clearTimeout(timer);
+          reject(err);
+        });
+    });
+  }
+}

@@ -1,5 +1,4 @@
 import './load-env';
-import './load-env';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -9,6 +8,10 @@ import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors({
+    origin: process.env.WEB_CONSOLE_ORIGIN ?? true,
+    credentials: true,
+  });
   app.use(RequestIdMiddleware);
   app.useGlobalPipes(
     new ValidationPipe({
