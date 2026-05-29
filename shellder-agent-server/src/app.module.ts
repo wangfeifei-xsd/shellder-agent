@@ -20,6 +20,8 @@ import { ToolModule } from './tool/tool.module';
 import { SkillModule } from './skill/skill.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { OpenApiModule } from './openapi/openapi.module';
+import { SystemSettingsModule } from './system-settings/system-settings.module';
+import { CopilotModule } from './copilot/copilot.module';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { OpenApiModule } from './openapi/openapi.module';
     BusinessCapabilityModule,
     OpenApiModule,
     DashboardModule,
+    SystemSettingsModule,
+    CopilotModule,
   ],
 })
 export class AppModule {}

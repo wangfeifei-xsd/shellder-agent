@@ -54,6 +54,7 @@ model Tenant {
   kbEmbeddingTasks   KbEmbeddingTask[]
   approvals          Approval[]
   openApiCallLogs    OpenApiCallLog[]
+  copilotConfigs     CopilotConfig[]
 
   @@index([status])
   @@index([externalTenantId])
@@ -1201,6 +1202,59 @@ model Approval {
 }
 
 // ───────────────────────────────────────────────────────────
+// 阶段 18 — 系统设置（功能清单 §1.13）
+// 平台级 KV 配置表：基础信息、模型与响应、通知渠道与模板。
+// Runtime、job-worker 读取配置时走短 TTL 缓存（Redis）。
+// ───────────────────────────────────────────────────────────
+
+/// 系统配置（KV 表），configKey 全局唯一
+model SystemConfig {
+  id         String   @id @default(uuid()) @db.Char(36)
+  /// 配置分组：basic / model / notification
+  configGroup String  @map("config_group") @db.VarChar(64)
+  /// 配置键，全局唯一
+  configKey  String   @unique @map("config_key") @db.VarChar(128)
+  /// 配置值（JSON 字符串或纯文本）
+  configValue String  @map("config_value") @db.Text
+  /// 配置说明
+  description String? @db.VarChar(512)
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([configGroup])
+  @@map("system_config")
+}
+
+/// 通知模板类型
+enum NotificationTemplateType {
+  approval      // 审批通知
+  task_complete // 任务完成通知
+  exception     // 异常通知
+}
+
+/// 通知模板
+model NotificationTemplate {
+  id           String                   @id @default(uuid()) @db.Char(36)
+  type         NotificationTemplateType
+  name         String                   @db.VarChar(128)
+  /// 模板主题
+  subject      String?                  @db.VarChar(256)
+  /// 模板内容（支持变量占位符 {{var}}）
+  body         String                   @db.Text
+  /// 是否启用
+  enabled      Boolean                  @default(true)
+  /// 关联通知连接器 ID（connector 表中 type=notification 的连接器）
+  connectorId  String?                  @map("connector_id") @db.Char(36)
+  createdAt    DateTime                 @default(now()) @map("created_at")
+  updatedAt    DateTime                 @updatedAt @map("updated_at")
+
+  @@unique([type, name])
+  @@index([type])
+  @@index([enabled])
+  @@map("notification_template")
+}
+
+// ───────────────────────────────────────────────────────────
 // 阶段 15 — OpenAPI 对外接口与管理（功能清单 §3 / §1.12）
 // 对外提供应用鉴权、会话、消息、SSE、任务、人工确认 REST/SSE API。
 // 管理后台实现应用接入、接口文档、调用日志。
@@ -1238,12 +1292,47 @@ model OpenApiApp {
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
 
-  callLogs OpenApiCallLog[]
+  callLogs      OpenApiCallLog[]
+  copilotConfig CopilotConfig?
 
   @@index([clientId])
   @@index([status])
   @@index([createdAt])
   @@map("openapi_app")
+}
+
+// ───────────────────────────────────────────────────────────
+// 阶段 19 — 嵌入式 Copilot（功能清单 §2 / 架构 §4.1 接入层）
+// Copilot 嵌入配置：每个 OpenAPI 应用可关联一份 Copilot 配置。
+// ───────────────────────────────────────────────────────────
+
+enum CopilotConfigStatus {
+  enabled
+  disabled
+}
+
+model CopilotConfig {
+  id                 String              @id @default(uuid()) @db.Char(36)
+  tenantId           String              @map("tenant_id") @db.Char(36)
+  appId              String              @unique @map("app_id") @db.Char(36)
+  name               String              @db.VarChar(128)
+  status             CopilotConfigStatus @default(enabled)
+  domainWhitelist    Json?               @map("domain_whitelist")
+  theme              Json?
+  features           Json?
+  welcomeMessage     String?             @map("welcome_message") @db.Text
+  placeholder        String?             @db.VarChar(256)
+  maxHistoryMessages Int                 @default(50) @map("max_history_messages")
+  tokenTtlSeconds    Int                 @default(3600) @map("token_ttl_seconds")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  app    OpenApiApp @relation(fields: [appId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("copilot_config")
 }
 
 /// 调用日志状态

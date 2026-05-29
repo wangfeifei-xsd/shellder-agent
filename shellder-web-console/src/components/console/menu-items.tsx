@@ -11,6 +11,7 @@ import {
   FileProtectOutlined,
   KeyOutlined,
   MessageOutlined,
+  RobotOutlined,
   SettingOutlined,
   TeamOutlined,
   ToolOutlined,
@@ -35,6 +36,7 @@ export const MENU_PERMISSION_KEY: Record<string, string> = {
   user: 'user',
   tenant: 'tenant',
   openapi: 'openapi',
+  copilot: 'openapi',
   settings: 'settings',
 };
 
@@ -174,9 +176,22 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'copilot',
+    icon: <RobotOutlined />,
+    label: '嵌入式 Copilot',
+    children: [
+      { key: '/copilot-admin', label: <Link href="/copilot-admin">Copilot 配置</Link> },
+      { key: '/copilot-admin/preview', label: <Link href="/copilot-admin/preview">嵌入预览</Link> },
+    ],
+  },
+  {
     key: 'settings',
     icon: <SettingOutlined />,
     label: '系统设置',
-    children: [{ key: '/settings', label: '基础配置', disabled: true }],
+    children: [
+      { key: '/settings', label: <Link href="/settings">基础配置</Link> },
+      { key: '/settings/model', label: <Link href="/settings/model">模型与响应配置</Link> },
+      { key: '/settings/notification', label: <Link href="/settings/notification">通知配置</Link> },
+    ],
   },
 ];

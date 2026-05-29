@@ -99,7 +99,7 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
         <Menu
           mode="inline"
           selectedKeys={[selectedKey]}
-          defaultOpenKeys={['user', 'tenant', 'session']}
+          defaultOpenKeys={['user', 'tenant', 'session', 'settings']}
           items={menuItems}
           className="border-none"
         />
