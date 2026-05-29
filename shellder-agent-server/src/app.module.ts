@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { BusinessCapabilityModule } from './business-capability/business-capability.module';
 import { CapabilityModule } from './capability/capability.module';
 import { ConnectorModule } from './connector/connector.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { HealthModule } from './health/health.module';
 import { MessageModule } from './message/message.module';
 import { MetricsModule } from './metrics/metrics.module';
@@ -18,6 +19,7 @@ import { TenantModule } from './tenant/tenant.module';
 import { ToolModule } from './tool/tool.module';
 import { SkillModule } from './skill/skill.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
+import { OpenApiModule } from './openapi/openapi.module';
 
 @Module({
   imports: [
@@ -40,6 +42,8 @@ import { KnowledgeModule } from './knowledge/knowledge.module';
     ApprovalModule,
     AgentRuntimeModule,
     BusinessCapabilityModule,
+    OpenApiModule,
+    DashboardModule,
   ],
 })
 export class AppModule {}

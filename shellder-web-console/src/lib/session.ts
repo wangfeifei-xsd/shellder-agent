@@ -1,8 +1,8 @@
-import { apiFetch } from './api';
+import { API_BASE_URL, apiFetch } from './api';
 
 // ── 类型定义 ─────────────────────────────────────────────
 
-export type SessionStatus = 'active' | 'completed' | 'failed' | 'cancelled';
+export type SessionStatus = 'active' | 'completed' | 'failed' | 'cancelled' | 'pending_confirm';
 export type CapabilityType = 'qa' | 'query' | 'action' | 'workflow';
 export type MessageType = 'user' | 'system' | 'tool' | 'confirmation';
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool';
@@ -24,7 +24,7 @@ export interface SessionItem {
 
 export interface MessageItem {
   id: string;
-  sessionId: string;
+  sessionId?: string;
   type: MessageType;
   role: MessageRole;
   content: Record<string, unknown>;
@@ -32,8 +32,20 @@ export interface MessageItem {
   createdAt: string;
 }
 
+export interface SessionTaskItem {
+  id: string;
+  title: string | null;
+  type: string;
+  status: string;
+  capabilityType: CapabilityType | null;
+  currentNode: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
 export interface SessionDetail extends SessionItem {
   messages: MessageItem[];
+  tasks: SessionTaskItem[];
 }
 
 export interface SessionContext {
@@ -61,6 +73,7 @@ export const SESSION_STATUS_META: Record<SessionStatus, { label: string; color: 
   completed: { label: '已完成', color: 'success' },
   failed: { label: '失败', color: 'error' },
   cancelled: { label: '已取消', color: 'default' },
+  pending_confirm: { label: '待确认', color: 'warning' },
 };
 
 export const SESSION_STATUS_OPTIONS = (
@@ -138,4 +151,41 @@ export function listSessionMessages(
   return apiFetch<PagedResult<MessageItem>>(`${BASE}/${sessionId}/messages`, {
     query: query as QueryParams,
   });
+}
+
+export interface CreateDebugSessionInput {
+  tenantId: string;
+  scenario?: string;
+  simulateUserId?: string;
+}
+
+export function createDebugSession(input: CreateDebugSessionInput) {
+  return apiFetch<SessionItem & { isDebug: boolean }>(`${BASE}/debug`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export interface SendMessageInput {
+  content: string;
+  mode?: 'sync' | 'stream';
+}
+
+export interface SendMessageResult {
+  messageId: string;
+  assistantMessageId?: string;
+  taskId?: string;
+  capabilityType?: string;
+  reply?: Record<string, unknown>;
+}
+
+export function sendMessage(sessionId: string, input: SendMessageInput) {
+  return apiFetch<SendMessageResult>(`${BASE}/${sessionId}/messages`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export function buildSseUrl(sessionId: string): string {
+  return `${API_BASE_URL.replace(/\/$/, '')}/api/v1/sessions/${sessionId}/stream`;
 }

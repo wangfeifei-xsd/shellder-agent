@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Session } from '@prisma/client';
+import { MessageType, Prisma, Session } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
@@ -74,16 +74,32 @@ export class SessionService {
     return { items: rows.map((s) => this.toView(s)), total, page, pageSize };
   }
 
-  // ── 详情（含消息，16 增强展示） ──────────────────────────────
+  // ── 详情（含消息 + 关联任务，Phase 16 增强） ──────────────────
 
   async findOne(user: AuthUser, id: string) {
     const session = await this.getOrThrow(id);
     await this.assertTenantAccess(user, session.tenantId);
 
-    const messages = await this.prisma.message.findMany({
-      where: { sessionId: id },
-      orderBy: { seq: 'asc' },
-    });
+    const [messages, tasks] = await this.prisma.$transaction([
+      this.prisma.message.findMany({
+        where: { sessionId: id },
+        orderBy: { seq: 'asc' },
+      }),
+      this.prisma.task.findMany({
+        where: { sessionId: id },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          title: true,
+          type: true,
+          status: true,
+          capabilityType: true,
+          currentNode: true,
+          createdAt: true,
+          completedAt: true,
+        },
+      }),
+    ]);
 
     return {
       ...this.toView(session),
@@ -95,6 +111,75 @@ export class SessionService {
         seq: m.seq,
         createdAt: m.createdAt,
       })),
+      tasks,
+    };
+  }
+
+  // ── 消息记录列表（§1.2 消息记录，Phase 16） ──────────────────
+
+  async listMessages(
+    user: AuthUser,
+    sessionId: string,
+    query: { page?: number; pageSize?: number; type?: MessageType },
+  ) {
+    const session = await this.getOrThrow(sessionId);
+    await this.assertTenantAccess(user, session.tenantId);
+
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 50;
+    const where: Prisma.MessageWhereInput = { sessionId };
+    if (query.type) where.type = query.type;
+
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.message.count({ where }),
+      this.prisma.message.findMany({
+        where,
+        orderBy: { seq: 'asc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return {
+      items: rows.map((m) => ({
+        id: m.id,
+        sessionId: m.sessionId,
+        type: m.type,
+        role: m.role,
+        content: m.content,
+        seq: m.seq,
+        createdAt: m.createdAt,
+      })),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  // ── 创建调试会话（§1.2 调试台，Phase 16） ──────────────────
+
+  async createDebugSession(
+    user: AuthUser,
+    dto: { tenantId: string; scenario?: string; simulateUserId?: string },
+  ) {
+    await this.assertTenantAccess(user, dto.tenantId);
+    await this.assertTenantEnabled(dto.tenantId);
+
+    const debugTitle = dto.scenario
+      ? `[调试] ${dto.scenario}`
+      : `[调试] ${new Date().toLocaleString('zh-CN')}`;
+
+    const session = await this.prisma.session.create({
+      data: {
+        tenantId: dto.tenantId,
+        userId: dto.simulateUserId ?? user.id,
+        title: debugTitle,
+      },
+    });
+
+    return {
+      ...this.toView(session),
+      isDebug: true,
     };
   }
 

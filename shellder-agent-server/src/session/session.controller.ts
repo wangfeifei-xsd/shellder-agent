@@ -12,6 +12,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
 import { CreateSessionDto } from './dto/create-session.dto';
+import { CreateDebugSessionDto } from './dto/create-debug-session.dto';
 import { QuerySessionDto } from './dto/query-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 import { ContextQueryDto } from './dto/context.dto';
@@ -27,6 +28,19 @@ export class SessionController {
   @Audit({ action: 'session.create', module: 'session', targetType: 'session' })
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateSessionDto) {
     return this.sessionService.create(user, dto);
+  }
+
+  /**
+   * POST /api/v1/sessions/debug — 创建调试会话（§1.2 调试台，Phase 16）。
+   * 需放在 :id 路由之前避免路由冲突。
+   */
+  @Post('debug')
+  @Audit({ action: 'session.createDebug', module: 'session', targetType: 'session' })
+  createDebugSession(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: CreateDebugSessionDto,
+  ) {
+    return this.sessionService.createDebugSession(user, dto);
   }
 
   @Get()

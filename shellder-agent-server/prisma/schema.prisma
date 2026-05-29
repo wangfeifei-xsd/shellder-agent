@@ -53,6 +53,7 @@ model Tenant {
   kbChunks           KbChunk[]
   kbEmbeddingTasks   KbEmbeddingTask[]
   approvals          Approval[]
+  openApiCallLogs    OpenApiCallLog[]
 
   @@index([status])
   @@index([externalTenantId])
@@ -1197,4 +1198,92 @@ model Approval {
   @@index([createdAt])
   @@index([reviewedAt])
   @@map("approval")
+}
+
+// ───────────────────────────────────────────────────────────
+// 阶段 15 — OpenAPI 对外接口与管理（功能清单 §3 / §1.12）
+// 对外提供应用鉴权、会话、消息、SSE、任务、人工确认 REST/SSE API。
+// 管理后台实现应用接入、接口文档、调用日志。
+// 应用级 API Key / Client Secret → JWT 鉴权；限流状态存 Redis。
+// 按租户隔离（实施规格 §1.4）：允许访问的租户由应用配置决定。
+// ───────────────────────────────────────────────────────────
+
+/// 接入应用状态
+enum OpenApiAppStatus {
+  enabled
+  disabled
+}
+
+/// OpenAPI 接入应用（§1.12 应用接入 / 执行计划 §3.1）
+model OpenApiApp {
+  id              String           @id @default(uuid()) @db.Char(36)
+  /// 应用名称（全局唯一）
+  name            String           @unique @db.VarChar(128)
+  description     String?          @db.VarChar(512)
+  /// 应用标识（Client ID，用于鉴权请求）
+  clientId        String           @unique @map("client_id") @db.VarChar(64)
+  /// 加密后的 Client Secret（AES-256-GCM）
+  clientSecretHash String          @map("client_secret_hash") @db.VarChar(255)
+  status          OpenApiAppStatus @default(enabled)
+  /// 允许访问的租户 ID 列表（JSON string[]）
+  allowedTenantIds Json            @map("allowed_tenant_ids")
+  /// 允许访问的能力范围（JSON string[]，如 ["qa","query","action","workflow"]）
+  allowedCapabilities Json         @map("allowed_capabilities")
+  /// 限流配置：{ rateLimit: number, windowMs: number }
+  rateLimitConfig Json?            @map("rate_limit_config")
+  /// 最近一次调用时间
+  lastCalledAt    DateTime?        @map("last_called_at")
+  /// 创建人 user.id
+  createdBy       String?          @map("created_by") @db.Char(36)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  callLogs OpenApiCallLog[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("openapi_app")
+}
+
+/// 调用日志状态
+enum OpenApiCallStatus {
+  success
+  failed
+  rate_limited
+}
+
+/// OpenAPI 调用日志（§1.12 调用日志 / 执行计划 §3.3）
+model OpenApiCallLog {
+  id            String            @id @default(uuid()) @db.Char(36)
+  appId         String            @map("app_id") @db.Char(36)
+  tenantId      String?           @map("tenant_id") @db.Char(36)
+  /// 请求方法
+  method        String            @db.VarChar(10)
+  /// 请求路径
+  path          String            @db.VarChar(256)
+  /// HTTP 状态码
+  statusCode    Int               @map("status_code")
+  status        OpenApiCallStatus @default(success)
+  /// 请求 IP
+  ip            String?           @db.VarChar(64)
+  /// 耗时毫秒
+  durationMs    Int?              @map("duration_ms")
+  /// 错误信息
+  errorMessage  String?           @map("error_message") @db.VarChar(1024)
+  /// 请求摘要
+  requestSummary String?          @map("request_summary") @db.Text
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  app    OpenApiApp @relation(fields: [appId], references: [id], onDelete: Restrict)
+  tenant Tenant?    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([appId])
+  @@index([tenantId])
+  @@index([status])
+  @@index([path])
+  @@index([createdAt])
+  @@index([appId, status])
+  @@index([appId, createdAt])
+  @@map("openapi_call_log")
 }

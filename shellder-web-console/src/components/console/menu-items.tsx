@@ -40,14 +40,15 @@ export const MENU_PERMISSION_KEY: Record<string, string> = {
 
 /** 侧栏菜单（与架构 §6.1.1 对齐，链接随阶段推进逐步启用） */
 export const consoleMenuItems: MenuProps['items'] = [
-  { key: '/', icon: <DashboardOutlined />, label: '工作台' },
+  { key: '/', icon: <DashboardOutlined />, label: <Link href="/">工作台</Link> },
   {
     key: 'session',
     icon: <MessageOutlined />,
     label: '会话管理',
     children: [
       { key: '/sessions', label: <Link href="/sessions">会话列表</Link> },
-      { key: '/sessions/debug', label: '调试台', disabled: true },
+      { key: '/sessions/messages', label: <Link href="/sessions/messages">消息记录</Link> },
+      { key: '/sessions/debug', label: <Link href="/sessions/debug">调试台</Link> },
     ],
   },
   {
@@ -166,7 +167,11 @@ export const consoleMenuItems: MenuProps['items'] = [
     key: 'openapi',
     icon: <KeyOutlined />,
     label: 'OpenAPI 管理',
-    children: [{ key: '/openapi', label: '应用接入', disabled: true }],
+    children: [
+      { key: '/openapi/apps', label: <Link href="/openapi/apps">应用接入</Link> },
+      { key: '/openapi/docs', label: <Link href="/openapi/docs">接口文档</Link> },
+      { key: '/openapi/logs', label: <Link href="/openapi/logs">调用日志</Link> },
+    ],
   },
   {
     key: 'settings',
