@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 05 — 策略引擎与规则配置 / seed
 --
 -- 本模块无平台级基础初始化数据：
@@ -8,7 +11,7 @@
 -- 参考：可在管理后台「规则配置」新建一条「高风险需确认」规则用于验证（验收标准 1），
 -- 等价 SQL 示例（请将 <TENANT_ID> 替换为真实租户，按需执行；非交付数据）：
 --
--- INSERT INTO `rule`
+-- INSERT INTO `agent_platform`.`rule`
 --   (`id`, `tenant_id`, `name`, `type`, `conditions`, `action`, `priority`, `status`, `description`, `updated_at`)
 -- VALUES
 --   (UUID(), '<TENANT_ID>', '高风险动作需确认', 'confirm',

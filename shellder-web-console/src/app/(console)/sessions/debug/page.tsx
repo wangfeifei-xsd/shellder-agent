@@ -397,20 +397,20 @@ function SseEventItem({ ev }: { ev: SseEventData }) {
           {new Date(ev.timestamp).toLocaleTimeString('zh-CN')}
         </Typography.Text>
       </Space>
-      {ev.event === 'delta' && ev.data.text && (
+      {ev.event === 'delta' && ev.data.text ? (
         <div className="rounded bg-green-50 px-2 py-1">{String(ev.data.text)}</div>
-      )}
-      {ev.event === 'tool_start' && (
+      ) : null}
+      {ev.event === 'tool_start' ? (
         <div className="rounded bg-orange-50 px-2 py-1">
           <strong>{String(ev.data.toolName ?? '')}</strong>
-          {ev.data.input && (
+          {ev.data.input ? (
             <pre className="mt-1 max-h-20 overflow-auto text-[10px]">
               {JSON.stringify(ev.data.input, null, 2)}
             </pre>
-          )}
+          ) : null}
         </div>
-      )}
-      {ev.event === 'tool_end' && (
+      ) : null}
+      {ev.event === 'tool_end' ? (
         <div className="rounded bg-orange-50 px-2 py-1">
           <strong>{String(ev.data.toolName ?? '')}</strong>
           <Tag
@@ -419,32 +419,32 @@ function SseEventItem({ ev }: { ev: SseEventData }) {
           >
             {String(ev.data.status ?? '')}
           </Tag>
-          {ev.data.durationMs && (
-            <Typography.Text type="secondary"> {ev.data.durationMs}ms</Typography.Text>
-          )}
-          {ev.data.output && (
+          {ev.data.durationMs ? (
+            <Typography.Text type="secondary"> {String(ev.data.durationMs)}ms</Typography.Text>
+          ) : null}
+          {ev.data.output ? (
             <pre className="mt-1 max-h-20 overflow-auto text-[10px]">
               {JSON.stringify(ev.data.output, null, 2)}
             </pre>
-          )}
+          ) : null}
         </div>
-      )}
-      {ev.event === 'confirm_required' && (
+      ) : null}
+      {ev.event === 'confirm_required' ? (
         <div className="rounded bg-red-50 px-2 py-1">
           原因：{String(ev.data.reason ?? '—')}
         </div>
-      )}
-      {ev.event === 'done' && (
+      ) : null}
+      {ev.event === 'done' ? (
         <div className="rounded bg-blue-50 px-2 py-1">
-          {ev.data.capabilityType && (
+          {ev.data.capabilityType ? (
             <Tag>
               {CAPABILITY_TYPE_META[ev.data.capabilityType as CapabilityType]?.label ??
                 String(ev.data.capabilityType)}
             </Tag>
-          )}
-          {ev.data.summary && <span>{String(ev.data.summary)}</span>}
+          ) : null}
+          {ev.data.summary ? <span>{String(ev.data.summary)}</span> : null}
         </div>
-      )}
+      ) : null}
       {(ev.event === 'error' || ev.event === 'sse_error') && (
         <div className="rounded bg-red-50 px-2 py-1 text-red-600">
           {String(ev.data.message ?? ev.data.code ?? '未知错误')}

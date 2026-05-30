@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 04 — 审计模块与审计中心
 -- 依赖：02-tenant-management（tenant_id → tenant.id）、03-user-rbac（操作人 / 调用人取自 user）
 -- 作用：新增三类审计采集通道表（工具调用 / 用户操作 / 外部接口）；
@@ -12,7 +15,7 @@
 -- 5. 审计日志均建 created_at 索引以支撑时间范围查询（架构 §7）。
 
 -- CreateTable：工具调用审计
-CREATE TABLE `tool_call_audit` (
+CREATE TABLE `agent_platform`.`tool_call_audit` (
     `id`              CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`       CHAR(36)     NULL COMMENT '所属租户，→ tenant.id；平台级调用可空',
     `tool_id`         CHAR(36)     NULL COMMENT 'Tool 主键（07 工具注册）占位，暂不加外键',
@@ -35,10 +38,10 @@ CREATE TABLE `tool_call_audit` (
     INDEX `tool_call_audit_high_risk_idx` (`high_risk`),
     INDEX `tool_call_audit_created_at_idx` (`created_at`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='工具调用审计';
 
 -- CreateTable：用户操作审计
-CREATE TABLE `user_action_audit` (
+CREATE TABLE `agent_platform`.`user_action_audit` (
     `id`               CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`        CHAR(36)     NULL COMMENT '操作所属租户上下文（取顶栏当前操作租户）',
     `operator_user_id` CHAR(36)     NULL COMMENT '操作人 user.id',
@@ -60,10 +63,10 @@ CREATE TABLE `user_action_audit` (
     INDEX `user_action_audit_module_idx` (`module`),
     INDEX `user_action_audit_created_at_idx` (`created_at`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='用户操作审计';
 
 -- CreateTable：外部接口审计
-CREATE TABLE `external_call_audit` (
+CREATE TABLE `agent_platform`.`external_call_audit` (
     `id`              CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`       CHAR(36)     NULL COMMENT '所属租户，→ tenant.id',
     `connector_id`    CHAR(36)     NULL COMMENT '连接器主键（06）占位',
@@ -84,15 +87,15 @@ CREATE TABLE `external_call_audit` (
     INDEX `external_call_audit_status_idx` (`status`),
     INDEX `external_call_audit_created_at_idx` (`created_at`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='外部接口调用审计';
 
 -- AddForeignKey
-ALTER TABLE `tool_call_audit` ADD CONSTRAINT `tool_call_audit_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE `user_action_audit` ADD CONSTRAINT `user_action_audit_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE `external_call_audit` ADD CONSTRAINT `external_call_audit_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`tool_call_audit` ADD CONSTRAINT `tool_call_audit_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`user_action_audit` ADD CONSTRAINT `user_action_audit_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`external_call_audit` ADD CONSTRAINT `external_call_audit_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- 风险动作审计：聚合只读视图，不建独立采集表。
 -- V1 数据源 = tool_call_audit(high_risk = true)；14-审批中心 就绪后再 JOIN approval。

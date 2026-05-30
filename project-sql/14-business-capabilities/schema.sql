@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- ================================================================
 -- 阶段 13 — 四类业务能力（执行计划序号 13，SQL 目录序号 14）
 -- 功能清单 §5.1–§5.4 / 架构 §4.3 / §4.5
@@ -16,7 +19,7 @@
 --   - tool（07）：四类 Tool 定义及 config（sql/http/workflow）
 --   - capability / routing_rule（10）：能力目录与路由规则
 --   - skill（11）：技能书与 Tool 绑定
---   - knowledge_base / kb_chunk（12）：问答型知识库检索
+--   - knowledge_base（12）+ pathy 代理 recall（12）：问答型知识库检索
 --
 -- 增量变更：
 -- 1. 为 message.content 新增统一结果结构约定（仅应用层约束，数据库 JSON 列不变）。
@@ -25,8 +28,22 @@
 
 -- 优化：为 task.capability_type + status 组合查询添加索引（流程型长任务进度查询）
 -- 注：idx_task_capability_type 已存在（09），此处为组合索引补充
-CREATE INDEX IF NOT EXISTS `idx_task_cap_type_status_created`
-    ON `task` (`capability_type`, `status`, `created_at` DESC);
+-- MySQL 不支持 CREATE INDEX IF NOT EXISTS；可重复执行时用下方条件 DDL
+SET @__idx_exists := (
+  SELECT COUNT(1)
+  FROM information_schema.statistics
+  WHERE table_schema = 'agent_platform'
+    AND table_name = 'task'
+    AND index_name = 'idx_task_cap_type_status_created'
+);
+SET @__sql := IF(
+  @__idx_exists = 0,
+  'CREATE INDEX `idx_task_cap_type_status_created` ON `agent_platform`.`task` (`capability_type`, `status`, `created_at`)',
+  'SELECT 1'
+);
+PREPARE __stmt FROM @__sql;
+EXECUTE __stmt;
+DEALLOCATE PREPARE __stmt;
 
 -- 统一结果结构约定（应用层 JSON，非数据库约束）：
 -- message.content 当 type='system' 且为能力执行结果时，遵循以下结构：

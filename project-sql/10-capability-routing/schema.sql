@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- ================================================================
 -- 阶段 10 — 能力路由（Capability Routing）
 -- 功能清单 §1.4 / 架构 Capability Routing
@@ -16,7 +19,7 @@
 -- 6. (tenant_id, name) 唯一约束，避免同租户重名能力。
 
 -- CreateTable：能力目录（按租户）
-CREATE TABLE IF NOT EXISTS `capability` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`capability` (
   `id`                      CHAR(36)     NOT NULL COMMENT '主键',
   `tenant_id`               CHAR(36)     NOT NULL COMMENT '所属租户，→ tenant.id',
   `type`                    ENUM('qa', 'query', 'action', 'workflow') NOT NULL
@@ -37,11 +40,11 @@ CREATE TABLE IF NOT EXISTS `capability` (
   INDEX `capability_status_idx` (`status`),
   INDEX `capability_tenant_id_type_status_idx` (`tenant_id`, `type`, `status`),
   PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='能力目录';
 
 
 -- CreateTable：路由规则（从属于能力，按租户隔离）
-CREATE TABLE IF NOT EXISTS `routing_rule` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`routing_rule` (
   `id`                CHAR(36)     NOT NULL COMMENT '主键',
   `tenant_id`         CHAR(36)     NOT NULL COMMENT '所属租户，→ tenant.id',
   `capability_id`     CHAR(36)     NOT NULL COMMENT '关联能力，→ capability.id',
@@ -59,18 +62,18 @@ CREATE TABLE IF NOT EXISTS `routing_rule` (
   INDEX `routing_rule_capability_id_idx` (`capability_id`),
   INDEX `routing_rule_tenant_id_status_priority_idx` (`tenant_id`, `status`, `priority`),
   PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='能力路由规则';
 
 
 -- AddForeignKey
-ALTER TABLE `capability` ADD CONSTRAINT `capability_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`capability` ADD CONSTRAINT `capability_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
-ALTER TABLE `routing_rule` ADD CONSTRAINT `routing_rule_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`routing_rule` ADD CONSTRAINT `routing_rule_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
-ALTER TABLE `routing_rule` ADD CONSTRAINT `routing_rule_capability_id_fkey`
-    FOREIGN KEY (`capability_id`) REFERENCES `capability`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`routing_rule` ADD CONSTRAINT `routing_rule_capability_id_fkey`
+    FOREIGN KEY (`capability_id`) REFERENCES `agent_platform`.`capability`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 
 -- conditions JSON 约定结构（应用层维护，DB 不强约束）：

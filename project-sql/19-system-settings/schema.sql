@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- ============================================================
 -- 阶段 18 — 系统设置（功能清单 §1.13）
 -- 新增表：system_config、notification_template
@@ -5,7 +8,7 @@
 -- ============================================================
 
 -- 系统配置 KV 表
-CREATE TABLE IF NOT EXISTS `system_config` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`system_config` (
   `id`           CHAR(36)     NOT NULL,
   `config_group` VARCHAR(64)  NOT NULL COMMENT '配置分组：basic / model / notification',
   `config_key`   VARCHAR(128) NOT NULL COMMENT '配置键，全局唯一',
@@ -16,10 +19,10 @@ CREATE TABLE IF NOT EXISTS `system_config` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_config_key` (`config_key`),
   KEY `idx_config_group` (`config_group`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置 KV';
 
 -- 通知模板表
-CREATE TABLE IF NOT EXISTS `notification_template` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`notification_template` (
   `id`            CHAR(36)     NOT NULL,
   `type`          ENUM('approval','task_complete','exception') NOT NULL COMMENT '模板类型',
   `name`          VARCHAR(128) NOT NULL COMMENT '模板名称',
@@ -33,4 +36,4 @@ CREATE TABLE IF NOT EXISTS `notification_template` (
   UNIQUE KEY `uk_type_name` (`type`, `name`),
   KEY `idx_type` (`type`),
   KEY `idx_enabled` (`enabled`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='通知模板';

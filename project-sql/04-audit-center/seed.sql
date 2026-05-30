@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 04 — 审计模块与审计中心 / seed
 --
 -- 本模块无基础初始化数据：

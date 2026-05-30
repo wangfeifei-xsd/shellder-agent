@@ -1,10 +1,13 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 02 — 租户管理
 -- 依赖：01-bootstrap（仅迁移流水线，无业务表）
 -- 作用：新增 tenant 表，作为各业务表 tenant_id 外键的归属主数据（实施规格 §1.3）。
 -- 与 Prisma 对齐：shellder-agent-server/prisma/migrations/20260529000000_tenant_management/migration.sql
 
 -- CreateTable
-CREATE TABLE `tenant` (
+CREATE TABLE `agent_platform`.`tenant` (
     `id`                 CHAR(36)     NOT NULL COMMENT 'Agent 库主键；业务表 tenant_id 外键',
     `code`               VARCHAR(64)  NOT NULL COMMENT '租户编码，平台内唯一',
     `name`               VARCHAR(128) NOT NULL COMMENT '租户名称',
@@ -20,7 +23,7 @@ CREATE TABLE `tenant` (
     INDEX `tenant_status_idx` (`status`),
     INDEX `tenant_external_tenant_id_idx` (`external_tenant_id`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='租户主数据';
 
 -- config JSON 约定结构（应用层维护，DB 不强约束）：
 -- {

@@ -63,11 +63,11 @@ export class SkillService {
           entryMode: dto.entryMode,
           entryToolId: dto.entryToolId ?? null,
           workflowToolId: dto.workflowToolId ?? null,
-          inputSchema: dto.inputSchema ?? Prisma.JsonNull,
-          outputSchema: dto.outputSchema ?? Prisma.JsonNull,
-          preconditions: dto.preconditions ?? Prisma.JsonNull,
+          inputSchema: (dto.inputSchema ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
+          outputSchema: (dto.outputSchema ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
+          preconditions: (dto.preconditions ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
           resultTemplate: dto.resultTemplate ?? null,
-          missingParamStrategy: dto.missingParamStrategy ?? Prisma.JsonNull,
+          missingParamStrategy: (dto.missingParamStrategy ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
           failureHint: dto.failureHint ?? null,
           remark: dto.remark ?? null,
           triggers: dto.triggers?.length
@@ -85,7 +85,7 @@ export class SkillService {
                   bindingType: b.bindingType,
                   targetId: b.targetId,
                   orderNo: b.orderNo ?? 0,
-                  config: b.config ?? Prisma.JsonNull,
+                  config: (b.config ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
                 })),
               }
             : undefined,
@@ -213,11 +213,19 @@ export class SkillService {
     if (dto.entryMode !== undefined) data.entryMode = dto.entryMode;
     if (dto.entryToolId !== undefined) data.entryToolId = dto.entryToolId || null;
     if (dto.workflowToolId !== undefined) data.workflowToolId = dto.workflowToolId || null;
-    if (dto.inputSchema !== undefined) data.inputSchema = dto.inputSchema ?? Prisma.JsonNull;
-    if (dto.outputSchema !== undefined) data.outputSchema = dto.outputSchema ?? Prisma.JsonNull;
-    if (dto.preconditions !== undefined) data.preconditions = dto.preconditions ?? Prisma.JsonNull;
+    if (dto.inputSchema !== undefined) {
+      data.inputSchema = (dto.inputSchema ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue;
+    }
+    if (dto.outputSchema !== undefined) {
+      data.outputSchema = (dto.outputSchema ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue;
+    }
+    if (dto.preconditions !== undefined) {
+      data.preconditions = (dto.preconditions ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue;
+    }
     if (dto.resultTemplate !== undefined) data.resultTemplate = dto.resultTemplate || null;
-    if (dto.missingParamStrategy !== undefined) data.missingParamStrategy = dto.missingParamStrategy ?? Prisma.JsonNull;
+    if (dto.missingParamStrategy !== undefined) {
+      data.missingParamStrategy = (dto.missingParamStrategy ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue;
+    }
     if (dto.failureHint !== undefined) data.failureHint = dto.failureHint || null;
     if (dto.remark !== undefined) data.remark = dto.remark || null;
 
@@ -258,7 +266,7 @@ export class SkillService {
                     bindingType: b.bindingType,
                     targetId: b.targetId,
                     orderNo: b.orderNo ?? 0,
-                    config: b.config ?? Prisma.JsonNull,
+                    config: (b.config ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
                   })),
                 },
               }

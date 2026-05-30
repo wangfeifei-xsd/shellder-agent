@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 03 — 用户与权限（RBAC）
 -- 依赖：02-tenant-management（user_tenant.tenant_id 外键引用 tenant.id）
 -- 作用：新增平台独立账号体系（user）、角色（role）、用户-角色（user_role）、
@@ -5,7 +8,7 @@
 -- 与 Prisma 对齐：shellder-agent-server/prisma/migrations/20260529010000_user_rbac/migration.sql
 
 -- CreateTable
-CREATE TABLE `user` (
+CREATE TABLE `agent_platform`.`user` (
     `id`            CHAR(36)     NOT NULL COMMENT '用户主键',
     `username`      VARCHAR(64)  NOT NULL COMMENT '登录用户名，平台内唯一',
     `password_hash` VARCHAR(255) NOT NULL COMMENT 'bcrypt 口令哈希',
@@ -20,10 +23,10 @@ CREATE TABLE `user` (
     UNIQUE INDEX `user_username_key` (`username`),
     INDEX `user_status_idx` (`status`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='平台用户账号';
 
 -- CreateTable
-CREATE TABLE `role` (
+CREATE TABLE `agent_platform`.`role` (
     `id`          CHAR(36)     NOT NULL COMMENT '角色主键',
     `code`        VARCHAR(64)  NOT NULL COMMENT '角色编码，平台内唯一',
     `name`        VARCHAR(128) NOT NULL COMMENT '角色名称',
@@ -38,35 +41,35 @@ CREATE TABLE `role` (
 
     UNIQUE INDEX `role_code_key` (`code`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='RBAC 角色';
 
 -- CreateTable：用户-角色 多对多
-CREATE TABLE `user_role` (
+CREATE TABLE `agent_platform`.`user_role` (
     `user_id` CHAR(36) NOT NULL,
     `role_id` CHAR(36) NOT NULL,
 
     INDEX `user_role_role_id_idx` (`role_id`),
     PRIMARY KEY (`user_id`, `role_id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='用户与角色关联';
 
 -- CreateTable：用户-租户 多对多（支持多租户绑定，tenant_id → tenant.id）
-CREATE TABLE `user_tenant` (
+CREATE TABLE `agent_platform`.`user_tenant` (
     `user_id`   CHAR(36) NOT NULL,
     `tenant_id` CHAR(36) NOT NULL,
 
     INDEX `user_tenant_tenant_id_idx` (`tenant_id`),
     PRIMARY KEY (`user_id`, `tenant_id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='用户与租户绑定';
 
 -- AddForeignKey
-ALTER TABLE `user_role` ADD CONSTRAINT `user_role_user_id_fkey`
-    FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE `user_role` ADD CONSTRAINT `user_role_role_id_fkey`
-    FOREIGN KEY (`role_id`) REFERENCES `role`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE `user_tenant` ADD CONSTRAINT `user_tenant_user_id_fkey`
-    FOREIGN KEY (`user_id`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE `user_tenant` ADD CONSTRAINT `user_tenant_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`user_role` ADD CONSTRAINT `user_role_user_id_fkey`
+    FOREIGN KEY (`user_id`) REFERENCES `agent_platform`.`user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`user_role` ADD CONSTRAINT `user_role_role_id_fkey`
+    FOREIGN KEY (`role_id`) REFERENCES `agent_platform`.`role`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`user_tenant` ADD CONSTRAINT `user_tenant_user_id_fkey`
+    FOREIGN KEY (`user_id`) REFERENCES `agent_platform`.`user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`user_tenant` ADD CONSTRAINT `user_tenant_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- role.policy JSON 约定结构（应用层维护，DB 不强约束）：
 -- {

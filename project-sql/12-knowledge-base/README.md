@@ -7,10 +7,16 @@
 | 表名 | V1 用途 |
 |------|---------|
 | `knowledge_base` | **租户绑定元数据**：名称、状态、`pathy_wiki_prefix`（wiki 子路径前缀） |
-| `kb_data_source` | **已废弃**（保留表结构，勿再写入） |
-| `kb_document` | **已废弃** |
-| `kb_chunk` | **已废弃**（原平台内 contains/向量占位） |
-| `kb_embedding_task` | **已废弃** |
+| `kb_layer_processing_job` | pathy 层文件异步处理任务（Prisma 已有，project-sql 增量待补齐） |
+
+**已从 project-sql 移除（自建向量路径废弃，Prisma 历史 migration 仍保留建表语句供旧库兼容）：**
+
+| 表名 | 说明 |
+|------|------|
+| `kb_data_source` | 已废弃，勿再写入 |
+| `kb_document` | 已废弃 |
+| `kb_chunk` | 已废弃（原平台内 contains/向量占位） |
+| `kb_embedding_task` | 已废弃 |
 
 管理后台与运行时通过 `shellder-agent-server` 的 `/api/v1/knowledge/*` 代理 pathy；问答召回统一 `POST /api/v1/dialogue/recall`。
 
@@ -40,9 +46,9 @@ mysql -u root -p shellder_agent < project-sql/12-knowledge-base/schema-pathy-bin
 
 ## 废弃表处理策略
 
-1. **不删表**：避免破坏已有迁移链与历史数据；新功能禁止写入 `kb_*` 子表。
-2. **可选清理**：确认无生产数据后，可手工 `TRUNCATE` 或后续单独 migration `DROP TABLE`（需评审）。
-3. **Prisma 模型**：暂保留以便兼容；代码侧 API 返回 `KNOWLEDGE_SELF_HOSTED_DEPRECATED`。
+1. **project-sql 不交付**：`kb_data_source` / `kb_document` / `kb_chunk` / `kb_embedding_task` 已从 `schema.sql` 移除；新库若走 SQL 全量脚本不再创建上述表。
+2. **Prisma 历史 migration 保留**：避免破坏已有迁移链；旧库若已存在上述表，可手工 `TRUNCATE` 或后续单独 migration `DROP TABLE`（需评审）。
+3. **Prisma 模型暂保留**：代码侧废弃 API 返回 `KNOWLEDGE_SELF_HOSTED_DEPRECATED`。
 
 ## 与 Prisma schema 的一致性
 

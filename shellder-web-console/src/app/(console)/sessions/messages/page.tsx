@@ -223,11 +223,11 @@ function MessageTimelineItem({ msg }: { msg: MessageItem }) {
           <div>
             <strong>工具：</strong>
             <Tag>{String(content.toolName)}</Tag>
-            {content.durationMs && (
-              <Typography.Text type="secondary">耗时 {content.durationMs}ms</Typography.Text>
-            )}
+            {content.durationMs ? (
+              <Typography.Text type="secondary">耗时 {String(content.durationMs)}ms</Typography.Text>
+            ) : null}
           </div>
-          {content.status && (
+          {content.status ? (
             <Tag
               className="mt-1"
               color={
@@ -236,7 +236,7 @@ function MessageTimelineItem({ msg }: { msg: MessageItem }) {
             >
               {String(content.status)}
             </Tag>
-          )}
+          ) : null}
         </div>
       ) : (
         <div className="whitespace-pre-wrap break-all rounded bg-gray-50 px-3 py-2 text-xs">

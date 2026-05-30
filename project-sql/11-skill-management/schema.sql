@@ -1,10 +1,13 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- ================================================================
 -- 阶段 11 — 技能书管理（功能清单 §1.5A / 架构 Skill Management）
 -- 依赖：01-bootstrap, 02-tenant-management, 07-tool-registry, 10-capability-routing
 -- ================================================================
 
 -- 技能书主表
-CREATE TABLE IF NOT EXISTS `skill` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`skill` (
   `id`                     CHAR(36)     NOT NULL,
   `tenant_id`              CHAR(36)     NOT NULL,
   `code`                   VARCHAR(64)  NOT NULL,
@@ -37,10 +40,10 @@ CREATE TABLE IF NOT EXISTS `skill` (
   INDEX `idx_skill_risk_level` (`risk_level`),
   INDEX `idx_skill_tenant_cap_status` (`tenant_id`, `capability_type`, `status`),
   CONSTRAINT `fk_skill_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='技能书';
 
 -- 技能书触发示例
-CREATE TABLE IF NOT EXISTS `skill_trigger` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_trigger` (
   `id`           CHAR(36)     NOT NULL,
   `skill_id`     CHAR(36)     NOT NULL,
   `trigger_text` VARCHAR(512) NOT NULL,
@@ -49,10 +52,10 @@ CREATE TABLE IF NOT EXISTS `skill_trigger` (
   PRIMARY KEY (`id`),
   INDEX `idx_skill_trigger_skill_id` (`skill_id`),
   CONSTRAINT `fk_skill_trigger_skill` FOREIGN KEY (`skill_id`) REFERENCES `skill` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='技能书触发示例';
 
 -- 技能书绑定关系
-CREATE TABLE IF NOT EXISTS `skill_binding` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_binding` (
   `id`           CHAR(36)    NOT NULL,
   `skill_id`     CHAR(36)    NOT NULL,
   `binding_type` VARCHAR(32) NOT NULL,
@@ -62,10 +65,10 @@ CREATE TABLE IF NOT EXISTS `skill_binding` (
   PRIMARY KEY (`id`),
   INDEX `idx_skill_binding_skill_id` (`skill_id`),
   CONSTRAINT `fk_skill_binding_skill` FOREIGN KEY (`skill_id`) REFERENCES `skill` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='技能书绑定关系';
 
 -- 技能书执行记录
-CREATE TABLE IF NOT EXISTS `skill_execution_log` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_execution_log` (
   `id`              CHAR(36)      NOT NULL,
   `skill_id`        CHAR(36)      NOT NULL,
   `session_id`      CHAR(36)      DEFAULT NULL,
@@ -88,4 +91,4 @@ CREATE TABLE IF NOT EXISTS `skill_execution_log` (
   INDEX `idx_sel_started_at` (`started_at`),
   CONSTRAINT `fk_sel_skill` FOREIGN KEY (`skill_id`) REFERENCES `skill` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `fk_sel_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='技能书执行记录';

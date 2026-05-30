@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- ================================================================
 -- 阶段 16 — 会话管理与调试台（Phase 16 / project-sql/17-session-debug-console）
 -- 功能清单 §1.2 完整 Web（详情、消息、调试台）

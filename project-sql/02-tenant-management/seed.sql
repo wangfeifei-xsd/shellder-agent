@@ -1,8 +1,11 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 02 — 租户管理 种子数据
 -- 提供一个默认演示租户，便于后续模块（用户、连接器、工具等）在本地选择已存在且 enabled 的 tenant.id。
 -- 幂等：按 code 唯一键 upsert；id 固定，方便跨环境引用。
 
-INSERT INTO `tenant`
+INSERT INTO `agent_platform`.`tenant`
     (`id`, `code`, `name`, `status`, `external_tenant_id`, `config`, `admin_user_id`, `remark`, `created_at`, `updated_at`)
 VALUES (
     '00000000-0000-0000-0000-000000000001',

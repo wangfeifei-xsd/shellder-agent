@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 06 — 连接器管理
 -- 依赖：02-tenant-management（connector.tenant_id → tenant.id）、
 --      03-user-rbac（connector 菜单权限、connector.manage 模块权限）、
@@ -20,7 +23,7 @@
 --    最近一次测试快照冗余存于 last_test_* 字段，供列表 / 详情直接展示。
 
 -- CreateTable：外部连接器配置（按租户）
-CREATE TABLE `connector` (
+CREATE TABLE `agent_platform`.`connector` (
     `id`                   CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`            CHAR(36)     NOT NULL COMMENT '所属租户，→ tenant.id',
     `name`                 VARCHAR(128) NOT NULL COMMENT '连接器名称',
@@ -44,11 +47,11 @@ CREATE TABLE `connector` (
     INDEX `connector_status_idx` (`status`),
     INDEX `connector_tenant_id_type_status_idx` (`tenant_id`, `type`, `status`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='外部连接器配置';
 
 -- AddForeignKey
-ALTER TABLE `connector` ADD CONSTRAINT `connector_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`connector` ADD CONSTRAINT `connector_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- config JSON 约定结构（应用层维护，DB 不强约束）：
 -- {

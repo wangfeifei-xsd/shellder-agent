@@ -46,12 +46,12 @@
 ## 执行顺序
 
 ```bash
-mysql -u root -p shellder_agent < project-sql/14-business-capabilities/schema.sql
+mysql -u root -p < project-sql/14-business-capabilities/schema.sql
 ```
 
 ## 注意事项
 
-- schema.sql 使用 `CREATE INDEX IF NOT EXISTS`，可重复执行
+- schema.sql 通过 `information_schema` 判断索引是否存在后再创建，可重复执行（MySQL 不支持 `CREATE INDEX IF NOT EXISTS`）
 - 上述组合索引**未**写入 `schema.prisma`（仅 project-sql / Prisma migration 增量存在）；若需 Prisma 完全感知，可后续在 Task 模型上补 `@@index([capabilityType, status, createdAt(sort: Desc)])`
 - 本阶段核心交付为代码层实现（四个 Capability Handler），SQL 层变更极少
 - 不修改前序表结构；仅添加辅助索引

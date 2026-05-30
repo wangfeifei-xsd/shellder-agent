@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- ================================================================
 -- 阶段 19 — 嵌入式 Copilot（Phase 19 / project-sql/20-embedded-copilot）
 -- 功能清单 §2 / 架构 §4.1 接入层
@@ -13,7 +16,7 @@
 -- 4. copilot_config 控制嵌入域名白名单、主题、功能开关等。
 
 -- Copilot 嵌入配置（每个 OpenAPI 应用可关联一份 Copilot 配置）
-CREATE TABLE IF NOT EXISTS `copilot_config` (
+CREATE TABLE IF NOT EXISTS `agent_platform`.`copilot_config` (
   `id`                   CHAR(36)     NOT NULL COMMENT '主键',
   `tenant_id`            CHAR(36)     NOT NULL COMMENT '所属租户 → tenant.id',
   `app_id`               CHAR(36)     NOT NULL COMMENT '关联 OpenAPI 应用 → openapi_app.id',
@@ -35,7 +38,7 @@ CREATE TABLE IF NOT EXISTS `copilot_config` (
   INDEX `copilot_config_status_idx` (`status`),
 
   CONSTRAINT `copilot_config_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT `copilot_config_app_id_fkey`
-    FOREIGN KEY (`app_id`) REFERENCES `openapi_app`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    FOREIGN KEY (`app_id`) REFERENCES `agent_platform`.`openapi_app`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='嵌入式 Copilot 配置';

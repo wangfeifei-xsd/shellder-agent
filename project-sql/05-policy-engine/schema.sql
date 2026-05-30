@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 05 — 策略引擎与规则配置
 -- 依赖：02-tenant-management（rule.tenant_id / rule_hit.tenant_id → tenant.id）、
 --      03-user-rbac（knowledge 菜单权限、rule.manage 模块权限；命中留痕 caller_user_id 取自 user）、
@@ -16,7 +19,7 @@
 -- 6. 不包含 SQL 表白名单、行数限制等（属 SQL 查询工具配置，执行计划 §8 / §4.2「不包含」）。
 
 -- CreateTable：显式规则配置（按租户）
-CREATE TABLE `rule` (
+CREATE TABLE `agent_platform`.`rule` (
     `id`          CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`   CHAR(36)     NOT NULL COMMENT '所属租户，→ tenant.id',
     `name`        VARCHAR(128) NOT NULL COMMENT '规则名称',
@@ -36,10 +39,10 @@ CREATE TABLE `rule` (
     INDEX `rule_status_idx` (`status`),
     INDEX `rule_tenant_id_status_priority_idx` (`tenant_id`, `status`, `priority`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='策略规则配置';
 
 -- CreateTable：规则命中记录
-CREATE TABLE `rule_hit` (
+CREATE TABLE `agent_platform`.`rule_hit` (
     `id`              CHAR(36)     NOT NULL COMMENT '主键',
     `rule_id`         CHAR(36)     NULL COMMENT '命中规则 → rule.id；规则删除后置空，保留快照',
     `tenant_id`       CHAR(36)     NOT NULL COMMENT '所属租户，→ tenant.id',
@@ -61,15 +64,15 @@ CREATE TABLE `rule_hit` (
     INDEX `rule_hit_task_id_idx` (`task_id`),
     INDEX `rule_hit_created_at_idx` (`created_at`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='策略规则命中记录';
 
 -- AddForeignKey
-ALTER TABLE `rule` ADD CONSTRAINT `rule_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE `rule_hit` ADD CONSTRAINT `rule_hit_rule_id_fkey`
-    FOREIGN KEY (`rule_id`) REFERENCES `rule`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-ALTER TABLE `rule_hit` ADD CONSTRAINT `rule_hit_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`rule` ADD CONSTRAINT `rule_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`rule_hit` ADD CONSTRAINT `rule_hit_rule_id_fkey`
+    FOREIGN KEY (`rule_id`) REFERENCES `agent_platform`.`rule`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`rule_hit` ADD CONSTRAINT `rule_hit_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- conditions JSON 约定结构（应用层维护，DB 不强约束）：
 -- {

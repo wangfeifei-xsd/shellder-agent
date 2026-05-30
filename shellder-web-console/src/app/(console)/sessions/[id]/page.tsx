@@ -314,19 +314,19 @@ function RoutingResultView({ content }: { content: Record<string, unknown> }) {
           '—'
         )}
       </div>
-      {content.capabilityName && (
+      {content.capabilityName ? (
         <div className="mb-1">
           <strong>能力名称：</strong>{String(content.capabilityName)}
         </div>
-      )}
-      {content.reason && (
+      ) : null}
+      {content.reason ? (
         <div className="mb-1">
           <strong>路由原因：</strong>{String(content.reason)}
         </div>
-      )}
-      {content.needConfirmation && (
+      ) : null}
+      {content.needConfirmation ? (
         <Tag color="orange" className="mt-1">需人工确认</Tag>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -337,11 +337,11 @@ function ConfirmRequiredView({ content }: { content: Record<string, unknown> }) 
       <div className="mb-1">
         <strong>确认原因：</strong>{String(content.reason ?? '—')}
       </div>
-      {content.capabilityType && (
+      {content.capabilityType ? (
         <div>
           <strong>能力类型：</strong>{String(content.capabilityType)}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -349,17 +349,17 @@ function ConfirmRequiredView({ content }: { content: Record<string, unknown> }) 
 function ToolMessageView({ content }: { content: Record<string, unknown> }) {
   return (
     <div className="rounded border border-orange-200 bg-orange-50 px-3 py-2 text-xs">
-      {content.toolName && (
+      {content.toolName ? (
         <div className="mb-1">
           <strong>工具：</strong>
           <Tag>{String(content.toolName)}</Tag>
-          {content.durationMs && (
+          {content.durationMs ? (
             <Typography.Text type="secondary" className="ml-2">
-              耗时 {content.durationMs}ms
+              耗时 {String(content.durationMs)}ms
             </Typography.Text>
-          )}
+          ) : null}
         </div>
-      )}
+      ) : null}
       {content.input !== undefined && (
         <div className="mb-1">
           <strong>入参：</strong>
@@ -380,7 +380,7 @@ function ToolMessageView({ content }: { content: Record<string, unknown> }) {
           </pre>
         </div>
       )}
-      {content.status && (
+      {content.status ? (
         <Tag
           color={
             content.status === 'success' ? 'green' : content.status === 'denied' ? 'red' : 'orange'
@@ -388,12 +388,12 @@ function ToolMessageView({ content }: { content: Record<string, unknown> }) {
         >
           {String(content.status)}
         </Tag>
-      )}
-      {!content.toolName && (
+      ) : null}
+      {!content.toolName ? (
         <pre className="max-h-32 overflow-auto rounded bg-white p-2">
           {JSON.stringify(content, null, 2)}
         </pre>
-      )}
+      ) : null}
     </div>
   );
 }

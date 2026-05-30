@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCopilotConfigDto, UpdateCopilotConfigDto } from './dto/copilot-config.dto';
 import { AuthUser } from '../auth/jwt.types';
@@ -43,8 +44,12 @@ export class CopilotConfigService {
         appId: dto.appId,
         name: dto.name,
         domainWhitelist: dto.domainWhitelist ?? [],
-        theme: dto.theme ?? {},
-        features: dto.features ?? { enableHistory: true, enableTask: true, enableConfirmation: true },
+        theme: (dto.theme ?? {}) as unknown as Prisma.InputJsonValue,
+        features: (dto.features ?? {
+          enableHistory: true,
+          enableTask: true,
+          enableConfirmation: true,
+        }) as unknown as Prisma.InputJsonValue,
         welcomeMessage: dto.welcomeMessage ?? null,
         placeholder: dto.placeholder ?? null,
         maxHistoryMessages: dto.maxHistoryMessages ?? 50,
@@ -77,12 +82,12 @@ export class CopilotConfigService {
     const config = await this.getOrThrow(id);
     await this.assertTenantAccess(user, config.tenantId);
 
-    const data: Record<string, unknown> = {};
+    const data: Prisma.CopilotConfigUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.domainWhitelist !== undefined) data.domainWhitelist = dto.domainWhitelist;
-    if (dto.theme !== undefined) data.theme = dto.theme;
-    if (dto.features !== undefined) data.features = dto.features;
+    if (dto.theme !== undefined) data.theme = dto.theme as unknown as Prisma.InputJsonValue;
+    if (dto.features !== undefined) data.features = dto.features as unknown as Prisma.InputJsonValue;
     if (dto.welcomeMessage !== undefined) data.welcomeMessage = dto.welcomeMessage;
     if (dto.placeholder !== undefined) data.placeholder = dto.placeholder;
     if (dto.maxHistoryMessages !== undefined) data.maxHistoryMessages = dto.maxHistoryMessages;

@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 07 — 工具注册与工具管理：初始化数据
 --
 -- 本模块无平台级初始化数据：

@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- ================================================================
 -- 阶段 12 — Agent 运行时与流式响应（Phase 12）
 -- 功能清单 §4.5 Agent Runtime / 架构 §4.2 / 执行计划 §4
@@ -11,7 +14,7 @@
 -- Agent Runtime 运行时数据流经已有的 session、message、task 表。
 
 -- 为 session.status 枚举新增 pending_confirm
-ALTER TABLE `session`
+ALTER TABLE `agent_platform`.`session`
   MODIFY COLUMN `status` ENUM(
     'active',
     'completed',
@@ -21,7 +24,7 @@ ALTER TABLE `session`
   ) NOT NULL DEFAULT 'active';
 
 -- 为 task.status 枚举新增 pending_confirm
-ALTER TABLE `task`
+ALTER TABLE `agent_platform`.`task`
   MODIFY COLUMN `status` ENUM(
     'pending',
     'running',

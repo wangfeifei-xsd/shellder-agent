@@ -1,3 +1,6 @@
+-- 目标库: agent_platform
+USE `agent_platform`;
+
 -- 模块 07 — 工具注册与工具管理
 -- 依赖：02-tenant-management（tool.tenant_id → tenant.id）、
 --      03-user-rbac（tool 菜单权限、tool.manage 模块权限；权限范围 permission_scope 配合 role.tool_scopes）、
@@ -27,7 +30,7 @@
 -- 8. tenant_id 外键 ON DELETE RESTRICT，与审计 / 规则 / 连接器一致；平台内租户只禁用不删除。
 
 -- CreateTable：Tool 注册元数据（按租户）
-CREATE TABLE `tool` (
+CREATE TABLE `agent_platform`.`tool` (
     `id`               CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`        CHAR(36)     NOT NULL COMMENT '所属租户，→ tenant.id',
     `name`             VARCHAR(128) NOT NULL COMMENT 'Tool 名称（租户内唯一）',
@@ -56,13 +59,13 @@ CREATE TABLE `tool` (
     INDEX `tool_tenant_id_type_status_idx` (`tenant_id`, `type`, `status`),
     UNIQUE INDEX `tool_tenant_id_name_key` (`tenant_id`, `name`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='工具注册元数据';
 
 -- AddForeignKey
-ALTER TABLE `tool` ADD CONSTRAINT `tool_tenant_id_fkey`
-    FOREIGN KEY (`tenant_id`) REFERENCES `tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-ALTER TABLE `tool` ADD CONSTRAINT `tool_connector_id_fkey`
-    FOREIGN KEY (`connector_id`) REFERENCES `connector`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`tool` ADD CONSTRAINT `tool_tenant_id_fkey`
+    FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE `agent_platform`.`tool` ADD CONSTRAINT `tool_connector_id_fkey`
+    FOREIGN KEY (`connector_id`) REFERENCES `agent_platform`.`connector`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- config JSON 约定结构（应用层维护，DB 不强约束）：
 -- {
