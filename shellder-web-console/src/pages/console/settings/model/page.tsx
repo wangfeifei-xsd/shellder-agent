@@ -13,6 +13,7 @@ import {
   Typography,
 } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { type ConfigMap, batchUpsertConfigs, getAllConfigs } from '@/lib/system-settings';
 
 export default function ModelSettingsPage() {
@@ -77,6 +78,11 @@ export default function ModelSettingsPage() {
   return (
     <>
       <Typography.Title level={3}>模型与响应配置</Typography.Title>
+      <Typography.Paragraph type="secondary" className="max-w-2xl">
+        编排层流式开关、重试与能力响应模板。上游 LLM（Base URL / API Key）请在
+        <Link to="/settings/llm"> 模型接入 </Link>
+        中配置。
+      </Typography.Paragraph>
 
       <Card className="max-w-2xl">
         <Form form={form} layout="vertical">

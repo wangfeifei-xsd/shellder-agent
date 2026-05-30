@@ -52,6 +52,7 @@ const CopilotAdminPage = lazy(() => import('@/pages/console/copilot-admin/page')
 const CopilotPreviewPage = lazy(() => import('@/pages/console/copilot-admin/preview/page'));
 const BasicSettingsPage = lazy(() => import('@/pages/console/settings/page'));
 const ModelSettingsPage = lazy(() => import('@/pages/console/settings/model/page'));
+const LlmIntegrationPage = lazy(() => import('@/pages/console/settings/llm/page'));
 const NotificationSettingsPage = lazy(() => import('@/pages/console/settings/notification/page'));
 
 export const appRoutes: RouteObject[] = [
@@ -112,6 +113,7 @@ export const appRoutes: RouteObject[] = [
       { path: 'copilot-admin', element: <CopilotAdminPage /> },
       { path: 'copilot-admin/preview', element: <CopilotPreviewPage /> },
       { path: 'settings', element: <BasicSettingsPage /> },
+      { path: 'settings/llm', element: <LlmIntegrationPage /> },
       { path: 'settings/model', element: <ModelSettingsPage /> },
       { path: 'settings/notification', element: <NotificationSettingsPage /> },
     ],

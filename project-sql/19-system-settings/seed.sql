@@ -28,6 +28,18 @@ VALUES
   (UUID(), 'model', 'model.capabilityResponseTemplate', '{}',     '能力级响应模板（JSON）')
 ON DUPLICATE KEY UPDATE `agent_platform`.`config_value` = VALUES(`config_value`);
 
+-- ── 模型接入（OpenAI 兼容，实施规格 §4）────────────────────
+
+INSERT INTO `agent_platform`.`system_config` (`id`, `config_group`, `config_key`, `config_value`, `description`)
+VALUES
+  (UUID(), 'llm', 'llm.baseUrl',      '',                  'LLM Base URL（OpenAI 兼容）'),
+  (UUID(), 'llm', 'llm.model',        '',                  'LLM 模型 ID'),
+  (UUID(), 'llm', 'llm.timeoutMs',    '60000',             'LLM Chat 单次超时（毫秒）'),
+  (UUID(), 'llm', 'llm.maxTokens',    '4096',              'LLM max_tokens'),
+  (UUID(), 'llm', 'llm.apiKeyCipher', '',                  'LLM API Key（AES-GCM 加密）'),
+  (UUID(), 'llm', 'llm.chatPath',     'v1/chat/completions', 'Chat Completions 相对路径')
+ON DUPLICATE KEY UPDATE `agent_platform`.`config_value` = VALUES(`config_value`);
+
 -- ── 通知配置 ──────────────────────────────────────────────
 
 INSERT INTO `agent_platform`.`system_config` (`id`, `config_group`, `config_key`, `config_value`, `description`)

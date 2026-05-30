@@ -282,6 +282,24 @@ export function dialogueRecallTest(
   });
 }
 
+/** 与 Runtime 一致：pathy recall + 平台 LLM */
+export function dialogueQaPreview(
+  tenantId: string,
+  body: {
+    query: string;
+    wiki_prefix?: string;
+    top_k_chunks?: number;
+    bm25_top_n?: number;
+    vector_top_n?: number;
+    system_prompt?: string;
+  },
+) {
+  return proxyFetch<DialogueRecallTestResponse>('/dialogue/qa-preview', tenantId, {
+    method: 'POST',
+    body,
+  });
+}
+
 // ── media ───────────────────────────────────────────────────
 
 export function listMediaItems(tenantId: string) {

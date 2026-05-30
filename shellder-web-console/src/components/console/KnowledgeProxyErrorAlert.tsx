@@ -3,6 +3,7 @@
 import { Alert } from 'antd';
 import { ApiError } from '@/lib/api';
 import { isKnowledgeProxyError } from '@/lib/knowledge-proxy';
+import { isLlmError } from '@/lib/llm-settings';
 
 interface Props {
   error: unknown;
@@ -36,6 +37,28 @@ function formatErrorDetails(details: unknown): string[] {
 /** 知识库 pathy 代理不可用时的明确提示（执行计划 §7.4） */
 export function KnowledgeProxyErrorAlert({ error, className }: Props) {
   if (!error) return null;
+
+  if (isLlmError(error)) {
+    const isNotConfigured = error.code === 'LLM_NOT_CONFIGURED';
+    return (
+      <Alert
+        className={className}
+        type="error"
+        showIcon
+        message={isNotConfigured ? '平台 LLM 未配置' : '模型调用失败'}
+        description={
+          <>
+            <p className="mb-1">{error.message}</p>
+            {isNotConfigured && (
+              <p className="mb-0 text-sm opacity-80">
+                请前往「系统设置 / 模型接入」配置 Base URL、模型 ID 与 API Key。
+              </p>
+            )}
+          </>
+        }
+      />
+    );
+  }
 
   if (isKnowledgeProxyError(error)) {
     const isUnavailable = error.code === 'KNOWLEDGE_PROXY_UNAVAILABLE';

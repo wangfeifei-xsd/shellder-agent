@@ -21,6 +21,7 @@ import { SkillModule } from './skill/skill.module';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 import { OpenApiModule } from './openapi/openapi.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
+import { LlmModule } from './llm/llm.module';
 import { CopilotModule } from './copilot/copilot.module';
 
 @Module({
@@ -47,6 +48,7 @@ import { CopilotModule } from './copilot/copilot.module';
     OpenApiModule,
     DashboardModule,
     SystemSettingsModule,
+    LlmModule,
     CopilotModule,
   ],
 })

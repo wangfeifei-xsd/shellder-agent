@@ -15,13 +15,15 @@ import {
 } from 'antd';
 import { App } from 'antd';
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { KnowledgeProxyErrorAlert } from '@/components/console/KnowledgeProxyErrorAlert';
 import {
   DialogueRecallTestResponse,
-  dialogueRecallTest,
+  dialogueQaPreview,
   isKnowledgeProxyError,
 } from '@/lib/knowledge-proxy';
+import { isLlmError } from '@/lib/llm-settings';
 
 export default function KnowledgeRecallTestPage() {
   const { message } = App.useApp();
@@ -49,7 +51,7 @@ export default function KnowledgeRecallTestPage() {
     setProxyError(undefined);
     setResult(undefined);
     try {
-      const res = await dialogueRecallTest(activeTenantId, {
+      const res = await dialogueQaPreview(activeTenantId, {
         query: query.trim(),
         top_k_chunks: topK,
         bm25_top_n: bm25TopN,
@@ -59,7 +61,7 @@ export default function KnowledgeRecallTestPage() {
       });
       setResult(res);
     } catch (err) {
-      if (isKnowledgeProxyError(err)) setProxyError(err);
+      if (isKnowledgeProxyError(err) || isLlmError(err)) setProxyError(err);
       else message.error(err instanceof Error ? err.message : '问答测试失败');
     } finally {
       setSearching(false);
@@ -76,12 +78,18 @@ export default function KnowledgeRecallTestPage() {
 
       {!activeTenantId ? (
         <Alert type="warning" showIcon message="请先在顶栏选择「当前操作租户」"
-          description="问答测试按租户隔离，调用平台代理 pathy recall-test 接口（召回 + LLM 回答）。" />
+          description="问答测试按租户隔离：Step1 pathy 召回 → Step2 平台 LLM 生成回答（与 Runtime 一致）。" />
       ) : (
         <>
           <Alert className="mb-4" type="info" showIcon
             message={`当前租户：${activeTenantName ?? activeTenantId}`}
-            description="输入自然语言问题，查看召回命中列表与模型最终回答。与运行时共用 hybrid_bm25_vector 召回链路。"
+            description={
+              <>
+                两阶段与问答型 Runtime 相同：pathy <code>dialogue/recall</code> 仅召回，
+                最终回答由<Link to="/settings/llm"> 平台模型接入 </Link>配置的 LLM 生成。
+                未配置 LLM 时将返回明确错误，不会回退 pathy recall-test。
+              </>
+            }
           />
           {proxyError && <KnowledgeProxyErrorAlert error={proxyError} className="mb-4" />}
 
@@ -115,9 +123,9 @@ export default function KnowledgeRecallTestPage() {
                       placeholder="如 notes/" style={{ width: 200 }} />
                   </div>
                   <div>
-                    <Typography.Text type="secondary" className="block mb-1">System Prompt</Typography.Text>
+                    <Typography.Text type="secondary" className="block mb-1">System Prompt 覆盖</Typography.Text>
                     <Input.TextArea rows={2} value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="可选" style={{ width: 320 }} />
+                      placeholder="可选；留空使用平台默认 QA 提示词" style={{ width: 320 }} />
                   </div>
                 </Space>
               ),
@@ -131,7 +139,7 @@ export default function KnowledgeRecallTestPage() {
           {result && (
             <div className="space-y-4">
               {result.assistant_reply && (
-                <Card title="模型回答" size="small">
+                <Card title="平台 LLM 回答" size="small">
                   {result.model && (
                     <Typography.Text type="secondary" className="block mb-2">模型：{result.model}</Typography.Text>
                   )}
@@ -152,7 +160,7 @@ export default function KnowledgeRecallTestPage() {
               </Typography.Title>
 
               {(result.recall_hits?.length ?? 0) === 0 ? (
-                <Empty description="未召回任何片段" />
+                <Empty description="未召回任何片段（仍由平台 LLM 生成礼貌说明）" />
               ) : (
                 <div className="space-y-3">
                   {result.recall_hits.map((hit, i) => (

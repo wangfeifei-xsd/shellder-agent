@@ -176,12 +176,12 @@ npm run prisma:migrate       # 部署（migrate deploy）
 - [x] **11** 技能书管理 — `skill`/`skill_trigger`/`skill_binding`/`skill_execution_log`、`/api/v1/skills`、页面 `/skills/*`
 - [x] **11A** 知识库代理与知识库管理 — `knowledge_base` 租户绑定、`/api/v1/knowledge/*` 代理 pathy、`/api/v1/knowledge-bases`、页面 `/knowledge/*`（`project-sql/12-knowledge-base`）[^02][^08]
 - [x] **12** Agent 运行时与流式响应 — `session`/`task` 枚举 `pending_confirm`、`/api/v1/sessions/:id/messages`·`/stream`·`/confirm`、SSE 事件（`project-sql/13-agent-runtime`）[^04]
-- [x] **13** 四类业务能力 — qa/query/action/workflow Handler 编排、`task` 进度索引（`project-sql/14-business-capabilities`）[^05]
+- [x] **13** 四类业务能力 — qa/query/action/workflow Handler 编排、`task` 进度索引（`project-sql/14-business-capabilities`）[^05]；问答型 **pathy recall + 平台 LLM 两阶段**
 - [x] **14** 审批中心 — `approval` 表、`/api/v1/approvals`、`ApprovalRuntimeService` 断点恢复、页面 `/approvals/*`（`project-sql/15-approval-center`）[^04]
 - [x] **15** OpenAPI 对外接口与管理 — `openapi_app`/`openapi_call_log`、`/openapi/v1/*`·`/api/v1/openapi-apps`、页面 `/openapi/*`（`project-sql/16-openapi`）[^03]
 - [x] **16** 会话管理与调试台 — 无新表、调试 API、页面 `/sessions/[id]`·`/sessions/messages`·`/sessions/debug`（`project-sql/17-session-debug-console`）
 - [x] **17** 工作台 — 无新表、`GET /api/v1/dashboard/summary`、首页 `/`（`project-sql/18-workbench`）
-- [x] **18** 系统设置 — `system_config`/`notification_template`、`/api/v1/system-settings`、页面 `/settings/*`（`project-sql/19-system-settings`）
+- [x] **18** 系统设置 — `system_config`/`notification_template`、`/api/v1/system-settings`、页面 `/settings/*`（`project-sql/19-system-settings`）；**模型接入** `GET/PUT/POST /api/v1/settings/llm` + `/settings/llm`（平台 OpenAI 兼容 LLM，不代理 pathy settings/llm）
 - [x] **19** 嵌入式 Copilot — `copilot_config` 表、`/api/v1/copilot/configs`·`/copilot/v1/*`、嵌入页 `/copilot`·`/copilot-admin/*`（`project-sql/20-embedded-copilot`）[^06]
 
 **Prisma 迁移**：`shellder-agent-server/prisma/migrations/` 已覆盖 01–07 基线及 08–20 对应增量（含 `knowledge_pathy_binding`、`kb_layer_processing_job`）；空库 `npm run prisma:migrate` 验收见 [remediation/01](../prompt/remediation/01-补齐-prisma-migrations.md)。[^01]

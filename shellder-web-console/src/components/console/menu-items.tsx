@@ -204,6 +204,7 @@ export const consoleMenuItems: MenuProps['items'] = [
     label: '系统设置',
     children: [
       { key: '/settings', label: <Link to="/settings">基础配置</Link> },
+      { key: '/settings/llm', label: <Link to="/settings/llm">模型接入</Link> },
       { key: '/settings/model', label: <Link to="/settings/model">模型与响应配置</Link> },
       { key: '/settings/notification', label: <Link to="/settings/notification">通知配置</Link> },
     ],

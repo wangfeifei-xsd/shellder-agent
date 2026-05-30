@@ -1,9 +1,12 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { KnowledgeModule } from '../knowledge/knowledge.module';
+import { LlmModule } from '../llm/llm.module';
 import { AuditModule } from '../audit/audit.module';
 import { ToolModule } from '../tool/tool.module';
 import { QaCapabilityHandler } from './qa.handler';
+import { QaPipelineService } from './qa-pipeline.service';
+import { QaPreviewController } from './qa-preview.controller';
 import { QueryCapabilityHandler } from './query.handler';
 import { ActionCapabilityHandler } from './action.handler';
 import { WorkflowCapabilityHandler } from './workflow.handler';
@@ -18,8 +21,10 @@ import { SqlToolService } from '../tool/sql-tool.service';
  * 替换 Phase 12 的 Mock 骨架。
  */
 @Module({
-  imports: [PrismaModule, KnowledgeModule, AuditModule, ToolModule],
+  imports: [PrismaModule, KnowledgeModule, LlmModule, AuditModule, ToolModule],
+  controllers: [QaPreviewController],
   providers: [
+    QaPipelineService,
     QaCapabilityHandler,
     QueryCapabilityHandler,
     ActionCapabilityHandler,
@@ -27,6 +32,7 @@ import { SqlToolService } from '../tool/sql-tool.service';
     SqlToolService,
   ],
   exports: [
+    QaPipelineService,
     QaCapabilityHandler,
     QueryCapabilityHandler,
     ActionCapabilityHandler,
