@@ -115,6 +115,10 @@ export const consoleMenuItems: MenuProps['items'] = [
       { key: '/rules', label: <Link href="/rules">规则配置</Link> },
       { key: '/rule-hits', label: <Link href="/rule-hits">规则命中记录</Link> },
       { key: '/knowledge', label: <Link href="/knowledge">知识库管理</Link> },
+      { key: '/knowledge/layers', label: <Link href="/knowledge/layers">知识层管理</Link> },
+      { key: '/knowledge/structure', label: <Link href="/knowledge/structure">存储结构</Link> },
+      { key: '/knowledge/media', label: <Link href="/knowledge/media">媒体库</Link> },
+      { key: '/knowledge/recall-test', label: <Link href="/knowledge/recall-test">问答测试</Link> },
     ],
   },
   {

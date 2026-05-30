@@ -1,6 +1,7 @@
 import { forwardRef, Global, Module } from '@nestjs/common';
 import { AgentRuntimeModule } from '../agent-runtime/agent-runtime.module';
 import { AuditModule } from '../audit/audit.module';
+import { JobQueueModule } from '../job-queue/job-queue.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TaskModule } from '../task/task.module';
 import { ApprovalRuntimeService } from './approval-runtime.service';
@@ -17,6 +18,7 @@ import { ApprovalService } from './approval.service';
 @Module({
   imports: [
     PrismaModule,
+    JobQueueModule,
     AuditModule,
     forwardRef(() => AgentRuntimeModule),
     forwardRef(() => TaskModule),

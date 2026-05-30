@@ -1,7 +1,18 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
 import { TaskExecutionClient } from '../task/task-execution.client';
-import { PLACEHOLDER_QUEUE, TASK_QUEUE, TASK_TIMEOUT_QUEUE } from './queue.constants';
+import {
+  DOCUMENT_PROCESSING_QUEUE,
+  NOTIFICATION_QUEUE,
+  PLACEHOLDER_QUEUE,
+  TASK_QUEUE,
+  TASK_TIMEOUT_QUEUE,
+} from './queue.constants';
+import { DocumentProcessingProcessor } from './document-processing.processor';
+import { NotificationProcessor } from './notification.processor';
+import { NotificationSenderService } from '../notification/notification-sender.service';
+import { PathyClientService } from '../pathy/pathy-client.service';
+import { TenantScopeService } from '../pathy/tenant-scope.service';
 import { PlaceholderProcessor } from './placeholder.processor';
 import { TaskProcessor } from './task.processor';
 import { TaskTimeoutProcessor } from './task-timeout.processor';
@@ -13,6 +24,8 @@ import { TaskTimeoutScheduler } from './task-timeout.scheduler';
       { name: PLACEHOLDER_QUEUE },
       { name: TASK_QUEUE },
       { name: TASK_TIMEOUT_QUEUE },
+      { name: NOTIFICATION_QUEUE },
+      { name: DOCUMENT_PROCESSING_QUEUE },
     ),
   ],
   providers: [
@@ -20,6 +33,11 @@ import { TaskTimeoutScheduler } from './task-timeout.scheduler';
     TaskProcessor,
     TaskTimeoutProcessor,
     TaskTimeoutScheduler,
+    NotificationProcessor,
+    DocumentProcessingProcessor,
+    NotificationSenderService,
+    PathyClientService,
+    TenantScopeService,
     TaskExecutionClient,
   ],
   exports: [BullModule],

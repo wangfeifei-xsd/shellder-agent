@@ -1,11 +1,10 @@
-import { BullModule } from '@nestjs/bullmq';
 import { Module, forwardRef } from '@nestjs/common';
 import { ApprovalModule } from '../approval/approval.module';
 import { AuditModule } from '../audit/audit.module';
 import { BusinessCapabilityModule } from '../business-capability/business-capability.module';
+import { JobQueueModule } from '../job-queue/job-queue.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ToolModule } from '../tool/tool.module';
-import { TASK_QUEUE } from './task-queue.constants';
 import { InternalTaskController } from './internal-task.controller';
 import { TaskController } from './task.controller';
 import { TaskExecutionService } from './task-execution.service';
@@ -26,20 +25,15 @@ import { WorkerTokenGuard } from './guards/worker-token.guard';
     ToolModule,
     forwardRef(() => ApprovalModule),
     BusinessCapabilityModule,
-    BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST ?? 'localhost',
-        port: Number(process.env.REDIS_PORT ?? 6379),
-        ...(process.env.REDIS_PASSWORD
-          ? { password: process.env.REDIS_PASSWORD }
-          : {}),
-        maxRetriesPerRequest: null,
-      },
-    }),
-    BullModule.registerQueue({ name: TASK_QUEUE }),
+    JobQueueModule,
   ],
   controllers: [TaskController, InternalTaskController],
-  providers: [TaskService, TaskQueueService, TaskExecutionService, WorkerTokenGuard],
+  providers: [
+    TaskService,
+    TaskQueueService,
+    TaskExecutionService,
+    WorkerTokenGuard,
+  ],
   exports: [TaskService, TaskQueueService, TaskExecutionService],
 })
 export class TaskModule {}

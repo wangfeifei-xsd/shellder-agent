@@ -18,7 +18,9 @@ import { Audit } from '../audit/decorators/audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
+import { DocumentProcessingQueueService } from '../job-queue/document-processing-queue.service';
 import { KnowledgeProxyService } from './knowledge-proxy.service';
+import { KnowledgeTenantScopeService } from './knowledge-tenant-scope.service';
 
 interface UploadedBinary {
   buffer: Buffer;
@@ -34,7 +36,11 @@ interface UploadedBinary {
 @Controller('api/v1/knowledge')
 @RequireMenu('knowledge')
 export class KnowledgeProxyController {
-  constructor(private readonly proxy: KnowledgeProxyService) {}
+  constructor(
+    private readonly proxy: KnowledgeProxyService,
+    private readonly tenantScope: KnowledgeTenantScopeService,
+    private readonly documentQueue: DocumentProcessingQueueService,
+  ) {}
 
   @Get('health')
   health() {
@@ -124,7 +130,21 @@ export class KnowledgeProxyController {
     });
     form.append('file', blob, file.originalname);
     if (path) form.append('path', path);
-    return this.proxy.uploadLayerFile(user, tenantId, layer, form);
+    const result = await this.proxy.uploadLayerFile(user, tenantId, layer, form);
+    const wikiPrefix = await this.tenantScope.resolveWikiPrefix(tenantId);
+    const scopedPath = path
+      ? this.tenantScope.scopeLayerPath(wikiPrefix, path)
+      : typeof (result as { path?: string })?.path === 'string'
+        ? (result as { path: string }).path
+        : null;
+    if (scopedPath) {
+      await this.documentQueue.scheduleAfterUpload({
+        tenantId,
+        layer,
+        inputPath: scopedPath,
+      });
+    }
+    return result;
   }
 
   @Get('layers/:layer/archive.zip')

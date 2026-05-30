@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { JobQueueModule } from '../job-queue/job-queue.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { KnowledgeController } from './knowledge.controller';
 import { KnowledgeService } from './knowledge.service';
@@ -14,7 +15,7 @@ import { KnowledgeTenantScopeService } from './knowledge-tenant-scope.service';
  * - 导出 KnowledgeProxyService 供问答型运行时召回
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, JobQueueModule],
   controllers: [KnowledgeController, KnowledgeProxyController],
   providers: [
     KnowledgeService,

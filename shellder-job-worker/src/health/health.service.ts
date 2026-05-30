@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { PLACEHOLDER_QUEUE } from '../queue/queue.constants';
+import {
+  DOCUMENT_PROCESSING_QUEUE,
+  NOTIFICATION_QUEUE,
+  PLACEHOLDER_QUEUE,
+  TASK_QUEUE,
+  TASK_TIMEOUT_QUEUE,
+} from '../queue/queue.constants';
 
 @Injectable()
 export class HealthService {
@@ -15,7 +21,13 @@ export class HealthService {
       status: 'ok',
       service: 'shellder-job-worker',
       redis: 'connected',
-      queues: [PLACEHOLDER_QUEUE],
+      queues: [
+        PLACEHOLDER_QUEUE,
+        TASK_QUEUE,
+        TASK_TIMEOUT_QUEUE,
+        NOTIFICATION_QUEUE,
+        DOCUMENT_PROCESSING_QUEUE,
+      ],
     };
   }
 }

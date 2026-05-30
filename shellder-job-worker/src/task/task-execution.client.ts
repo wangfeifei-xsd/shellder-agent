@@ -44,7 +44,20 @@ export class TaskExecutionClient {
     );
   }
 
-  private async post<T>(path: string): Promise<T> {
+  async notifyTaskCompleted(taskId: string): Promise<void> {
+    await this.post(`/internal/tasks/${taskId}/lifecycle/completed`);
+  }
+
+  async notifyTaskFailed(taskId: string, errorMessage?: string): Promise<void> {
+    await this.post(`/internal/tasks/${taskId}/lifecycle/failed`, {
+      errorMessage,
+    });
+  }
+
+  private async post<T = Record<string, unknown>>(
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
     if (!this.token) {
       throw new Error(
         'WORKER_INTERNAL_TOKEN 未配置，无法调用 agent-server 内网接口',
@@ -60,19 +73,22 @@ export class TaskExecutionClient {
         'Content-Type': 'application/json',
         'X-Worker-Token': this.token,
       },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
 
-    const body = await this.readBody(res);
+    const responseBody = await this.readBody(res);
 
     if (!res.ok) {
       const message =
-        typeof body === 'object' && body !== null && 'message' in body
-          ? String((body as { message: unknown }).message)
+        typeof responseBody === 'object' &&
+        responseBody !== null &&
+        'message' in responseBody
+          ? String((responseBody as { message: unknown }).message)
           : `HTTP ${res.status}`;
       throw new Error(`内网任务执行失败 (${path}): ${message}`);
     }
 
-    return body as T;
+    return responseBody as T;
   }
 
   private async readBody(res: Response): Promise<unknown> {

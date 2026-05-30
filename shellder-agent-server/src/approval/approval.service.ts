@@ -13,6 +13,7 @@ import { AuthUser } from '../auth/jwt.types';
 import { CreateApprovalDto } from './dto/create-approval.dto';
 import { QueryApprovalDto } from './dto/query-approval.dto';
 import { ReviewAction } from './dto/review-approval.dto';
+import { NotificationQueueService } from '../job-queue/notification-queue.service';
 import { ApprovalRuntimeService } from './approval-runtime.service';
 import { toApprovalView } from './approval.view';
 
@@ -38,6 +39,7 @@ export class ApprovalService {
     private readonly permissionService: PermissionService,
     @Inject(forwardRef(() => ApprovalRuntimeService))
     private readonly approvalRuntime: ApprovalRuntimeService,
+    private readonly notificationQueue: NotificationQueueService,
   ) {}
 
   /**
@@ -49,7 +51,7 @@ export class ApprovalService {
     const expiredAt = new Date();
     expiredAt.setHours(expiredAt.getHours() + DEFAULT_EXPIRE_HOURS);
 
-    return this.prisma.approval.create({
+    const approval = await this.prisma.approval.create({
       data: {
         tenantId: dto.tenantId,
         sessionId: dto.sessionId ?? null,
@@ -70,6 +72,20 @@ export class ApprovalService {
         expiredAt,
       },
     });
+
+    await this.notificationQueue.enqueueApprovalPending(
+      dto.tenantId,
+      approval.id,
+      {
+        actionType: approval.actionType,
+        actionSummary: approval.actionSummary ?? '',
+        initiatorName: approval.initiatorName ?? '',
+        approvalId: approval.id,
+      },
+      dto.taskId ?? undefined,
+    );
+
+    return approval;
   }
 
   /**

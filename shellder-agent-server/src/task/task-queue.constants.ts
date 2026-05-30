@@ -1,2 +1,1 @@
-export const TASK_QUEUE = 'shellder.task';
-export const TASK_TIMEOUT_QUEUE = 'shellder.task-timeout';
+export { TASK_QUEUE, TASK_TIMEOUT_QUEUE } from '../job-queue/job-queue.constants';

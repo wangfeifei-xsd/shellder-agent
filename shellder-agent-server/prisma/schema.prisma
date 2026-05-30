@@ -51,8 +51,9 @@ model Tenant {
   kbDataSources      KbDataSource[]
   kbDocuments        KbDocument[]
   kbChunks           KbChunk[]
-  kbEmbeddingTasks   KbEmbeddingTask[]
-  approvals          Approval[]
+  kbEmbeddingTasks       KbEmbeddingTask[]
+  kbLayerProcessingJobs  KbLayerProcessingJob[]
+  approvals              Approval[]
   openApiCallLogs    OpenApiCallLog[]
   copilotConfigs     CopilotConfig[]
 
@@ -1128,6 +1129,39 @@ model KbEmbeddingTask {
   @@index([status])
   @@index([createdAt])
   @@map("kb_embedding_task")
+}
+
+/// pathy 层文件异步处理任务（编译 raw→wiki、wiki 嵌入索引）
+enum KbLayerProcessingStatus {
+  queued
+  running
+  done
+  failed
+}
+
+model KbLayerProcessingJob {
+  id             String                  @id @default(uuid()) @db.Char(36)
+  tenantId       String                  @map("tenant_id") @db.Char(36)
+  layer          String                  @db.VarChar(32)
+  inputPath      String                  @map("input_path") @db.VarChar(512)
+  outputPath     String?                 @map("output_path") @db.VarChar(512)
+  operation      String                  @default("compile_and_embed") @db.VarChar(32)
+  status         KbLayerProcessingStatus @default(queued)
+  idempotencyKey String                  @unique @map("idempotency_key") @db.VarChar(256)
+  bullJobId      String?                 @map("bull_job_id") @db.VarChar(64)
+  errorMsg       String?                 @map("error_msg") @db.VarChar(1024)
+  result         Json?
+  startedAt      DateTime?               @map("started_at")
+  finishedAt     DateTime?               @map("finished_at")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("kb_layer_processing_job")
 }
 
 // ───────────────────────────────────────────────────────────

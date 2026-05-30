@@ -110,6 +110,7 @@ export class TaskProcessor extends WorkerHost {
           output: { steps: stepOutputs, stepCount: steps.length },
         });
         await this.addTaskLog(taskId, 'state_change', 'info', 'Worker 任务处理完成');
+        await this.notifyLifecycle(taskId, 'completed');
         return { success: true, taskId };
       }
 
@@ -135,6 +136,7 @@ export class TaskProcessor extends WorkerHost {
         output: (capResult.output as Record<string, unknown>) ?? { message: '任务执行完成' },
       });
       await this.addTaskLog(taskId, 'state_change', 'info', 'Worker 任务处理完成');
+      await this.notifyLifecycle(taskId, 'completed');
       return { success: true, taskId };
     } catch (error) {
       return this.handleTaskFailure(taskId, error);
@@ -272,7 +274,26 @@ export class TaskProcessor extends WorkerHost {
       throw error;
     }
 
+    await this.notifyLifecycle(taskId, 'failed', errMsg);
     return { success: false, taskId, error: errMsg };
+  }
+
+  /** 经 server 入队异步通知（失败不阻断任务状态） */
+  private async notifyLifecycle(
+    taskId: string,
+    event: 'completed' | 'failed',
+    errorMessage?: string,
+  ) {
+    try {
+      if (event === 'completed') {
+        await this.executionClient.notifyTaskCompleted(taskId);
+      } else {
+        await this.executionClient.notifyTaskFailed(taskId, errorMessage);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Lifecycle notification enqueue failed for ${taskId}: ${msg}`);
+    }
   }
 
   @OnWorkerEvent('failed')
