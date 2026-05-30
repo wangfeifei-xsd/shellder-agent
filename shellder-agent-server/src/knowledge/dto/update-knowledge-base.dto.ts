@@ -44,4 +44,9 @@ export class UpdateKnowledgeBaseDto {
   @IsEnum(['active', 'disabled'])
   @IsOptional()
   status?: 'active' | 'disabled';
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(256)
+  pathyWikiPrefix?: string;
 }

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AgentRuntimeModule } from '../agent-runtime/agent-runtime.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { OpenApiAppController, OpenApiCallLogController } from './openapi-app.controller';
 import { OpenApiAppService } from './openapi-app.service';
@@ -7,7 +8,7 @@ import { OpenApiCallLogService } from './openapi-call-log.service';
 import { OpenApiController } from './openapi.controller';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, AgentRuntimeModule],
   controllers: [
     OpenApiAppController,
     OpenApiCallLogController,

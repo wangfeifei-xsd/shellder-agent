@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   Get,
   Headers,
+  Logger,
   Param,
   Patch,
   Post,
@@ -16,8 +17,12 @@ import { Request, Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/jwt.types';
+import { AgentRuntimeService } from '../agent-runtime/agent-runtime.service';
+import { SseEvent } from '../agent-runtime/agent-runtime.types';
+import { SseEmitterService } from '../agent-runtime/sse-emitter.service';
+import { ApprovalRuntimeService } from '../approval/approval-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { CopilotAuthService } from './copilot-auth.service';
+import { CopilotAuthService, CopilotJwtPayload } from './copilot-auth.service';
 import { CopilotConfigService } from './copilot-config.service';
 import {
   CopilotTokenExchangeDto,
@@ -64,15 +69,22 @@ export class CopilotConfigController {
 }
 
 /**
- * Copilot 对外接口（嵌入页使用，换票后用 Copilot JWT 鉴权）
+ * Copilot 对外 BFF（嵌入页使用，换票后用 Copilot JWT 鉴权）。
+ * 会话/消息/SSE/确认/任务委托 AgentRuntimeService + ApprovalRuntimeService，
+ * 与 OpenAPI 行为对齐，鉴权独立（Copilot JWT）。
  * 路径前缀：/copilot/v1
  */
 @Controller('copilot/v1')
 @Public()
 export class CopilotWidgetController {
+  private readonly logger = new Logger(CopilotWidgetController.name);
+
   constructor(
     private readonly authService: CopilotAuthService,
     private readonly prisma: PrismaService,
+    private readonly approvalRuntime: ApprovalRuntimeService,
+    private readonly runtimeService: AgentRuntimeService,
+    private readonly sseEmitter: SseEmitterService,
   ) {}
 
   /** POST /copilot/v1/auth/token — 换票接口 */
@@ -148,7 +160,7 @@ export class CopilotWidgetController {
     };
   }
 
-  /** GET /copilot/v1/sessions/:id — 获取会话详情与消息 */
+  /** GET /copilot/v1/sessions/:id — 获取会话详情、消息与关联任务 */
   @Get('sessions/:id')
   async getSession(
     @Headers('authorization') authHeader: string,
@@ -157,12 +169,32 @@ export class CopilotWidgetController {
     const payload = this.extractPayload(authHeader);
     const session = await this.prisma.session.findUnique({
       where: { id },
-      include: { messages: { orderBy: { seq: 'asc' } } },
     });
 
-    if (!session || session.tenantId !== payload.tenantId) {
+    if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
       throw new ForbiddenException({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
     }
+
+    const [messages, tasks] = await this.prisma.$transaction([
+      this.prisma.message.findMany({
+        where: { sessionId: id },
+        orderBy: { seq: 'asc' },
+      }),
+      this.prisma.task.findMany({
+        where: { sessionId: id },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          title: true,
+          type: true,
+          status: true,
+          capabilityType: true,
+          currentNode: true,
+          createdAt: true,
+          completedAt: true,
+        },
+      }),
+    ]);
 
     return {
       id: session.id,
@@ -171,7 +203,7 @@ export class CopilotWidgetController {
       capabilityType: session.capabilityType,
       summary: session.summary,
       createdAt: session.createdAt,
-      messages: session.messages.map((m) => ({
+      messages: messages.map((m) => ({
         id: m.id,
         type: m.type,
         role: m.role,
@@ -179,67 +211,60 @@ export class CopilotWidgetController {
         seq: m.seq,
         createdAt: m.createdAt,
       })),
+      tasks,
     };
   }
 
-  /** POST /copilot/v1/sessions/:id/messages — 发送消息 */
+  /**
+   * POST /copilot/v1/sessions/:id/messages — 发送消息并触发 Agent Runtime 编排
+   * mode=stream（默认）时请先建立 SSE 连接。
+   */
   @Post('sessions/:id/messages')
   async sendMessage(
     @Headers('authorization') authHeader: string,
     @Param('id') sessionId: string,
-    @Body() body: { content: string },
+    @Body() body: { content: string; mode?: 'sync' | 'stream' },
   ) {
     const payload = this.extractPayload(authHeader);
     const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
 
-    if (!session || session.tenantId !== payload.tenantId) {
+    if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
       throw new ForbiddenException({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
     }
 
-    const lastMsg = await this.prisma.message.findFirst({
-      where: { sessionId },
-      orderBy: { seq: 'desc' },
-      select: { seq: true },
-    });
-
-    const message = await this.prisma.message.create({
-      data: {
-        sessionId,
-        type: 'user',
-        role: 'user',
-        content: { text: body.content },
-        seq: (lastMsg?.seq ?? 0) + 1,
+    return this.runtimeService.sendMessage(
+      this.toRuntimeUser(payload),
+      sessionId,
+      {
+        content: body.content,
+        mode: body.mode ?? 'stream',
       },
-    });
-
-    await this.prisma.session.update({
-      where: { id: sessionId },
-      data: { lastMessageAt: new Date() },
-    });
-
-    return {
-      id: message.id,
-      sessionId: message.sessionId,
-      type: message.type,
-      role: message.role,
-      content: message.content,
-      seq: message.seq,
-      createdAt: message.createdAt,
-    };
+    );
   }
 
-  /** GET /copilot/v1/sessions/:id/stream — SSE 流式响应 */
+  /**
+   * GET /copilot/v1/sessions/:id/stream — SSE 流式结果订阅
+   * EventSource 无法携带 Authorization，支持 ?token= Copilot JWT。
+   */
   @Get('sessions/:id/stream')
   async streamSession(
     @Headers('authorization') authHeader: string,
+    @Query('token') queryToken: string | undefined,
     @Param('id') sessionId: string,
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const payload = this.extractPayload(authHeader);
+    let payload: CopilotJwtPayload;
+    try {
+      payload = this.extractPayload(authHeader, queryToken);
+    } catch (err: any) {
+      res.status(err.status ?? 403).json(err.response ?? { code: 'COPILOT_UNAUTHENTICATED', message: '缺少 Copilot Token' });
+      return;
+    }
+
     const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
 
-    if (!session || session.tenantId !== payload.tenantId) {
+    if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
       res.status(403).json({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
       return;
     }
@@ -250,32 +275,40 @@ export class CopilotWidgetController {
     res.setHeader('X-Accel-Buffering', 'no');
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    res.write(`data: ${JSON.stringify({ type: 'session.connected', sessionId, status: session.status })}\n\n`);
+    this.writeSseEvent(res, 'session.connected', {
+      sessionId,
+      status: session.status,
+    });
 
     const messages = await this.prisma.message.findMany({
       where: { sessionId },
       orderBy: { seq: 'asc' },
     });
     for (const msg of messages) {
-      res.write(`data: ${JSON.stringify({
-        type: 'message',
+      this.writeSseEvent(res, 'message', {
         id: msg.id,
         role: msg.role,
         messageType: msg.type,
         content: msg.content,
         seq: msg.seq,
         createdAt: msg.createdAt,
-      })}\n\n`);
+      });
     }
 
-    res.write(`data: ${JSON.stringify({ type: 'session.snapshot_end', status: session.status })}\n\n`);
+    this.writeSseEvent(res, 'session.snapshot_end', { status: session.status });
+
+    const unsubscribe = this.sseEmitter.subscribe(sessionId, (event: SseEvent) => {
+      this.writeSseEvent(res, event.event, event.data);
+    });
 
     const keepAlive = setInterval(() => {
       res.write(`:keepalive\n\n`);
     }, 15000);
 
     req.on('close', () => {
+      this.logger.debug(`Copilot SSE 客户端断开 session=${sessionId}`);
       clearInterval(keepAlive);
+      unsubscribe();
       res.end();
     });
   }
@@ -288,7 +321,7 @@ export class CopilotWidgetController {
   ) {
     const payload = this.extractPayload(authHeader);
 
-    const where: any = { tenantId: payload.tenantId };
+    const where: Record<string, unknown> = { tenantId: payload.tenantId };
     if (status) where.status = status;
 
     const approvals = await this.prisma.approval.findMany({
@@ -318,34 +351,21 @@ export class CopilotWidgetController {
     @Body() body: { action: 'approve' | 'reject'; opinion?: string },
   ) {
     const payload = this.extractPayload(authHeader);
-    const approval = await this.prisma.approval.findUnique({ where: { id } });
 
-    if (!approval || approval.tenantId !== payload.tenantId) {
-      throw new ForbiddenException({ code: 'APPROVAL_NOT_FOUND', message: '审批记录不存在' });
-    }
-    if (approval.status !== 'pending') {
-      throw new ForbiddenException({
-        code: 'APPROVAL_ALREADY_PROCESSED',
-        message: `该审批已处理：${approval.status}`,
-      });
-    }
-
-    const updated = await this.prisma.approval.update({
-      where: { id },
-      data: {
-        status: body.action === 'approve' ? 'approved' : 'rejected',
-        opinion: body.opinion ?? null,
-        reviewerId: payload.sub,
-        reviewerName: payload.appName,
-        reviewedAt: new Date(),
-      },
-    });
+    const result = await this.approvalRuntime.reviewByCopilot(
+      payload.tenantId,
+      id,
+      body.action,
+      body.opinion,
+      { id: payload.sub, name: payload.appName },
+    );
 
     return {
-      id: updated.id,
-      status: updated.status,
-      opinion: updated.opinion,
-      reviewedAt: updated.reviewedAt,
+      id: result.approval.id,
+      status: result.approval.status,
+      opinion: result.approval.opinion,
+      reviewedAt: result.approval.reviewedAt,
+      resumed: result.resumed,
     };
   }
 
@@ -390,14 +410,57 @@ export class CopilotWidgetController {
     };
   }
 
-  private extractPayload(authHeader: string) {
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new ForbiddenException({
-        code: 'COPILOT_UNAUTHENTICATED',
-        message: '缺少 Copilot Token',
-      });
-    }
-    const token = authHeader.slice(7);
+  /** GET /copilot/v1/docs — 接口清单（供管理端/集成方查阅） */
+  @Get('docs')
+  apiDocs() {
+    return {
+      title: 'shellder-agent Copilot API',
+      version: 'v1',
+      baseUrl: '/copilot/v1',
+      strategy: 'BFF 薄层，会话/消息/SSE/确认/任务委托 AgentRuntimeService（与 OpenAPI 对齐）',
+      endpoints: [
+        { method: 'POST', path: '/auth/token', description: '换票，获取 Copilot JWT', auth: 'Client ID + Client Secret' },
+        { method: 'POST', path: '/sessions', description: '创建会话', auth: 'Bearer Copilot JWT' },
+        { method: 'GET', path: '/sessions', description: '历史会话列表', auth: 'Bearer Copilot JWT' },
+        { method: 'GET', path: '/sessions/:id', description: '会话详情（消息 + 任务）', auth: 'Bearer Copilot JWT' },
+        { method: 'POST', path: '/sessions/:id/messages', description: '发送消息并触发 Runtime（mode=stream|sync）', auth: 'Bearer Copilot JWT' },
+        { method: 'GET', path: '/sessions/:id/stream', description: 'SSE 订阅（?token= 供 EventSource）', auth: 'Bearer 或 ?token=' },
+        { method: 'GET', path: '/confirmations', description: '待确认列表', auth: 'Bearer Copilot JWT' },
+        { method: 'POST', path: '/confirmations/:id', description: '确认/驳回', auth: 'Bearer Copilot JWT' },
+        { method: 'GET', path: '/tasks/:id', description: '任务状态与步骤进度', auth: 'Bearer Copilot JWT' },
+      ],
+    };
+  }
+
+  private toRuntimeUser(payload: CopilotJwtPayload): AuthUser {
+    return {
+      id: payload.sub,
+      username: payload.appName,
+      roles: ['copilot'],
+      tenantIds: [payload.tenantId],
+    };
+  }
+
+  private writeSseEvent(res: Response, event: string, data: unknown): void {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  }
+
+  private extractPayload(authHeader?: string, queryToken?: string): CopilotJwtPayload {
+    const token = this.resolveToken(authHeader, queryToken);
     return this.authService.verifyCopilotToken(token);
+  }
+
+  private resolveToken(authHeader?: string, queryToken?: string): string {
+    if (authHeader?.startsWith('Bearer ')) {
+      return authHeader.slice(7);
+    }
+    if (queryToken) {
+      return queryToken;
+    }
+    throw new ForbiddenException({
+      code: 'COPILOT_UNAUTHENTICATED',
+      message: '缺少 Copilot Token',
+    });
   }
 }

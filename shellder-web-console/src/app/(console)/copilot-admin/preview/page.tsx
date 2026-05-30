@@ -20,6 +20,7 @@ export default function CopilotPreviewPage() {
     params.set('clientId', values.clientId);
     params.set('clientSecret', values.clientSecret);
     if (values.tenantId) params.set('tenantId', values.tenantId);
+    if (values.externalTenantId) params.set('externalTenantId', values.externalTenantId);
     if (values.externalUserId) params.set('externalUserId', values.externalUserId);
     setIframeSrc(`/copilot?${params.toString()}`);
   };
@@ -46,6 +47,7 @@ export default function CopilotPreviewPage() {
       clientId: '${values.clientId}',
       clientSecret: '${values.clientSecret}',
       ${values.tenantId ? `tenantId: '${values.tenantId}',` : ''}
+      ${values.externalTenantId ? `externalTenantId: '${values.externalTenantId}',` : ''}
       ${values.externalUserId ? `externalUserId: '${values.externalUserId}',` : ''}
     }, '${window.location.origin}');
   });
@@ -74,7 +76,10 @@ export default function CopilotPreviewPage() {
               <Input.Password placeholder="OpenAPI 应用的 Client Secret" />
             </Form.Item>
             <Form.Item name="tenantId" label="租户 ID">
-              <Input placeholder="可选，指定租户" />
+              <Input placeholder="可选，Agent 平台 tenant.id" />
+            </Form.Item>
+            <Form.Item name="externalTenantId" label="外部租户 ID">
+              <Input placeholder="可选，externalTenantId 映射" />
             </Form.Item>
             <Form.Item name="externalUserId" label="外部用户 ID">
               <Input placeholder="可选，业务系统用户标识" />

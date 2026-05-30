@@ -3,6 +3,7 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Logger,
   Param,
   Post,
   Req,
@@ -11,6 +12,11 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
+import { AuthUser } from '../auth/jwt.types';
+import { ApprovalRuntimeService } from '../approval/approval-runtime.service';
+import { AgentRuntimeService } from '../agent-runtime/agent-runtime.service';
+import { SseEvent } from '../agent-runtime/agent-runtime.types';
+import { SseEmitterService } from '../agent-runtime/sse-emitter.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentApp } from './decorators/current-app.decorator';
 import {
@@ -32,10 +38,15 @@ import { OpenApiCallLogService } from './openapi-call-log.service';
 @Controller('openapi/v1')
 @Public()
 export class OpenApiController {
+  private readonly logger = new Logger(OpenApiController.name);
+
   constructor(
     private readonly authService: OpenApiAuthService,
     private readonly prisma: PrismaService,
     private readonly callLogService: OpenApiCallLogService,
+    private readonly runtimeService: AgentRuntimeService,
+    private readonly approvalRuntime: ApprovalRuntimeService,
+    private readonly sseEmitter: SseEmitterService,
   ) {}
 
   /** POST /openapi/v1/auth/token — 应用鉴权，换取 Token */
@@ -133,7 +144,7 @@ export class OpenApiController {
     }
   }
 
-  /** POST /openapi/v1/sessions/:id/messages — 发送消息 */
+  /** POST /openapi/v1/sessions/:id/messages — 发送消息并触发 Agent Runtime 编排 */
   @Post('sessions/:id/messages')
   @UseGuards(OpenApiAuthGuard)
   async sendMessage(
@@ -150,44 +161,30 @@ export class OpenApiController {
       }
       await this.authService.assertTenantAccess(app.allowedTenantIds, session.tenantId);
 
-      const lastMsg = await this.prisma.message.findFirst({
-        where: { sessionId },
-        orderBy: { seq: 'desc' },
-        select: { seq: true },
-      });
-
-      const message = await this.prisma.message.create({
-        data: {
-          sessionId,
-          type: 'user',
-          role: 'user',
-          content: { text: dto.content },
-          seq: (lastMsg?.seq ?? 0) + 1,
+      const result = await this.runtimeService.sendMessage(
+        this.toRuntimeUser(app),
+        sessionId,
+        {
+          content: dto.content,
+          mode: dto.mode ?? 'stream',
         },
-      });
-
-      await this.prisma.session.update({
-        where: { id: sessionId },
-        data: { lastMessageAt: new Date() },
-      });
+      );
 
       await this.logCall(req, app.appId, 'POST', `/openapi/v1/sessions/${sessionId}/messages`, 201, 'success', Date.now() - start, undefined, session.tenantId);
-      return {
-        id: message.id,
-        sessionId: message.sessionId,
-        type: message.type,
-        role: message.role,
-        content: message.content,
-        seq: message.seq,
-        createdAt: message.createdAt,
-      };
+      return result;
     } catch (err: any) {
       await this.logCall(req, app.appId, 'POST', `/openapi/v1/sessions/${sessionId}/messages`, err.status ?? 500, 'failed', Date.now() - start, err.message);
       throw err;
     }
   }
 
-  /** GET /openapi/v1/sessions/:id/stream — SSE 流式结果订阅 */
+  /**
+   * GET /openapi/v1/sessions/:id/stream — SSE 流式结果订阅
+   *
+   * 连接后先推送历史消息快照（session.connected / message / session.snapshot_end），
+   * 再订阅 SseEmitterService 推送与 Agent Runtime 一致的实时事件。
+   * 连接保持至客户端断开；stream 模式下请先建立 SSE 再 POST 发消息。
+   */
   @Get('sessions/:id/stream')
   @UseGuards(OpenApiAuthGuard)
   async streamSession(
@@ -210,25 +207,31 @@ export class OpenApiController {
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
 
-      res.write(`data: ${JSON.stringify({ type: 'session.connected', sessionId, status: session.status })}\n\n`);
+      this.writeSseEvent(res, 'session.connected', {
+        sessionId,
+        status: session.status,
+      });
 
       const messages = await this.prisma.message.findMany({
         where: { sessionId },
         orderBy: { seq: 'asc' },
       });
       for (const msg of messages) {
-        res.write(`data: ${JSON.stringify({
-          type: 'message',
+        this.writeSseEvent(res, 'message', {
           id: msg.id,
           role: msg.role,
           messageType: msg.type,
           content: msg.content,
           seq: msg.seq,
           createdAt: msg.createdAt,
-        })}\n\n`);
+        });
       }
 
-      res.write(`data: ${JSON.stringify({ type: 'session.snapshot_end', status: session.status })}\n\n`);
+      this.writeSseEvent(res, 'session.snapshot_end', { status: session.status });
+
+      const unsubscribe = this.sseEmitter.subscribe(sessionId, (event: SseEvent) => {
+        this.writeSseEvent(res, event.event, event.data);
+      });
 
       await this.logCall(req, app.appId, 'GET', `/openapi/v1/sessions/${sessionId}/stream`, 200, 'success', Date.now() - start, undefined, session.tenantId);
 
@@ -237,7 +240,9 @@ export class OpenApiController {
       }, 15000);
 
       req.on('close', () => {
+        this.logger.debug(`OpenAPI SSE 客户端断开 session=${sessionId}`);
         clearInterval(keepAlive);
+        unsubscribe();
         res.end();
       });
     } catch (err: any) {
@@ -312,36 +317,21 @@ export class OpenApiController {
   ) {
     const start = Date.now();
     try {
-      const approval = await this.prisma.approval.findUnique({ where: { id } });
-      if (!approval) {
-        throw new ForbiddenException({ code: 'APPROVAL_NOT_FOUND', message: `审批记录不存在：${id}` });
-      }
-      await this.authService.assertTenantAccess(app.allowedTenantIds, approval.tenantId);
+      const result = await this.approvalRuntime.reviewByOpenApi(
+        app.allowedTenantIds,
+        id,
+        dto.action,
+        dto.opinion,
+        { appId: app.appId, appName: app.appName },
+      );
 
-      if (approval.status !== 'pending') {
-        throw new ForbiddenException({
-          code: 'APPROVAL_ALREADY_PROCESSED',
-          message: `该审批已处理，当前状态：${approval.status}`,
-        });
-      }
-
-      const updated = await this.prisma.approval.update({
-        where: { id },
-        data: {
-          status: dto.action === 'approve' ? 'approved' : 'rejected',
-          opinion: dto.opinion ?? null,
-          reviewerId: app.appId,
-          reviewerName: app.appName,
-          reviewedAt: new Date(),
-        },
-      });
-
-      await this.logCall(req, app.appId, 'POST', `/openapi/v1/confirmations/${id}`, 200, 'success', Date.now() - start, undefined, approval.tenantId);
+      await this.logCall(req, app.appId, 'POST', `/openapi/v1/confirmations/${id}`, 200, 'success', Date.now() - start, undefined, result.approval.tenantId);
       return {
-        id: updated.id,
-        status: updated.status,
-        opinion: updated.opinion,
-        reviewedAt: updated.reviewedAt,
+        id: result.approval.id,
+        status: result.approval.status,
+        opinion: result.approval.opinion,
+        reviewedAt: result.approval.reviewedAt,
+        resumed: result.resumed,
       };
     } catch (err: any) {
       await this.logCall(req, app.appId, 'POST', `/openapi/v1/confirmations/${id}`, err.status ?? 500, 'failed', Date.now() - start, err.message);
@@ -360,8 +350,8 @@ export class OpenApiController {
         { method: 'POST', path: '/auth/token', description: '应用鉴权，换取 Token', auth: 'Client ID + Client Secret' },
         { method: 'POST', path: '/sessions', description: '创建会话', auth: 'Bearer Token' },
         { method: 'GET', path: '/sessions/:id', description: '获取会话历史', auth: 'Bearer Token' },
-        { method: 'POST', path: '/sessions/:id/messages', description: '发送消息', auth: 'Bearer Token' },
-        { method: 'GET', path: '/sessions/:id/stream', description: 'SSE 流式结果订阅', auth: 'Bearer Token' },
+        { method: 'POST', path: '/sessions/:id/messages', description: '发送消息并触发 Agent Runtime 编排（mode=sync|stream，默认 stream）', auth: 'Bearer Token' },
+        { method: 'GET', path: '/sessions/:id/stream', description: 'SSE 流式结果订阅（先历史快照，再实时 Runtime 事件）', auth: 'Bearer Token' },
         { method: 'GET', path: '/tasks/:id', description: '查询任务状态', auth: 'Bearer Token' },
         { method: 'POST', path: '/confirmations/:id', description: '提交人工确认结果', auth: 'Bearer Token' },
       ],
@@ -378,18 +368,52 @@ export class OpenApiController {
         { code: 'TENANT_DISABLED', status: 403, description: '租户已禁用' },
         { code: 'TENANT_NOT_FOUND', status: 404, description: '租户不存在' },
         { code: 'SESSION_NOT_FOUND', status: 404, description: '会话不存在' },
+        { code: 'SESSION_CLOSED', status: 400, description: '会话已结束，无法发送消息' },
+        { code: 'SESSION_PENDING_CONFIRM', status: 400, description: '会话等待人工确认中' },
+        { code: 'RUNTIME_ERROR', status: 500, description: 'Agent Runtime 编排异常（SSE error 事件同步推送）' },
+        { code: 'POLICY_DENIED', status: 403, description: '策略拒绝工具调用' },
         { code: 'TASK_NOT_FOUND', status: 404, description: '任务不存在' },
         { code: 'APPROVAL_NOT_FOUND', status: 404, description: '审批记录不存在' },
       ],
       sse: {
-        description: 'GET /sessions/:id/stream 返回 SSE 流，事件格式与 Agent Runtime（阶段 12）一致',
-        eventTypes: [
-          'session.connected — 连接成功，附带会话状态',
-          'message — 消息事件（含 role/type/content/seq）',
-          'session.snapshot_end — 历史消息快照传输完成',
+        description:
+          'GET /sessions/:id/stream 返回 SSE 流。连接后先推送历史快照，再订阅 Agent Runtime 实时事件。stream 模式下请先建立 SSE 连接，再 POST 发消息。',
+        snapshotEventTypes: [
+          'session.connected — 连接成功，附带 sessionId 与会话状态',
+          'message — 历史消息快照（含 role/type/content/seq）',
+          'session.snapshot_end — 历史快照传输完成',
+        ],
+        runtimeEventTypes: [
+          'delta — 流式文本片段 { text, seq? }',
+          'tool_start — 工具开始 { toolName, toolId?, input? }',
+          'tool_end — 工具结束 { toolName, status, output?, error? }',
+          'confirm_required — 需人工确认 { toolName, reason, messageId, approvalId? }',
+          'done — 编排完成 { messageId, capabilityType?, summary? }',
+          'error — 编排错误 { code, message }',
+        ],
+        usage: [
+          '1. POST /auth/token 换取 accessToken',
+          '2. POST /sessions 创建会话',
+          '3. GET /sessions/:id/stream 建立 SSE（Bearer Token）',
+          '4. POST /sessions/:id/messages { content, mode: "stream" } 发消息',
+          '5. SSE 收到 delta → done（或 error）',
         ],
       },
     };
+  }
+
+  private toRuntimeUser(app: OpenApiAppContext): AuthUser {
+    return {
+      id: app.appId,
+      username: app.appName,
+      roles: ['openapi'],
+      tenantIds: app.allowedTenantIds,
+    };
+  }
+
+  private writeSseEvent(res: Response, event: string, data: unknown): void {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
   }
 
   private async logCall(

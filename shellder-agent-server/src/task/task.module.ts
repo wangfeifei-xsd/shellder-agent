@@ -1,10 +1,17 @@
 import { BullModule } from '@nestjs/bullmq';
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { ApprovalModule } from '../approval/approval.module';
+import { AuditModule } from '../audit/audit.module';
+import { BusinessCapabilityModule } from '../business-capability/business-capability.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ToolModule } from '../tool/tool.module';
 import { TASK_QUEUE } from './task-queue.constants';
+import { InternalTaskController } from './internal-task.controller';
 import { TaskController } from './task.controller';
+import { TaskExecutionService } from './task-execution.service';
 import { TaskQueueService } from './task-queue.service';
 import { TaskService } from './task.service';
+import { WorkerTokenGuard } from './guards/worker-token.guard';
 
 /**
  * 任务中心模块（功能清单 §1.3 / §4.3 Task / §4.11 异步执行）。
@@ -15,6 +22,10 @@ import { TaskService } from './task.service';
 @Module({
   imports: [
     PrismaModule,
+    AuditModule,
+    ToolModule,
+    forwardRef(() => ApprovalModule),
+    BusinessCapabilityModule,
     BullModule.forRoot({
       connection: {
         host: process.env.REDIS_HOST ?? 'localhost',
@@ -27,8 +38,8 @@ import { TaskService } from './task.service';
     }),
     BullModule.registerQueue({ name: TASK_QUEUE }),
   ],
-  controllers: [TaskController],
-  providers: [TaskService, TaskQueueService],
-  exports: [TaskService, TaskQueueService],
+  controllers: [TaskController, InternalTaskController],
+  providers: [TaskService, TaskQueueService, TaskExecutionService, WorkerTokenGuard],
+  exports: [TaskService, TaskQueueService, TaskExecutionService],
 })
 export class TaskModule {}

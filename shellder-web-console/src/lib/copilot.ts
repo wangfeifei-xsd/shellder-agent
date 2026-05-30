@@ -32,6 +32,14 @@ export interface CopilotSession {
   createdAt: string;
 }
 
+export interface CopilotCitation {
+  documentId?: string;
+  documentTitle?: string;
+  chunkId?: string;
+  content: string;
+  score?: number;
+}
+
 export interface CopilotMessage {
   id: string;
   type: string;
@@ -41,8 +49,20 @@ export interface CopilotMessage {
   createdAt: string;
 }
 
+export interface CopilotSessionTask {
+  id: string;
+  title: string | null;
+  type: string;
+  status: string;
+  capabilityType: string | null;
+  currentNode: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
 export interface CopilotSessionDetail extends CopilotSession {
   messages: CopilotMessage[];
+  tasks?: CopilotSessionTask[];
 }
 
 export interface CopilotConfirmation {
@@ -83,11 +103,29 @@ export interface CopilotTask {
   steps: CopilotTaskStep[];
 }
 
+export interface CopilotSendMessageResult {
+  messageId: string;
+  assistantMessageId?: string;
+  taskId?: string;
+  capabilityType?: string;
+  reply?: Record<string, unknown>;
+}
+
 function copilotHeaders(token: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`,
   };
+}
+
+async function parseCopilotError(res: Response, fallback: string): Promise<never> {
+  try {
+    const body = await res.json();
+    throw new Error(body.message ?? body.code ?? fallback);
+  } catch (e) {
+    if (e instanceof Error && e.message !== fallback) throw e;
+    throw new Error(`${fallback}：${res.status}`);
+  }
 }
 
 export async function copilotExchangeToken(params: {
@@ -102,7 +140,7 @@ export async function copilotExchangeToken(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) throw new Error(`换票失败：${res.status}`);
+  if (!res.ok) await parseCopilotError(res, '换票失败');
   return res.json();
 }
 
@@ -115,7 +153,7 @@ export async function copilotCreateSession(
     headers: copilotHeaders(token),
     body: JSON.stringify({ title }),
   });
-  if (!res.ok) throw new Error(`创建会话失败：${res.status}`);
+  if (!res.ok) await parseCopilotError(res, '创建会话失败');
   return res.json();
 }
 
@@ -127,7 +165,7 @@ export async function copilotListSessions(
   const res = await fetch(`${COPILOT_BASE}/sessions?page=${page}&pageSize=${pageSize}`, {
     headers: copilotHeaders(token),
   });
-  if (!res.ok) throw new Error(`获取会话列表失败：${res.status}`);
+  if (!res.ok) await parseCopilotError(res, '获取会话列表失败');
   return res.json();
 }
 
@@ -138,7 +176,7 @@ export async function copilotGetSession(
   const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}`, {
     headers: copilotHeaders(token),
   });
-  if (!res.ok) throw new Error(`获取会话失败：${res.status}`);
+  if (!res.ok) await parseCopilotError(res, '获取会话失败');
   return res.json();
 }
 
@@ -146,18 +184,21 @@ export async function copilotSendMessage(
   token: string,
   sessionId: string,
   content: string,
-): Promise<CopilotMessage> {
+  mode: 'sync' | 'stream' = 'stream',
+): Promise<CopilotSendMessageResult> {
   const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}/messages`, {
     method: 'POST',
     headers: copilotHeaders(token),
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, mode }),
   });
-  if (!res.ok) throw new Error(`发送消息失败：${res.status}`);
+  if (!res.ok) await parseCopilotError(res, '发送消息失败');
   return res.json();
 }
 
-export function copilotBuildSseUrl(sessionId: string): string {
-  return `${COPILOT_BASE}/sessions/${sessionId}/stream`;
+/** EventSource 无法携带 Authorization，通过 query token 鉴权 */
+export function copilotBuildSseUrl(sessionId: string, token: string): string {
+  const qs = new URLSearchParams({ token });
+  return `${COPILOT_BASE}/sessions/${sessionId}/stream?${qs.toString()}`;
 }
 
 export async function copilotListConfirmations(
@@ -168,7 +209,7 @@ export async function copilotListConfirmations(
   const res = await fetch(`${COPILOT_BASE}/confirmations${qs}`, {
     headers: copilotHeaders(token),
   });
-  if (!res.ok) throw new Error(`获取待确认列表失败：${res.status}`);
+  if (!res.ok) await parseCopilotError(res, '获取待确认列表失败');
   return res.json();
 }
 
@@ -177,13 +218,13 @@ export async function copilotSubmitConfirmation(
   id: string,
   action: 'approve' | 'reject',
   opinion?: string,
-): Promise<{ id: string; status: string }> {
+): Promise<{ id: string; status: string; resumed?: boolean }> {
   const res = await fetch(`${COPILOT_BASE}/confirmations/${id}`, {
     method: 'POST',
     headers: copilotHeaders(token),
     body: JSON.stringify({ action, opinion }),
   });
-  if (!res.ok) throw new Error(`提交确认失败：${res.status}`);
+  if (!res.ok) await parseCopilotError(res, '提交确认失败');
   return res.json();
 }
 
@@ -194,6 +235,24 @@ export async function copilotGetTask(
   const res = await fetch(`${COPILOT_BASE}/tasks/${taskId}`, {
     headers: copilotHeaders(token),
   });
-  if (!res.ok) throw new Error(`获取任务失败：${res.status}`);
+  if (!res.ok) await parseCopilotError(res, '获取任务失败');
   return res.json();
+}
+
+/** 从消息 content 提取展示文本 */
+export function extractMessageText(content: Record<string, unknown>): string {
+  if (typeof content.text === 'string') return content.text;
+  const data = content.data as Record<string, unknown> | undefined;
+  if (data && typeof data.text === 'string') return data.text;
+  if (typeof content.reason === 'string') return content.reason;
+  return JSON.stringify(content, null, 2);
+}
+
+/** 从消息 content 提取引用（问答型 CapabilityResult） */
+export function extractCitations(content: Record<string, unknown>): CopilotCitation[] {
+  const citations = content.citations;
+  if (Array.isArray(citations)) {
+    return citations as CopilotCitation[];
+  }
+  return [];
 }

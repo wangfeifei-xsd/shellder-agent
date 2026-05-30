@@ -1,38 +1,50 @@
 # 12 — 知识库代理与知识库管理 SQL
 
-## 作用
+## 作用（V1：pathy 代理）
 
-本模块实现知识库管理的数据库结构，包含以下五张表：
+平台 **不** 在库内存储 wiki 分块或向量；内容与召回由外部 `pathy-knowledge-server` 提供。
 
-| 表名 | 用途 |
-|------|------|
-| `knowledge_base` | 知识库主表：名称、嵌入模型、分块策略、状态、统计 |
-| `kb_data_source` | 数据源：文件/URL/API/连接器来源配置 |
-| `kb_document` | 文档记录：上传文件元数据、处理状态 |
-| `kb_chunk` | 文档分块：分块内容、向量 embedding（JSON） |
-| `kb_embedding_task` | 向量化任务：异步处理进度与状态 |
+| 表名 | V1 用途 |
+|------|---------|
+| `knowledge_base` | **租户绑定元数据**：名称、状态、`pathy_wiki_prefix`（wiki 子路径前缀） |
+| `kb_data_source` | **已废弃**（保留表结构，勿再写入） |
+| `kb_document` | **已废弃** |
+| `kb_chunk` | **已废弃**（原平台内 contains/向量占位） |
+| `kb_embedding_task` | **已废弃** |
+
+管理后台与运行时通过 `shellder-agent-server` 的 `/api/v1/knowledge/*` 代理 pathy；问答召回统一 `POST /api/v1/dialogue/recall`。
+
+## 租户与 pathy 路径
+
+- 默认 wiki 前缀：`tenants/{tenantId}/`（在代理层自动注入 `wiki_prefix` 与层内 `path`）
+- 覆盖：在 `knowledge_base.pathy_wiki_prefix` 配置（每租户建议一条 `active` 绑定记录）
+- pathy 需在 `DATA_ROOT` 下预先存在对应目录树（或单租户部署时将前缀设为空）
 
 ## 依赖前序模块
 
 - `01-bootstrap`：Prisma 基线
-- `02-tenant-management`：`tenant` 表（各表 `tenant_id` 外键）
-- `06-connector-management`：`connector` 表（数据源 type=connector 时引用，无硬外键）
+- `02-tenant-management`：`tenant` 表
 
 ## 执行顺序
 
 ```bash
+# 初版（若尚未执行）
 mysql -u root -p shellder_agent < project-sql/12-knowledge-base/schema.sql
 mysql -u root -p shellder_agent < project-sql/12-knowledge-base/seed.sql
+
+# pathy 绑定字段增量
+mysql -u root -p shellder_agent < project-sql/12-knowledge-base/schema-pathy-binding.sql
 ```
 
-## 注意事项
+或使用 Prisma：`pnpm --filter shellder-agent-server prisma:migrate`
 
-1. `kb_chunk.embedding` 使用 JSON 类型存储向量数组（MySQL V1 方案）。生产环境建议迁移至支持 ANN 索引的向量数据库（如 Milvus/Qdrant）或 PostgreSQL pgvector 以获得更优检索性能。
-2. `knowledge_base` 使用租户内名称唯一约束（`tenant_id` + `name`），避免同租户下重名。
-3. 文档删除级联清理分块（`ON DELETE CASCADE`）；知识库删除级联清理文档/分块/数据源/任务。
-4. `kb_document.file_key` 存储文件在对象存储中的 key（MinIO/S3），不保存绝对路径。
-5. 软删除（`deleted_at`）仅在 `knowledge_base` 主表层面使用。
+## 废弃表处理策略
+
+1. **不删表**：避免破坏已有迁移链与历史数据；新功能禁止写入 `kb_*` 子表。
+2. **可选清理**：确认无生产数据后，可手工 `TRUNCATE` 或后续单独 migration `DROP TABLE`（需评审）。
+3. **Prisma 模型**：暂保留以便兼容；代码侧 API 返回 `KNOWLEDGE_SELF_HOSTED_DEPRECATED`。
 
 ## 与 Prisma schema 的一致性
 
-本 SQL 与 `shellder-agent-server/prisma/schema.prisma` 中阶段 11A 新增的模型定义保持一致。字段类型、索引、约束均已对齐。
+- `knowledge_base.pathy_wiki_prefix` ↔ `KnowledgeBase.pathyWikiPrefix`
+- 迁移：`prisma/migrations/20260530120000_knowledge_pathy_binding`

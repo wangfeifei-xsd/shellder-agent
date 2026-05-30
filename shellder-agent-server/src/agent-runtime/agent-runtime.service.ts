@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditStatus, MessageType, Prisma } from '@prisma/client';
+import { Approval, AuditStatus, MessageType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { AuditService } from '../audit/audit.service';
@@ -20,6 +20,7 @@ import {
   SendMessageMode,
 } from './agent-runtime.types';
 import { SendMessageDto } from './dto/send-message.dto';
+import { ConfirmationActor } from '../approval/approval-runtime.types';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 2;
@@ -366,10 +367,11 @@ export class AgentRuntimeService {
     reason: string,
   ): Promise<{
     assistantMessageId?: string;
-    taskId?: string;
-    capabilityType?: string;
-    reply?: unknown;
+      taskId?: string;
+      capabilityType?: string;
+      reply?: unknown;
   }> {
+    let linkedTaskId: string | undefined;
     const confirmMessage = await this.appendMessage(
       ctx.sessionId,
       'confirmation',
@@ -391,25 +393,48 @@ export class AgentRuntimeService {
       },
     });
 
+    const linkedTask = await this.prisma.task.findFirst({
+      where: {
+        sessionId: ctx.sessionId,
+        status: { in: ['pending', 'running'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (linkedTask) {
+      linkedTaskId = linkedTask.id;
+      await this.prisma.task.update({
+        where: { id: linkedTask.id },
+        data: { status: 'pending_confirm' },
+      });
+    }
+
     // Phase 14: 创建审批记录
     let approvalId: string | undefined;
+    let displayToolName = ctx.toolIds?.[0] ?? '';
     try {
-      const toolName = ctx.toolIds?.[0]
-        ? (await this.prisma.tool.findUnique({
+      const tool = ctx.toolIds?.[0]
+        ? await this.prisma.tool.findUnique({
             where: { id: ctx.toolIds[0] },
-            select: { name: true },
-          }))?.name ?? ctx.toolIds[0]
-        : '未知动作';
+            select: { name: true, riskLevel: true },
+          })
+        : null;
+      const toolName = tool?.name ?? ctx.toolIds?.[0] ?? '未知动作';
+      displayToolName = toolName;
+      const riskLevel =
+        tool?.riskLevel === 'low' || tool?.riskLevel === 'medium'
+          ? tool.riskLevel
+          : 'high';
 
       const approval = await this.approvalService.create({
         tenantId: ctx.tenantId,
         sessionId: ctx.sessionId,
+        taskId: linkedTask?.id,
         messageId: confirmMessage.id,
         initiatorId: ctx.userId,
         initiatorName: ctx.username,
         actionType: toolName,
         actionSummary: ctx.userMessage,
-        riskLevel: 'high',
+        riskLevel,
         impactScope: reason,
         toolIds: ctx.toolIds,
         requestContext: {
@@ -429,7 +454,8 @@ export class AgentRuntimeService {
     emitSse({
       event: 'confirm_required',
       data: {
-        toolName: ctx.toolIds?.[0] ?? '',
+        toolName: displayToolName,
+        toolId: ctx.toolIds?.[0],
         reason,
         messageId: confirmMessage.id,
         approvalId,
@@ -446,12 +472,205 @@ export class AgentRuntimeService {
 
     return {
       assistantMessageId: confirmMessage.id,
+      taskId: linkedTaskId,
       capabilityType: ctx.capabilityType,
       reply: { type: 'confirm_required', reason, approvalId },
     };
   }
 
+  /**
+   * 审批通过后从断点恢复执行（执行计划 14 §4）。
+   * 根据 approval.requestContext 重建 RuntimeContext，执行能力 Handler 与挂起 Tool。
+   */
+  async resumeFromApproval(
+    approval: Approval,
+    _actor: ConfirmationActor,
+  ): Promise<{
+    assistantMessageId?: string;
+    taskId?: string;
+    capabilityType?: string;
+  }> {
+    if (!approval.sessionId) {
+      throw new BadRequestException({
+        code: 'APPROVAL_NO_SESSION',
+        message: '审批记录未关联会话，无法恢复执行',
+      });
+    }
+
+    const sessionId = approval.sessionId;
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+    });
+    if (!session) {
+      throw new NotFoundException({
+        code: 'SESSION_NOT_FOUND',
+        message: `会话不存在：${sessionId}`,
+      });
+    }
+
+    const ctxSnapshot = (approval.requestContext ?? {}) as Record<string, unknown>;
+    const userMessage =
+      (ctxSnapshot.userMessage as string) ??
+      approval.actionSummary ??
+      '';
+    const capabilityType =
+      (ctxSnapshot.capabilityType as string) ??
+      session.capabilityType ??
+      'action';
+    const toolIds = this.normalizeToolIds(approval.toolIds, ctxSnapshot.toolIds);
+
+    const initiator = approval.initiatorId
+      ? await this.prisma.user.findUnique({
+          where: { id: approval.initiatorId },
+          select: { id: true, username: true },
+        })
+      : null;
+
+    const ctx: RuntimeContext = {
+      sessionId,
+      tenantId: approval.tenantId,
+      userId: initiator?.id ?? approval.initiatorId ?? session.userId,
+      username: initiator?.username ?? approval.initiatorName ?? undefined,
+      userMessage,
+      capabilityType,
+      capabilityName: ctxSnapshot.capabilityName as string | undefined,
+      routingReason: undefined,
+      routingCandidates: undefined,
+      toolIds,
+      needConfirmation: false,
+      timeoutMs: DEFAULT_TIMEOUT_MS,
+      maxRetries: DEFAULT_MAX_RETRIES,
+    };
+
+    const emitSse = (event: SseEvent) => this.sseEmitter.emit(sessionId, event);
+
+    try {
+      const handler = getCapabilityHandler(capabilityType);
+      if (!handler) {
+        throw new Error(`未注册的能力类型 Handler: ${capabilityType}`);
+      }
+
+      const handlerResult = await this.withTimeout(
+        handler.execute(ctx, emitSse),
+        ctx.timeoutMs,
+        `能力 ${capabilityType} 执行超时（${ctx.timeoutMs}ms）`,
+      );
+
+      if (toolIds.length > 0) {
+        for (const toolId of toolIds) {
+          const tool = await this.prisma.tool.findUnique({
+            where: { id: toolId },
+          });
+          if (!tool) continue;
+
+          await this.auditService.logToolCall({
+            tenantId: approval.tenantId,
+            toolId: tool.id,
+            toolName: tool.name,
+            callerUserId: ctx.userId,
+            callerName: ctx.username,
+            sessionId,
+            taskId: approval.taskId ?? undefined,
+            requestSummary: userMessage,
+            status: handlerResult.success
+              ? AuditStatus.success
+              : AuditStatus.failed,
+            errorMessage: handlerResult.error ?? null,
+            highRisk: tool.riskLevel === 'high',
+          });
+        }
+      }
+
+      const replyContent = handlerResult.output ?? {
+        text: handlerResult.textChunks?.join('') ?? '',
+      };
+      const assistantMessage = await this.appendMessage(
+        sessionId,
+        'system',
+        replyContent,
+      );
+
+      await this.prisma.session.update({
+        where: { id: sessionId },
+        data: {
+          status: handlerResult.success ? 'active' : 'failed',
+          hasConfirmation: false,
+        },
+      });
+
+      if (approval.taskId) {
+        await this.prisma.task.update({
+          where: { id: approval.taskId },
+          data: {
+            status: handlerResult.success ? 'completed' : 'failed',
+            failReason: handlerResult.success
+              ? null
+              : (handlerResult.error ?? '执行失败'),
+            completedAt: new Date(),
+          },
+        });
+      }
+
+      emitSse({
+        event: 'done',
+        data: {
+          messageId: assistantMessage.id,
+          capabilityType,
+          taskId: approval.taskId ?? undefined,
+        },
+      });
+
+      return {
+        assistantMessageId: assistantMessage.id,
+        taskId: approval.taskId ?? undefined,
+        capabilityType,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `断点恢复失败 approval=${approval.id}: ${message}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+
+      emitSse({
+        event: 'error',
+        data: { code: 'RESUME_FAILED', message },
+      });
+
+      await this.prisma.session.update({
+        where: { id: sessionId },
+        data: { status: 'failed', hasConfirmation: false },
+      });
+
+      if (approval.taskId) {
+        await this.prisma.task.update({
+          where: { id: approval.taskId },
+          data: {
+            status: 'failed',
+            failReason: message,
+            completedAt: new Date(),
+          },
+        });
+      }
+
+      throw err;
+    }
+  }
+
   // ── 辅助方法 ──────────────────────────────────────────────
+
+  private normalizeToolIds(
+    approvalToolIds: unknown,
+    contextToolIds: unknown,
+  ): string[] {
+    const fromApproval = Array.isArray(approvalToolIds)
+      ? (approvalToolIds as string[])
+      : [];
+    const fromContext = Array.isArray(contextToolIds)
+      ? (contextToolIds as string[])
+      : [];
+    return fromApproval.length > 0 ? fromApproval : fromContext;
+  }
 
   private async appendMessage(
     sessionId: string,

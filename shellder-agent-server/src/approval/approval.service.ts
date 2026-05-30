@@ -1,17 +1,20 @@
 import {
-  BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Approval, ApprovalStatus, Prisma } from '@prisma/client';
+import { Approval, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
 import { CreateApprovalDto } from './dto/create-approval.dto';
 import { QueryApprovalDto } from './dto/query-approval.dto';
 import { ReviewAction } from './dto/review-approval.dto';
+import { ApprovalRuntimeService } from './approval-runtime.service';
+import { toApprovalView } from './approval.view';
 
 const DEFAULT_EXPIRE_HOURS = 24;
 
@@ -33,6 +36,8 @@ export class ApprovalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissionService: PermissionService,
+    @Inject(forwardRef(() => ApprovalRuntimeService))
+    private readonly approvalRuntime: ApprovalRuntimeService,
   ) {}
 
   /**
@@ -119,8 +124,7 @@ export class ApprovalService {
   }
 
   /**
-   * 确认执行 / 驳回。
-   * 确认后恢复 session/task 状态；驳回后标记失败并写入驳回消息。
+   * 确认执行 / 驳回（委托 ApprovalRuntimeService，含 Runtime 断点恢复）。
    */
   async review(
     user: AuthUser,
@@ -128,151 +132,15 @@ export class ApprovalService {
     action: ReviewAction,
     opinion?: string,
   ) {
-    const approval = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, approval.tenantId);
-
-    if (approval.status !== 'pending') {
-      throw new BadRequestException({
-        code: 'APPROVAL_NOT_PENDING',
-        message: `审批记录不在待确认状态，当前状态：${approval.status}`,
-      });
-    }
-
-    const now = new Date();
-    const newStatus: ApprovalStatus =
-      action === ReviewAction.approve ? 'approved' : 'rejected';
-
-    const updated = await this.prisma.approval.update({
-      where: { id },
-      data: {
-        status: newStatus,
-        reviewerId: user.id,
-        reviewerName: user.username ?? null,
-        opinion: opinion ?? null,
-        reviewedAt: now,
-      },
-    });
-
-    if (action === ReviewAction.approve) {
-      await this.onApproved(approval);
-    } else {
-      await this.onRejected(approval, opinion);
-    }
-
-    return this.toView(updated);
+    const result = await this.approvalRuntime.reviewByUser(user, id, action, opinion);
+    return result.approval;
   }
 
   /**
    * 批量超时处理（供 job-worker 定时任务调用）。
    */
   async markExpiredAsTimeout(): Promise<number> {
-    const result = await this.prisma.approval.updateMany({
-      where: {
-        status: 'pending',
-        expiredAt: { lte: new Date() },
-      },
-      data: { status: 'timeout' },
-    });
-
-    if (result.count > 0) {
-      this.logger.log(`已标记 ${result.count} 条审批记录为超时`);
-    }
-
-    return result.count;
-  }
-
-  // ── 确认/驳回后联动 ────────────────────────────────────────
-
-  /**
-   * 确认后：恢复 session 状态为 active，以便后续消息可继续发送。
-   */
-  private async onApproved(approval: Approval) {
-    try {
-      if (approval.sessionId) {
-        await this.prisma.session.update({
-          where: { id: approval.sessionId },
-          data: { status: 'active' },
-        });
-      }
-      if (approval.taskId) {
-        await this.prisma.task.update({
-          where: { id: approval.taskId },
-          data: { status: 'running' },
-        });
-      }
-
-      if (approval.sessionId) {
-        const lastMsg = await this.prisma.message.findFirst({
-          where: { sessionId: approval.sessionId },
-          orderBy: { seq: 'desc' },
-          select: { seq: true },
-        });
-        await this.prisma.message.create({
-          data: {
-            sessionId: approval.sessionId,
-            type: 'confirmation',
-            role: 'system',
-            content: {
-              type: 'confirm_approved',
-              approvalId: approval.id,
-              actionType: approval.actionType,
-            } as unknown as Prisma.InputJsonValue,
-            seq: (lastMsg?.seq ?? 0) + 1,
-          },
-        });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`确认后联动失败 approval=${approval.id}: ${msg}`);
-    }
-  }
-
-  /**
-   * 驳回后：session 状态 failed / task 状态 failed，写入驳回消息。
-   */
-  private async onRejected(approval: Approval, opinion?: string) {
-    try {
-      if (approval.sessionId) {
-        await this.prisma.session.update({
-          where: { id: approval.sessionId },
-          data: { status: 'failed' },
-        });
-      }
-      if (approval.taskId) {
-        await this.prisma.task.update({
-          where: { id: approval.taskId },
-          data: {
-            status: 'failed',
-            failReason: `审批驳回：${opinion ?? '无意见'}`,
-          },
-        });
-      }
-
-      if (approval.sessionId) {
-        const lastMsg = await this.prisma.message.findFirst({
-          where: { sessionId: approval.sessionId },
-          orderBy: { seq: 'desc' },
-          select: { seq: true },
-        });
-        await this.prisma.message.create({
-          data: {
-            sessionId: approval.sessionId,
-            type: 'confirmation',
-            role: 'system',
-            content: {
-              type: 'confirm_rejected',
-              approvalId: approval.id,
-              actionType: approval.actionType,
-              reason: opinion ?? '审批被驳回',
-            } as unknown as Prisma.InputJsonValue,
-            seq: (lastMsg?.seq ?? 0) + 1,
-          },
-        });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`驳回后联动失败 approval=${approval.id}: ${msg}`);
-    }
+    return this.approvalRuntime.markExpiredAsTimeout();
   }
 
   // ── 内部辅助 ────────────────────────────────────────────
@@ -327,28 +195,6 @@ export class ApprovalService {
   }
 
   private toView(approval: Approval) {
-    return {
-      id: approval.id,
-      tenantId: approval.tenantId,
-      sessionId: approval.sessionId,
-      taskId: approval.taskId,
-      messageId: approval.messageId,
-      initiatorId: approval.initiatorId,
-      initiatorName: approval.initiatorName,
-      actionType: approval.actionType,
-      actionSummary: approval.actionSummary,
-      riskLevel: approval.riskLevel,
-      impactScope: approval.impactScope,
-      toolIds: (approval.toolIds ?? []) as string[],
-      requestContext: (approval.requestContext ?? {}) as Record<string, unknown>,
-      status: approval.status,
-      reviewerId: approval.reviewerId,
-      reviewerName: approval.reviewerName,
-      opinion: approval.opinion,
-      reviewedAt: approval.reviewedAt,
-      expiredAt: approval.expiredAt,
-      createdAt: approval.createdAt,
-      updatedAt: approval.updatedAt,
-    };
+    return toApprovalView(approval);
   }
 }

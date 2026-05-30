@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AgentRuntimeModule } from '../agent-runtime/agent-runtime.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { OpenApiModule } from '../openapi/openapi.module';
 import { AuthModule } from '../auth/auth.module';
@@ -7,7 +8,7 @@ import { CopilotConfigService } from './copilot-config.service';
 import { CopilotConfigController, CopilotWidgetController } from './copilot.controller';
 
 @Module({
-  imports: [PrismaModule, OpenApiModule, AuthModule],
+  imports: [PrismaModule, OpenApiModule, AuthModule, AgentRuntimeModule],
   controllers: [CopilotConfigController, CopilotWidgetController],
   providers: [CopilotAuthService, CopilotConfigService],
   exports: [CopilotAuthService, CopilotConfigService],

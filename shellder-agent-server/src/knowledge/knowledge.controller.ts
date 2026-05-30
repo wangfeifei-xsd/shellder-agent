@@ -21,6 +21,7 @@ import { QueryDocumentDto } from './dto/query-document.dto';
 import { RetrieveDto } from './dto/retrieve.dto';
 import { QueryEmbeddingTaskDto } from './dto/query-embedding-task.dto';
 
+/** 租户 pathy 绑定元数据；内容/召回见 {@link KnowledgeProxyController} */
 @Controller('api/v1/knowledge-bases')
 @RequireMenu('knowledge')
 export class KnowledgeController {

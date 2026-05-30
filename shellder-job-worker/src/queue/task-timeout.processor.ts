@@ -17,7 +17,9 @@ export class TaskTimeoutProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job): Promise<{ checked: number; timedOut: number }> {
+  async process(
+    job: Job,
+  ): Promise<{ checked: number; timedOut: number; approvalTimedOut: number }> {
     this.logger.log('Running timeout check...');
 
     const runningTasks = await this.prisma.task.findMany({
@@ -56,7 +58,58 @@ export class TaskTimeoutProcessor extends WorkerHost {
       }
     }
 
-    this.logger.log(`Timeout check done: ${runningTasks.length} checked, ${timedOut} timed out`);
-    return { checked: runningTasks.length, timedOut };
+    const approvalTimedOut = await this.markExpiredApprovals();
+
+    this.logger.log(
+      `Timeout check done: ${runningTasks.length} tasks checked, ${timedOut} task timed out, ${approvalTimedOut} approval timed out`,
+    );
+    return {
+      checked: runningTasks.length,
+      timedOut,
+      approvalTimedOut,
+    };
+  }
+
+  /**
+   * 审批超时（执行计划 14 §4 / 09 job-worker）。
+   */
+  private async markExpiredApprovals(): Promise<number> {
+    const expired = await this.prisma.approval.findMany({
+      where: {
+        status: 'pending',
+        expiredAt: { lte: new Date() },
+      },
+    });
+
+    if (expired.length === 0) return 0;
+
+    await this.prisma.approval.updateMany({
+      where: {
+        status: 'pending',
+        expiredAt: { lte: new Date() },
+      },
+      data: { status: 'timeout' },
+    });
+
+    for (const approval of expired) {
+      if (approval.sessionId) {
+        await this.prisma.session.update({
+          where: { id: approval.sessionId },
+          data: { status: 'failed' },
+        });
+      }
+      if (approval.taskId) {
+        await this.prisma.task.update({
+          where: { id: approval.taskId },
+          data: {
+            status: 'failed',
+            failReason: '审批超时未处理',
+            completedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    return expired.length;
   }
 }

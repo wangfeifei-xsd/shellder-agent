@@ -15,6 +15,7 @@ import { Observable, Subject } from 'rxjs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthUser } from '../auth/jwt.types';
+import { ApprovalRuntimeService } from '../approval/approval-runtime.service';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { SseEmitterService } from './sse-emitter.service';
 import { SendMessageDto } from './dto/send-message.dto';
@@ -28,6 +29,7 @@ export class AgentRuntimeController {
 
   constructor(
     private readonly runtimeService: AgentRuntimeService,
+    private readonly approvalRuntime: ApprovalRuntimeService,
     private readonly sseEmitter: SseEmitterService,
   ) {}
 
@@ -88,7 +90,7 @@ export class AgentRuntimeController {
   /**
    * POST /api/v1/sessions/:id/confirm
    *
-   * 人工确认操作（预留接口，Phase 14 完善）。
+   * 人工确认后恢复 Runtime 或驳回（执行计划 14 §4）。
    */
   @Post(':id/confirm')
   async confirmAction(
@@ -96,9 +98,12 @@ export class AgentRuntimeController {
     @Param('id') sessionId: string,
     @Body() dto: ConfirmActionDto,
   ) {
-    return {
-      code: 'NOT_IMPLEMENTED',
-      message: '确认恢复接口预留，Phase 14 完善',
-    };
+    return this.approvalRuntime.confirmBySession(
+      user,
+      sessionId,
+      dto.messageId,
+      dto.action,
+      dto.comment,
+    );
   }
 }

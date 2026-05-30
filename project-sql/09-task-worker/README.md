@@ -34,8 +34,9 @@
 - `task.session_id` 为逻辑关联，不设外键：任务可独立于会话创建（如定时任务）
 - `task.job_id` 记录 BullMQ Job ID，供 Worker 状态关联
 - 任务状态包含 `timeout`：由 Worker 定时超时检查标记
+- `pending_confirm` 由 **13-agent-runtime** 增量追加（本目录 `schema.sql` 不含该枚举值；Prisma 终态以 `schema.prisma` 为准）
 - 日志类型（type）覆盖：状态变更、工具调用、异常、人工确认、异步通知、重试
 
 ## 与 Prisma schema 一致性
 
-本 SQL 与 `shellder-agent-server/prisma/schema.prisma` 中阶段 09 新增模型（Task / TaskStep / TaskLog）保持一致。
+本 SQL 与 `shellder-agent-server/prisma/schema.prisma` 中 Task / TaskStep / TaskLog 模型字段一致；`task.status` 的 `pending_confirm` 在 **13-agent-runtime** 迁移中追加，不在本阶段 `schema.sql` 重复定义。

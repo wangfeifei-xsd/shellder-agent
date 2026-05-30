@@ -27,7 +27,7 @@
 | `tenant_id` | 租户外键 → `tenant.id`（Restrict） |
 | `user_id` | 发起用户 ID |
 | `title` | 会话标题（可空） |
-| `status` | `active` / `completed` / `failed` / `cancelled` |
+| `status` | `active` / `completed` / `failed` / `cancelled`（`pending_confirm` 由 **13-agent-runtime** 增量追加，与 `schema.prisma` 终态一致） |
 | `capability_type` | `qa` / `query` / `action` / `workflow`（可空） |
 | `summary` | 会话上下文摘要 |
 | `has_task` | 是否触发任务 |
@@ -61,4 +61,4 @@ mysql -u root -p shellder_agent < project-sql/08-session-message/seed.sql
 - `session.tenant_id` 外键使用 `ON DELETE RESTRICT`，租户只禁用不删除。
 - `message.session_id` 外键使用 `ON DELETE CASCADE`，会话删除时消息一并清理。
 - `last_message_at` 为冗余字段，每次追加消息时由应用层更新，避免列表排序时 JOIN 消息表。
-- Prisma schema 与本 SQL 保持一致。
+- 本目录 `schema.sql` 为阶段 08 增量（不含 `pending_confirm`）；Prisma 终态以 `schema.prisma` 为准，`pending_confirm` 在 **13-agent-runtime** 迁移中追加。

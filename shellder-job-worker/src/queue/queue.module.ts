@@ -1,5 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
+import { TaskExecutionClient } from '../task/task-execution.client';
 import { PLACEHOLDER_QUEUE, TASK_QUEUE, TASK_TIMEOUT_QUEUE } from './queue.constants';
 import { PlaceholderProcessor } from './placeholder.processor';
 import { TaskProcessor } from './task.processor';
@@ -19,6 +20,7 @@ import { TaskTimeoutScheduler } from './task-timeout.scheduler';
     TaskProcessor,
     TaskTimeoutProcessor,
     TaskTimeoutScheduler,
+    TaskExecutionClient,
   ],
   exports: [BullModule],
 })

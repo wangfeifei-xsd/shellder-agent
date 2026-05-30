@@ -14,15 +14,18 @@ import { QueryKnowledgeBaseDto } from './dto/query-knowledge-base.dto';
 import { CreateDataSourceDto } from './dto/create-data-source.dto';
 import { QueryDocumentDto } from './dto/query-document.dto';
 import { QueryEmbeddingTaskDto } from './dto/query-embedding-task.dto';
+import { throwSelfHostedDeprecated } from './knowledge-deprecation.util';
 
+/**
+ * 知识库租户绑定元数据（pathy 代理模式）。
+ * 内容存储、召回、向量化由 pathy-knowledge-server 承担；本服务仅维护租户绑定与权限。
+ */
 @Injectable()
 export class KnowledgeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissionService: PermissionService,
   ) {}
-
-  // ── 知识库 CRUD ────────────────────────────────────────────
 
   async create(user: AuthUser, dto: CreateKnowledgeBaseDto) {
     await this.assertTenantAccess(user, dto.tenantId);
@@ -33,6 +36,7 @@ export class KnowledgeService {
           tenantId: dto.tenantId,
           name: dto.name,
           description: dto.description ?? null,
+          pathyWikiPrefix: dto.pathyWikiPrefix ?? null,
           embeddingModel: dto.embeddingModel ?? 'text-embedding-3-small',
           similarityMetric: dto.similarityMetric ?? 'cosine',
           chunkStrategy: dto.chunkStrategy ?? 'fixed_size',
@@ -48,7 +52,7 @@ export class KnowledgeService {
       ) {
         throw new BadRequestException({
           code: 'KB_NAME_DUPLICATED',
-          message: '同租户下已存在同名知识库',
+          message: '同租户下已存在同名知识库绑定',
         });
       }
       throw err;
@@ -87,21 +91,7 @@ export class KnowledgeService {
   async findOne(user: AuthUser, id: string) {
     const kb = await this.getOrThrow(id);
     await this.assertTenantAccess(user, kb.tenantId);
-
-    const [dataSourceCount, recentTasks] = await this.prisma.$transaction([
-      this.prisma.kbDataSource.count({ where: { knowledgeBaseId: id } }),
-      this.prisma.kbEmbeddingTask.findMany({
-        where: { knowledgeBaseId: id },
-        orderBy: { createdAt: 'desc' },
-        take: 10,
-      }),
-    ]);
-
-    return {
-      ...kb,
-      dataSourceCount,
-      recentEmbeddingTasks: recentTasks,
-    };
+    return kb;
   }
 
   async update(user: AuthUser, id: string, dto: UpdateKnowledgeBaseDto) {
@@ -111,6 +101,9 @@ export class KnowledgeService {
     const data: Prisma.KnowledgeBaseUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.description !== undefined) data.description = dto.description || null;
+    if (dto.pathyWikiPrefix !== undefined) {
+      data.pathyWikiPrefix = dto.pathyWikiPrefix || null;
+    }
     if (dto.embeddingModel !== undefined) data.embeddingModel = dto.embeddingModel;
     if (dto.similarityMetric !== undefined) data.similarityMetric = dto.similarityMetric;
     if (dto.chunkStrategy !== undefined) data.chunkStrategy = dto.chunkStrategy;
@@ -130,7 +123,7 @@ export class KnowledgeService {
       ) {
         throw new BadRequestException({
           code: 'KB_NAME_DUPLICATED',
-          message: '同租户下已存在同名知识库',
+          message: '同租户下已存在同名知识库绑定',
         });
       }
       throw err;
@@ -149,410 +142,70 @@ export class KnowledgeService {
     return { id };
   }
 
-  // ── 数据源管理 ─────────────────────────────────────────────
-
   async addDataSource(
-    user: AuthUser,
-    kbId: string,
-    dto: CreateDataSourceDto,
+    _user: AuthUser,
+    _kbId: string,
+    _dto: CreateDataSourceDto,
   ) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    return this.prisma.kbDataSource.create({
-      data: {
-        knowledgeBaseId: kbId,
-        tenantId: kb.tenantId,
-        name: dto.name,
-        type: dto.type,
-        config: dto.config ? (dto.config as Prisma.InputJsonValue) : Prisma.JsonNull,
-        syncCron: dto.syncCron ?? null,
-      },
-    });
+    throwSelfHostedDeprecated('数据源管理');
   }
 
-  async listDataSources(user: AuthUser, kbId: string) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    return this.prisma.kbDataSource.findMany({
-      where: { knowledgeBaseId: kbId },
-      orderBy: { createdAt: 'desc' },
-    });
+  async listDataSources(_user: AuthUser, _kbId: string) {
+    throwSelfHostedDeprecated('数据源列表');
   }
 
-  async removeDataSource(user: AuthUser, kbId: string, dsId: string) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    const ds = await this.prisma.kbDataSource.findUnique({ where: { id: dsId } });
-    if (!ds || ds.knowledgeBaseId !== kbId) {
-      throw new NotFoundException({
-        code: 'DATA_SOURCE_NOT_FOUND',
-        message: `数据源不存在：${dsId}`,
-      });
-    }
-
-    await this.prisma.kbDataSource.delete({ where: { id: dsId } });
-    return { id: dsId };
+  async removeDataSource(_user: AuthUser, _kbId: string, _dsId: string) {
+    throwSelfHostedDeprecated('数据源删除');
   }
-
-  // ── 文档管理 ───────────────────────────────────────────────
 
   async uploadDocument(
-    user: AuthUser,
-    kbId: string,
-    file: { title: string; content: string; fileKey?: string; fileSize?: number; mimeType?: string },
+    _user: AuthUser,
+    _kbId: string,
+    _file: { title: string; content: string },
   ) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    const contentHash = this.simpleHash(file.content);
-    const charCount = file.content.length;
-
-    const doc = await this.prisma.kbDocument.create({
-      data: {
-        knowledgeBaseId: kbId,
-        tenantId: kb.tenantId,
-        title: file.title,
-        fileKey: file.fileKey ?? null,
-        fileSize: file.fileSize ?? null,
-        mimeType: file.mimeType ?? null,
-        contentHash,
-        charCount,
-        status: 'pending',
-      },
-    });
-
-    // 异步启动分块处理
-    void this.processDocument(kb, doc.id, file.content);
-
-    return doc;
+    throwSelfHostedDeprecated('文档上传');
   }
 
   async listDocuments(
-    user: AuthUser,
-    kbId: string,
-    query: QueryDocumentDto,
+    _user: AuthUser,
+    _kbId: string,
+    _query: QueryDocumentDto,
   ) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
-
-    const where: Prisma.KbDocumentWhereInput = { knowledgeBaseId: kbId };
-    if (query.status) where.status = query.status as 'pending' | 'chunking' | 'embedding' | 'ready' | 'error';
-    if (query.keyword) {
-      where.title = { contains: query.keyword };
-    }
-
-    const [total, rows] = await this.prisma.$transaction([
-      this.prisma.kbDocument.count({ where }),
-      this.prisma.kbDocument.findMany({
-        where,
-        orderBy: [{ createdAt: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-      }),
-    ]);
-
-    return { items: rows, total, page, pageSize };
+    throwSelfHostedDeprecated('文档列表');
   }
 
-  async removeDocument(user: AuthUser, kbId: string, docId: string) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    const doc = await this.prisma.kbDocument.findUnique({ where: { id: docId } });
-    if (!doc || doc.knowledgeBaseId !== kbId) {
-      throw new NotFoundException({
-        code: 'DOCUMENT_NOT_FOUND',
-        message: `文档不存在：${docId}`,
-      });
-    }
-
-    await this.prisma.kbDocument.delete({ where: { id: docId } });
-
-    await this.refreshKbStats(kbId);
-
-    return { id: docId };
+  async removeDocument(_user: AuthUser, _kbId: string, _docId: string) {
+    throwSelfHostedDeprecated('文档删除');
   }
-
-  // ── 向量检索 ───────────────────────────────────────────────
 
   async retrieve(
-    user: AuthUser,
-    kbId: string,
-    query: string,
-    topK: number = 5,
-    threshold: number = 0.0,
+    _user: AuthUser,
+    _kbId: string,
+    _query: string,
+    _topK?: number,
+    _threshold?: number,
   ) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    // V1: 简单文本匹配检索（embedding 需要 embedding 模型集成后才能做向量检索）
-    // 生产环境应对接向量数据库做 ANN 近似最近邻检索
-    const chunks = await this.prisma.kbChunk.findMany({
-      where: {
-        knowledgeBaseId: kbId,
-        content: { contains: query },
-      },
-      orderBy: { chunkIndex: 'asc' },
-      take: topK,
-      include: {
-        document: { select: { id: true, title: true } },
-      },
-    });
-
-    return {
-      query,
-      topK,
-      threshold,
-      results: chunks.map((chunk) => ({
-        chunkId: chunk.id,
-        documentId: chunk.documentId,
-        documentTitle: chunk.document.title,
-        content: chunk.content,
-        chunkIndex: chunk.chunkIndex,
-        tokenCount: chunk.tokenCount,
-        score: 1.0,
-        metadata: chunk.metadata,
-      })),
-    };
+    throwSelfHostedDeprecated('平台内 kb_chunk 检索');
   }
-
-  // ── 向量化任务 ─────────────────────────────────────────────
 
   async listEmbeddingTasks(
-    user: AuthUser,
-    kbId: string,
-    query: QueryEmbeddingTaskDto,
+    _user: AuthUser,
+    _kbId: string,
+    _query: QueryEmbeddingTaskDto,
   ) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
-
-    const where: Prisma.KbEmbeddingTaskWhereInput = { knowledgeBaseId: kbId };
-    if (query.status) where.status = query.status as 'queued' | 'running' | 'done' | 'failed';
-
-    const [total, rows] = await this.prisma.$transaction([
-      this.prisma.kbEmbeddingTask.count({ where }),
-      this.prisma.kbEmbeddingTask.findMany({
-        where,
-        orderBy: [{ createdAt: 'desc' }],
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        include: {
-          document: { select: { id: true, title: true } },
-        },
-      }),
-    ]);
-
-    return { items: rows, total, page, pageSize };
+    throwSelfHostedDeprecated('向量化任务列表');
   }
 
-  async getEmbeddingTask(user: AuthUser, kbId: string, taskId: string) {
-    const kb = await this.getOrThrow(kbId);
-    await this.assertTenantAccess(user, kb.tenantId);
-
-    const task = await this.prisma.kbEmbeddingTask.findUnique({
-      where: { id: taskId },
-      include: {
-        document: { select: { id: true, title: true, status: true } },
-      },
-    });
-    if (!task || task.knowledgeBaseId !== kbId) {
-      throw new NotFoundException({
-        code: 'EMBEDDING_TASK_NOT_FOUND',
-        message: `向量化任务不存在：${taskId}`,
-      });
-    }
-
-    return task;
+  async getEmbeddingTask(_user: AuthUser, _kbId: string, _taskId: string) {
+    throwSelfHostedDeprecated('向量化任务详情');
   }
-
-  // ── 文档分块处理（内部） ───────────────────────────────────
-
-  private async processDocument(
-    kb: KnowledgeBase,
-    docId: string,
-    content: string,
-  ) {
-    const task = await this.prisma.kbEmbeddingTask.create({
-      data: {
-        knowledgeBaseId: kb.id,
-        tenantId: kb.tenantId,
-        documentId: docId,
-        status: 'running',
-        startedAt: new Date(),
-      },
-    });
-
-    try {
-      await this.prisma.kbDocument.update({
-        where: { id: docId },
-        data: { status: 'chunking' },
-      });
-
-      const chunks = this.chunkText(content, kb.chunkStrategy, kb.chunkSize, kb.chunkOverlap);
-
-      await this.prisma.kbEmbeddingTask.update({
-        where: { id: task.id },
-        data: { totalChunks: chunks.length },
-      });
-
-      for (let i = 0; i < chunks.length; i++) {
-        await this.prisma.kbChunk.create({
-          data: {
-            documentId: docId,
-            knowledgeBaseId: kb.id,
-            tenantId: kb.tenantId,
-            content: chunks[i],
-            tokenCount: Math.ceil(chunks[i].length / 4),
-            chunkIndex: i,
-            metadata: Prisma.JsonNull,
-          },
-        });
-
-        await this.prisma.kbEmbeddingTask.update({
-          where: { id: task.id },
-          data: { processedChunks: i + 1 },
-        });
-      }
-
-      await this.prisma.kbDocument.update({
-        where: { id: docId },
-        data: {
-          status: 'embedding',
-          chunkCount: chunks.length,
-        },
-      });
-
-      // V1: embedding 阶段仅标记完成，实际向量化需集成 embedding 模型后实现
-      await this.prisma.kbDocument.update({
-        where: { id: docId },
-        data: { status: 'ready' },
-      });
-
-      await this.prisma.kbEmbeddingTask.update({
-        where: { id: task.id },
-        data: {
-          status: 'done',
-          finishedAt: new Date(),
-        },
-      });
-
-      await this.refreshKbStats(kb.id);
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      await this.prisma.kbDocument.update({
-        where: { id: docId },
-        data: { status: 'error', errorMsg },
-      }).catch(() => {});
-
-      await this.prisma.kbEmbeddingTask.update({
-        where: { id: task.id },
-        data: { status: 'failed', errorMsg, finishedAt: new Date() },
-      }).catch(() => {});
-    }
-  }
-
-  private chunkText(
-    content: string,
-    strategy: string,
-    size: number,
-    overlap: number,
-  ): string[] {
-    if (strategy === 'paragraph') {
-      return this.chunkByParagraph(content, size);
-    }
-    if (strategy === 'sentence') {
-      return this.chunkBySentence(content, size);
-    }
-    return this.chunkByFixedSize(content, size, overlap);
-  }
-
-  private chunkByFixedSize(content: string, size: number, overlap: number): string[] {
-    const chunks: string[] = [];
-    let start = 0;
-    while (start < content.length) {
-      const end = Math.min(start + size, content.length);
-      chunks.push(content.slice(start, end));
-      start = end - overlap;
-      if (start >= content.length) break;
-      if (end === content.length) break;
-    }
-    return chunks.filter((c) => c.trim().length > 0);
-  }
-
-  private chunkByParagraph(content: string, maxSize: number): string[] {
-    const paragraphs = content.split(/\n\s*\n/).filter((p) => p.trim().length > 0);
-    const chunks: string[] = [];
-    let current = '';
-
-    for (const para of paragraphs) {
-      if (current.length + para.length + 1 > maxSize && current.length > 0) {
-        chunks.push(current.trim());
-        current = '';
-      }
-      current += (current ? '\n\n' : '') + para;
-    }
-    if (current.trim().length > 0) {
-      chunks.push(current.trim());
-    }
-    return chunks;
-  }
-
-  private chunkBySentence(content: string, maxSize: number): string[] {
-    const sentences = content.split(/(?<=[.。!！?？\n])\s*/).filter((s) => s.trim().length > 0);
-    const chunks: string[] = [];
-    let current = '';
-
-    for (const sentence of sentences) {
-      if (current.length + sentence.length + 1 > maxSize && current.length > 0) {
-        chunks.push(current.trim());
-        current = '';
-      }
-      current += (current ? ' ' : '') + sentence;
-    }
-    if (current.trim().length > 0) {
-      chunks.push(current.trim());
-    }
-    return chunks;
-  }
-
-  private async refreshKbStats(kbId: string) {
-    const [docCount, chunkCount] = await this.prisma.$transaction([
-      this.prisma.kbDocument.count({ where: { knowledgeBaseId: kbId } }),
-      this.prisma.kbChunk.count({ where: { knowledgeBaseId: kbId } }),
-    ]);
-    await this.prisma.knowledgeBase.update({
-      where: { id: kbId },
-      data: { documentCount: docCount, chunkCount },
-    });
-  }
-
-  private simpleHash(content: string): string {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      const chr = content.charCodeAt(i);
-      hash = ((hash << 5) - hash) + chr;
-      hash |= 0;
-    }
-    return Math.abs(hash).toString(16).padStart(8, '0');
-  }
-
-  // ── 内部辅助 ───────────────────────────────────────────────
 
   private async getOrThrow(id: string): Promise<KnowledgeBase> {
     const kb = await this.prisma.knowledgeBase.findUnique({ where: { id } });
     if (!kb || kb.deletedAt) {
       throw new NotFoundException({
         code: 'KB_NOT_FOUND',
-        message: `知识库不存在：${id}`,
+        message: `知识库绑定不存在：${id}`,
       });
     }
     return kb;

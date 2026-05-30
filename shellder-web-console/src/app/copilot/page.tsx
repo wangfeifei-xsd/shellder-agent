@@ -1,22 +1,23 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Input, Spin, Tag, Tabs, Badge, Empty, List, Timeline, Modal, message } from 'antd';
+import { Button, Input, Spin, Tag, Tabs, Badge, Empty, List, Timeline, Modal, message, Alert } from 'antd';
 import {
   SendOutlined,
   HistoryOutlined,
   ExclamationCircleOutlined,
-  CheckCircleOutlined,
   LoadingOutlined,
   RobotOutlined,
   UserOutlined,
-  ClockCircleOutlined,
+  BookOutlined,
 } from '@ant-design/icons';
 import type {
   CopilotConfig,
   CopilotMessage,
   CopilotSession,
   CopilotConfirmation,
+  CopilotSessionTask,
+  CopilotCitation,
 } from '@/lib/copilot';
 import {
   copilotExchangeToken,
@@ -28,11 +29,20 @@ import {
   copilotSubmitConfirmation,
   copilotBuildSseUrl,
   copilotGetTask,
+  extractMessageText,
+  extractCitations,
 } from '@/lib/copilot';
 
 const { TextArea } = Input;
+const STREAMING_MSG_ID = '__streaming__';
 
 type CopilotTab = 'chat' | 'history' | 'confirmations' | 'tasks';
+
+interface PendingInlineConfirm {
+  approvalId: string;
+  reason: string;
+  toolName?: string;
+}
 
 /**
  * 嵌入式 Copilot 主页面
@@ -48,17 +58,23 @@ export default function CopilotPage() {
   const [activeTab, setActiveTab] = useState<CopilotTab>('chat');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
+  const [sessionTasks, setSessionTasks] = useState<CopilotSessionTask[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  const [inlineConfirm, setInlineConfirm] = useState<PendingInlineConfirm | null>(null);
 
   const [sessions, setSessions] = useState<CopilotSession[]>([]);
   const [confirmations, setConfirmations] = useState<CopilotConfirmation[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const tokenRef = useRef<string | null>(null);
 
-  // 初始化：从 URL 参数或 postMessage 获取凭证并换票
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const clientId = params.get('clientId');
@@ -68,12 +84,11 @@ export default function CopilotPage() {
     const externalUserId = params.get('externalUserId') ?? undefined;
 
     if (clientId && clientSecret) {
-      doExchangeToken({ clientId, clientSecret, tenantId, externalTenantId, externalUserId });
+      void doExchangeToken({ clientId, clientSecret, tenantId, externalTenantId, externalUserId });
     } else {
-      // 监听 postMessage（iframe 嵌入场景）
       const handler = (event: MessageEvent) => {
         if (event.data?.type === 'copilot:init' && event.data.clientId) {
-          doExchangeToken(event.data);
+          void doExchangeToken(event.data);
         }
       };
       window.addEventListener('message', handler);
@@ -95,72 +110,87 @@ export default function CopilotPage() {
       setToken(result.accessToken);
       setConfig(result.config);
       setError(null);
-    } catch (e: any) {
-      setError(e.message ?? '换票失败');
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '换票失败');
     } finally {
       setLoading(false);
     }
   };
 
-  // 自动创建新会话
+  const closeSse = useCallback(() => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    setStreaming(false);
+  }, []);
+
+  const refreshSessionDetail = useCallback(async (sid: string, authToken: string) => {
+    const detail = await copilotGetSession(authToken, sid);
+    setMessages(detail.messages);
+    setSessionTasks(detail.tasks ?? []);
+    return detail;
+  }, []);
+
   const ensureSession = useCallback(async () => {
-    if (!token) return null;
+    const authToken = tokenRef.current;
+    if (!authToken) return null;
     if (sessionId) return sessionId;
-    const session = await copilotCreateSession(token);
+    const session = await copilotCreateSession(authToken);
     setSessionId(session.id);
     return session.id;
-  }, [token, sessionId]);
+  }, [sessionId]);
 
-  // 连接 SSE
   const connectSSE = useCallback(
-    (sid: string) => {
-      if (!token || eventSourceRef.current) return;
-      const url = `${copilotBuildSseUrl(sid)}`;
-      const es = new EventSource(url);
-      eventSourceRef.current = es;
-      setStreaming(true);
+    (sid: string, authToken: string, onRuntimeEvent?: (type: string, data: Record<string, unknown>) => void) => {
+      closeSse();
 
-      es.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'message' && data.role === 'assistant') {
-            setMessages((prev) => {
-              const exists = prev.find((m) => m.id === data.id);
-              if (exists) return prev;
-              return [
-                ...prev,
-                {
-                  id: data.id,
-                  type: data.messageType,
-                  role: data.role,
-                  content: data.content,
-                  seq: data.seq,
-                  createdAt: data.createdAt,
-                },
-              ];
-            });
+      const es = new EventSource(copilotBuildSseUrl(sid, authToken));
+      eventSourceRef.current = es;
+
+      es.addEventListener('session.connected', () => {
+        setStreaming(false);
+      });
+
+      es.addEventListener('session.snapshot_end', () => {
+        setStreaming(false);
+      });
+
+      const runtimeTypes = ['delta', 'tool_start', 'tool_end', 'confirm_required', 'done', 'error'];
+      for (const type of runtimeTypes) {
+        es.addEventListener(type, (ev) => {
+          try {
+            const data = JSON.parse(ev.data) as Record<string, unknown>;
+            onRuntimeEvent?.(type, data);
+          } catch {
+            // ignore
           }
-          if (data.type === 'session.snapshot_end') {
-            setStreaming(false);
-          }
-        } catch {}
-      };
+        });
+      }
 
       es.onerror = () => {
-        es.close();
-        eventSourceRef.current = null;
-        setStreaming(false);
-        // 重连
-        setTimeout(() => connectSSE(sid), 3000);
+        if (eventSourceRef.current !== es) return;
+        closeSse();
+        setTimeout(() => {
+          if (tokenRef.current && sid) {
+            connectSSE(sid, tokenRef.current, onRuntimeEvent);
+          }
+        }, 3000);
       };
+
+      return es;
     },
-    [token],
+    [closeSse],
   );
 
-  // 发送消息
   const handleSend = async () => {
-    if (!inputValue.trim() || !token) return;
+    const authToken = tokenRef.current;
+    if (!inputValue.trim() || !authToken) return;
+
+    const text = inputValue.trim();
     setSending(true);
+    setInlineConfirm(null);
+
     try {
       const sid = await ensureSession();
       if (!sid) return;
@@ -169,95 +199,151 @@ export default function CopilotPage() {
         id: `temp-${Date.now()}`,
         type: 'user',
         role: 'user',
-        content: { text: inputValue },
+        content: { text },
         seq: messages.length + 1,
         createdAt: new Date().toISOString(),
       };
       setMessages((prev) => [...prev, userMsg]);
       setInputValue('');
+      setStreaming(true);
 
-      const result = await copilotSendMessage(token, sid, inputValue);
+      let streamText = '';
+      const upsertStreaming = (chunk: string) => {
+        streamText += chunk;
+        setMessages((prev) => {
+          const without = prev.filter((m) => m.id !== STREAMING_MSG_ID);
+          return [
+            ...without,
+            {
+              id: STREAMING_MSG_ID,
+              type: 'system',
+              role: 'assistant',
+              content: { text: streamText },
+              seq: without.length + 1,
+              createdAt: new Date().toISOString(),
+            },
+          ];
+        });
+      };
+
+      connectSSE(sid, authToken, (type, data) => {
+        if (type === 'delta' && typeof data.text === 'string') {
+          upsertStreaming(data.text);
+        }
+        if (type === 'confirm_required') {
+          setInlineConfirm({
+            approvalId: String(data.approvalId ?? ''),
+            reason: String(data.reason ?? '需要人工确认'),
+            toolName: data.toolName ? String(data.toolName) : undefined,
+          });
+          setStreaming(false);
+        }
+        if (type === 'done') {
+          setStreaming(false);
+          void refreshSessionDetail(sid, authToken).catch(() => {});
+        }
+        if (type === 'error') {
+          setStreaming(false);
+          message.error(String(data.message ?? '处理失败'));
+        }
+      });
+
+      const result = await copilotSendMessage(authToken, sid, text, 'stream');
       setMessages((prev) =>
-        prev.map((m) => (m.id === userMsg.id ? { ...m, id: result.id, seq: result.seq } : m)),
+        prev.map((m) =>
+          m.id === userMsg.id ? { ...m, id: result.messageId, seq: m.seq } : m,
+        ),
       );
 
-      // 连接 SSE 获取助手回复
-      if (!eventSourceRef.current) {
-        connectSSE(sid);
+      if (result.reply && !streamText) {
+        setStreaming(false);
+        await refreshSessionDetail(sid, authToken);
       }
-    } catch (e: any) {
-      message.error(e.message ?? '发送失败');
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : '发送失败');
+      setStreaming(false);
+      closeSse();
     } finally {
       setSending(false);
     }
   };
 
-  // 加载历史会话列表
   const loadSessions = async () => {
-    if (!token) return;
+    const authToken = tokenRef.current;
+    if (!authToken) return;
     try {
-      const result = await copilotListSessions(token);
+      const result = await copilotListSessions(authToken);
       setSessions(result.items);
-    } catch {}
-  };
-
-  // 恢复历史会话
-  const resumeSession = async (sid: string) => {
-    if (!token) return;
-    try {
-      const detail = await copilotGetSession(token, sid);
-      setSessionId(sid);
-      setMessages(detail.messages);
-      setActiveTab('chat');
-      // 关闭旧 SSE
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
-      connectSSE(sid);
-    } catch (e: any) {
-      message.error(e.message ?? '恢复会话失败');
+    } catch {
+      // ignore
     }
   };
 
-  // 加载待确认列表
-  const loadConfirmations = async () => {
-    if (!token) return;
+  const resumeSession = async (sid: string) => {
+    const authToken = tokenRef.current;
+    if (!authToken) return;
     try {
-      const items = await copilotListConfirmations(token, 'pending');
-      setConfirmations(items);
-    } catch {}
+      const detail = await refreshSessionDetail(sid, authToken);
+      setSessionId(sid);
+      setActiveTab('chat');
+      setInlineConfirm(null);
+      connectSSE(sid, authToken, (type, data) => {
+        if (type === 'confirm_required') {
+          setInlineConfirm({
+            approvalId: String(data.approvalId ?? ''),
+            reason: String(data.reason ?? '需要人工确认'),
+            toolName: data.toolName ? String(data.toolName) : undefined,
+          });
+        }
+        if (type === 'done') {
+          void refreshSessionDetail(sid, authToken).catch(() => {});
+        }
+      });
+      if (detail.status === 'pending_confirm') {
+        void loadConfirmations();
+      }
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : '恢复会话失败');
+    }
   };
 
-  // 提交确认
-  const handleConfirm = async (id: string, action: 'approve' | 'reject') => {
-    if (!token) return;
+  const loadConfirmations = async () => {
+    const authToken = tokenRef.current;
+    if (!authToken) return;
     try {
-      await copilotSubmitConfirmation(token, id, action);
+      const items = await copilotListConfirmations(authToken, 'pending');
+      setConfirmations(items);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleConfirm = async (id: string, action: 'approve' | 'reject') => {
+    const authToken = tokenRef.current;
+    if (!authToken) return;
+    try {
+      await copilotSubmitConfirmation(authToken, id, action);
       message.success(action === 'approve' ? '已确认执行' : '已取消执行');
+      setInlineConfirm(null);
       loadConfirmations();
-    } catch (e: any) {
-      message.error(e.message ?? '操作失败');
+      if (sessionId) {
+        await refreshSessionDetail(sessionId, authToken);
+      }
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : '操作失败');
     }
   };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, inlineConfirm]);
 
   useEffect(() => {
-    if (activeTab === 'history') loadSessions();
-    if (activeTab === 'confirmations') loadConfirmations();
+    if (activeTab === 'history') void loadSessions();
+    if (activeTab === 'confirmations') void loadConfirmations();
   }, [activeTab, token]);
 
-  // 清理 SSE
-  useEffect(() => {
-    return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-    };
-  }, []);
+  useEffect(() => () => closeSse(), [closeSse]);
 
   if (loading) {
     return (
@@ -288,32 +374,41 @@ export default function CopilotPage() {
   }
 
   const pendingCount = confirmations.filter((c) => c.status === 'pending').length;
+  const showHistory = config?.features?.enableHistory !== false;
+  const showConfirmations = config?.features?.enableConfirmation !== false;
+  const showTasks = config?.features?.enableTask !== false;
+
+  const tabItems = [
+    { key: 'chat', label: '对话' },
+    ...(showHistory
+      ? [{ key: 'history', label: <span><HistoryOutlined /> 历史</span> }]
+      : []),
+    ...(showConfirmations
+      ? [{
+          key: 'confirmations',
+          label: (
+            <Badge count={pendingCount} size="small" offset={[6, 0]}>
+              <span><ExclamationCircleOutlined /> 待确认</span>
+            </Badge>
+          ),
+        }]
+      : []),
+    ...(showTasks
+      ? [{ key: 'tasks', label: <span><LoadingOutlined /> 任务</span> }]
+      : []),
+  ];
 
   return (
     <div className="flex h-full flex-col">
-      {/* 顶部 Tab */}
       <div className="border-b px-4">
         <Tabs
           activeKey={activeTab}
           onChange={(k) => setActiveTab(k as CopilotTab)}
-          items={[
-            { key: 'chat', label: '对话' },
-            { key: 'history', label: <span><HistoryOutlined /> 历史</span> },
-            {
-              key: 'confirmations',
-              label: (
-                <Badge count={pendingCount} size="small" offset={[6, 0]}>
-                  <span><ExclamationCircleOutlined /> 待确认</span>
-                </Badge>
-              ),
-            },
-            { key: 'tasks', label: <span><LoadingOutlined /> 任务</span> },
-          ]}
+          items={tabItems}
           size="small"
         />
       </div>
 
-      {/* Tab 内容区 */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 'chat' && (
           <ChatPanel
@@ -322,24 +417,33 @@ export default function CopilotPage() {
             sending={sending}
             streaming={streaming}
             config={config}
+            inlineConfirm={inlineConfirm}
+            onInlineConfirm={(action) => {
+              if (inlineConfirm?.approvalId) {
+                void handleConfirm(inlineConfirm.approvalId, action);
+              }
+            }}
             onInputChange={setInputValue}
-            onSend={handleSend}
+            onSend={() => void handleSend()}
             messagesEndRef={messagesEndRef}
           />
         )}
         {activeTab === 'history' && (
-          <HistoryPanel sessions={sessions} onResume={resumeSession} />
+          <HistoryPanel sessions={sessions} onResume={(id) => void resumeSession(id)} />
         )}
         {activeTab === 'confirmations' && (
-          <ConfirmationPanel confirmations={confirmations} onAction={handleConfirm} />
+          <ConfirmationPanel
+            confirmations={confirmations}
+            onAction={(id, action) => void handleConfirm(id, action)}
+          />
         )}
-        {activeTab === 'tasks' && <TaskPanel token={token} sessionId={sessionId} />}
+        {activeTab === 'tasks' && (
+          <TaskPanel token={token} tasks={sessionTasks} />
+        )}
       </div>
     </div>
   );
 }
-
-// ── 子组件 ───────────────────────────────────────────────────
 
 function ChatPanel({
   messages,
@@ -347,6 +451,8 @@ function ChatPanel({
   sending,
   streaming,
   config,
+  inlineConfirm,
+  onInlineConfirm,
   onInputChange,
   onSend,
   messagesEndRef,
@@ -356,13 +462,14 @@ function ChatPanel({
   sending: boolean;
   streaming: boolean;
   config: CopilotConfig | null;
+  inlineConfirm: PendingInlineConfirm | null;
+  onInlineConfirm: (action: 'approve' | 'reject') => void;
   onInputChange: (v: string) => void;
   onSend: () => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
 }) {
   return (
     <div className="flex h-full flex-col">
-      {/* 消息列表 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {messages.length === 0 && config?.welcomeMessage && (
           <div className="flex gap-2">
@@ -375,15 +482,32 @@ function ChatPanel({
         {messages.map((msg) => (
           <MessageBubble key={msg.id} message={msg} />
         ))}
-        {streaming && (
+        {streaming && !messages.some((m) => m.id === STREAMING_MSG_ID) && (
           <div className="flex gap-2 items-center text-gray-400">
             <LoadingOutlined /> <span className="text-xs">正在处理…</span>
           </div>
         )}
+        {inlineConfirm && (
+          <Alert
+            type="warning"
+            showIcon
+            message={inlineConfirm.toolName ? `待确认：${inlineConfirm.toolName}` : '待确认操作'}
+            description={inlineConfirm.reason}
+            action={
+              <div className="flex gap-2">
+                <Button size="small" danger onClick={() => onInlineConfirm('reject')}>
+                  取消
+                </Button>
+                <Button size="small" type="primary" onClick={() => onInlineConfirm('approve')}>
+                  确认执行
+                </Button>
+              </div>
+            }
+          />
+        )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 输入区 */}
       <div className="border-t p-3">
         <div className="flex gap-2">
           <TextArea
@@ -398,14 +522,14 @@ function ChatPanel({
             placeholder={config?.placeholder ?? '请输入您的问题…'}
             autoSize={{ minRows: 1, maxRows: 4 }}
             className="flex-1"
-            disabled={sending}
+            disabled={sending || !!inlineConfirm}
           />
           <Button
             type="primary"
             icon={<SendOutlined />}
             onClick={onSend}
             loading={sending}
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || !!inlineConfirm}
           />
         </div>
       </div>
@@ -415,10 +539,8 @@ function ChatPanel({
 
 function MessageBubble({ message: msg }: { message: CopilotMessage }) {
   const isUser = msg.role === 'user';
-  const text =
-    typeof msg.content === 'string'
-      ? msg.content
-      : (msg.content as any)?.text ?? JSON.stringify(msg.content);
+  const text = extractMessageText(msg.content);
+  const citations = extractCitations(msg.content);
 
   return (
     <div className={`flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
@@ -428,15 +550,35 @@ function MessageBubble({ message: msg }: { message: CopilotMessage }) {
         <RobotOutlined className="mt-1 text-blue-500" />
       )}
       <div
-        className={`rounded-lg px-3 py-2 text-sm max-w-[80%] whitespace-pre-wrap ${
+        className={`rounded-lg px-3 py-2 text-sm max-w-[80%] ${
           isUser ? 'bg-green-50' : 'bg-blue-50'
         }`}
       >
-        {text}
+        <div className="whitespace-pre-wrap">{text}</div>
         {msg.type === 'confirmation' && (
           <Tag color="warning" className="mt-1">
             待确认
           </Tag>
+        )}
+        {citations.length > 0 && (
+          <div className="mt-2 border-t border-blue-100 pt-2">
+            <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+              <BookOutlined /> 引用来源
+            </div>
+            <ul className="space-y-1 text-xs text-gray-600">
+              {citations.map((c: CopilotCitation, i: number) => (
+                <li key={i} className="rounded bg-white/60 px-2 py-1">
+                  {c.documentTitle && (
+                    <span className="font-medium text-blue-600">{c.documentTitle}</span>
+                  )}
+                  {c.score != null && (
+                    <span className="ml-1 text-gray-400">({(c.score * 100).toFixed(0)}%)</span>
+                  )}
+                  <div className="text-gray-500 line-clamp-2">{c.content}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </div>
@@ -539,60 +681,51 @@ function ConfirmationPanel({
   );
 }
 
-function TaskPanel({ token, sessionId }: { token: string; sessionId: string | null }) {
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!sessionId || !token) return;
-    setLoading(true);
-    // 通过会话获取关联任务（复用 session detail API 中的 tasks）
-    copilotGetSession(token, sessionId)
-      .then((detail: any) => {
-        if (detail.tasks) setTasks(detail.tasks);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [sessionId, token]);
-
-  if (!sessionId) {
-    return <Empty description="开始对话后可查看任务状态" className="mt-12" />;
-  }
-  if (loading) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <Spin />
-      </div>
-    );
-  }
+function TaskPanel({ token, tasks }: { token: string; tasks: CopilotSessionTask[] }) {
   if (tasks.length === 0) {
-    return <Empty description="当前会话暂无任务" className="mt-12" />;
+    return <Empty description="当前会话暂无任务（流程型能力执行后可见）" className="mt-12" />;
   }
 
   return (
     <div className="overflow-y-auto p-4 space-y-3">
-      {tasks.map((task: any) => (
+      {tasks.map((task) => (
         <TaskCard key={task.id} task={task} token={token} />
       ))}
     </div>
   );
 }
 
-function TaskCard({ task, token }: { task: any; token: string }) {
-  const [detail, setDetail] = useState<any>(null);
+function TaskCard({ task, token }: { task: CopilotSessionTask; token: string }) {
+  const [detail, setDetail] = useState<Awaited<ReturnType<typeof copilotGetTask>> | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [polling, setPolling] = useState(false);
 
   const loadDetail = async () => {
-    if (detail) {
-      setExpanded(!expanded);
-      return;
-    }
     try {
       const d = await copilotGetTask(token, task.id);
       setDetail(d);
       setExpanded(true);
-    } catch {}
+      setPolling(d.status === 'running' || d.status === 'pending');
+    } catch {
+      // ignore
+    }
   };
+
+  useEffect(() => {
+    if (!polling || !expanded) return;
+    const timer = setInterval(async () => {
+      try {
+        const d = await copilotGetTask(token, task.id);
+        setDetail(d);
+        if (d.status !== 'running' && d.status !== 'pending') {
+          setPolling(false);
+        }
+      } catch {
+        setPolling(false);
+      }
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [polling, expanded, token, task.id]);
 
   const statusColor =
     task.status === 'completed'
@@ -603,18 +736,20 @@ function TaskCard({ task, token }: { task: any; token: string }) {
           ? 'error'
           : 'default';
 
+  const displayStatus = detail?.status ?? task.status;
+
   return (
     <div className="rounded-lg border p-3">
-      <div
-        className="flex items-center justify-between cursor-pointer"
-        onClick={loadDetail}
-      >
+      <div className="flex items-center justify-between cursor-pointer" onClick={() => void loadDetail()}>
         <span className="text-sm font-medium">{task.title || task.type}</span>
-        <Tag color={statusColor}>{task.status}</Tag>
+        <Tag color={statusColor}>{displayStatus}</Tag>
       </div>
+      {task.currentNode && (
+        <p className="mt-1 text-xs text-gray-400">当前节点：{task.currentNode}</p>
+      )}
       {expanded && detail?.steps && (
         <Timeline className="mt-3 ml-2" style={{ paddingLeft: 0 }}>
-          {detail.steps.map((step: any) => (
+          {detail.steps.map((step) => (
             <Timeline.Item
               key={step.id}
               color={
@@ -626,9 +761,7 @@ function TaskCard({ task, token }: { task: any; token: string }) {
                       ? 'red'
                       : 'gray'
               }
-              dot={
-                step.status === 'running' ? <LoadingOutlined /> : undefined
-              }
+              dot={step.status === 'running' ? <LoadingOutlined /> : undefined}
             >
               <span className="text-xs">
                 {step.name || `步骤 ${step.seq}`}
@@ -639,6 +772,9 @@ function TaskCard({ task, token }: { task: any; token: string }) {
             </Timeline.Item>
           ))}
         </Timeline>
+      )}
+      {detail?.failReason && (
+        <Alert type="error" message={detail.failReason} className="mt-2" showIcon />
       )}
     </div>
   );

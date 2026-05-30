@@ -1,5 +1,9 @@
-import { Global, Module } from '@nestjs/common';
+import { forwardRef, Global, Module } from '@nestjs/common';
+import { AgentRuntimeModule } from '../agent-runtime/agent-runtime.module';
+import { AuditModule } from '../audit/audit.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { TaskModule } from '../task/task.module';
+import { ApprovalRuntimeService } from './approval-runtime.service';
 import { ApprovalController } from './approval.controller';
 import { ApprovalService } from './approval.service';
 
@@ -11,9 +15,14 @@ import { ApprovalService } from './approval.service';
  */
 @Global()
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    PrismaModule,
+    AuditModule,
+    forwardRef(() => AgentRuntimeModule),
+    forwardRef(() => TaskModule),
+  ],
   controllers: [ApprovalController],
-  providers: [ApprovalService],
-  exports: [ApprovalService],
+  providers: [ApprovalService, ApprovalRuntimeService],
+  exports: [ApprovalService, ApprovalRuntimeService],
 })
 export class ApprovalModule {}

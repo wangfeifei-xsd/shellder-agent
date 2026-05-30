@@ -21,7 +21,7 @@
 ### schema.sql
 
 - 本阶段**无新建表**
-- 增量变更：为 `task` 表添加组合索引 `idx_task_cap_type_status_created`，优化流程型任务进度查询
+- 增量变更：为 `task` 表添加组合索引，优化流程型任务进度查询（Prisma 迁移名 `task_capability_type_status_created_at_idx`；本目录 `schema.sql` 使用 `idx_task_cap_type_status_created`，语义相同）
 - 文档化统一结果结构的 JSON 约定（`message.content` 格式）
 
 ### seed.sql
@@ -52,5 +52,6 @@ mysql -u root -p shellder_agent < project-sql/14-business-capabilities/schema.sq
 ## 注意事项
 
 - schema.sql 使用 `CREATE INDEX IF NOT EXISTS`，可重复执行
+- 上述组合索引**未**写入 `schema.prisma`（仅 project-sql / Prisma migration 增量存在）；若需 Prisma 完全感知，可后续在 Task 模型上补 `@@index([capabilityType, status, createdAt(sort: Desc)])`
 - 本阶段核心交付为代码层实现（四个 Capability Handler），SQL 层变更极少
 - 不修改前序表结构；仅添加辅助索引
