@@ -25,18 +25,15 @@ export function knowledgeProxyTimeout(timeoutMs: number): ServiceUnavailableExce
 export function knowledgeProxyUpstream(
   status: number,
   detail: string,
+  upstream?: unknown,
 ): HttpException {
+  const body = {
+    code: KNOWLEDGE_PROXY_UPSTREAM,
+    message: `pathy-knowledge-server 返回 ${status}：${detail}`,
+    ...(upstream !== undefined ? { details: upstream } : {}),
+  };
   if (status >= 500) {
-    return new BadGatewayException({
-      code: KNOWLEDGE_PROXY_UPSTREAM,
-      message: `pathy-knowledge-server 返回 ${status}：${detail}`,
-    });
+    return new BadGatewayException(body);
   }
-  return new HttpException(
-    {
-      code: KNOWLEDGE_PROXY_UPSTREAM,
-      message: `pathy-knowledge-server 返回 ${status}：${detail}`,
-    },
-    status,
-  );
+  return new HttpException(body, status);
 }

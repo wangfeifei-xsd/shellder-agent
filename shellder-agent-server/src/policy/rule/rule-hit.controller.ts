@@ -5,9 +5,9 @@ import { AuthUser } from '../../auth/jwt.types';
 import { QueryRuleHitDto } from './dto/query-rule-hit.dto';
 import { RuleService } from './rule.service';
 
-/** 规则命中记录（功能清单 §1.7）；归属「知识库与规则」菜单（knowledge） */
+/** 规则命中记录（功能清单 §1.7）；归属「规则」菜单（rule） */
 @Controller('api/v1/rule-hits')
-@RequireMenu('knowledge')
+@RequireMenu('rule')
 export class RuleHitController {
   constructor(private readonly ruleService: RuleService) {}
 

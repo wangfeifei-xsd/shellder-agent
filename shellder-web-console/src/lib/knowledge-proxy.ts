@@ -1,4 +1,4 @@
-import { API_BASE_URL, ApiError } from './api';
+import { resolveApiOrigin, ApiError } from './api';
 
 const PROXY_BASE = '/api/v1/knowledge';
 
@@ -128,7 +128,7 @@ function buildProxyUrl(
   path: string,
   query?: Record<string, string | number | undefined | null>,
 ): string {
-  const url = new URL(path.replace(/^\//, ''), `${API_BASE_URL}/`);
+  const url = new URL(path.replace(/^\//, ''), `${resolveApiOrigin()}/`);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));

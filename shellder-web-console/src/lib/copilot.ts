@@ -3,8 +3,9 @@
  * 用于嵌入式 Copilot 前端与后端 /copilot/v1 接口交互。
  */
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
-const COPILOT_BASE = `${API_BASE}/copilot/v1`;
+import { resolveApiOrigin } from './api';
+
+const COPILOT_BASE = `${resolveApiOrigin()}/copilot/v1`;
 
 export interface CopilotConfig {
   theme?: Record<string, unknown>;

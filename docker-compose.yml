@@ -91,18 +91,14 @@ services:
       context: .
       dockerfile: shellder-web-console/Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3001}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
     container_name: shellder-web-console
     restart: unless-stopped
     depends_on:
       shellder-agent-server:
         condition: service_healthy
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3001}
     ports:
-      - '3000:3000'
+      - '${WEB_CONSOLE_PORT:-3000}:80'
 
   prometheus:
     profiles: [monitoring]

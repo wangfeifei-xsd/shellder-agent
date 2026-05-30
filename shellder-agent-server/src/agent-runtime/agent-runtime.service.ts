@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -44,6 +46,7 @@ export class AgentRuntimeService {
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
     private readonly auditService: AuditService,
+    @Inject(forwardRef(() => ApprovalService))
     private readonly approvalService: ApprovalService,
     private readonly routingEngine: RoutingEngineService,
     private readonly sessionService: SessionService,

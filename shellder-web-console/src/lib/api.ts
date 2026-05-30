@@ -1,5 +1,13 @@
+/** 开发环境走 Vite 代理（/api → 后端）；生产可通过 VITE_API_BASE_URL 指定绝对地址。 */
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3001';
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? '' : 'http://localhost:3001');
+
+export function resolveApiOrigin(): string {
+  if (API_BASE_URL) return API_BASE_URL.replace(/\/$/, '');
+  if (typeof window !== 'undefined') return window.location.origin;
+  return 'http://localhost:3000';
+}
 
 export interface ApiErrorBody {
   success: false;
@@ -32,7 +40,8 @@ interface RequestOptions {
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
-  const url = new URL(path.replace(/^\//, ''), `${API_BASE_URL}/`);
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  const url = new URL(normalized, `${resolveApiOrigin()}/`);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined && value !== null && value !== '') {

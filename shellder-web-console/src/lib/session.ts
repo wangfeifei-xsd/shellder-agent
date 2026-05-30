@@ -1,4 +1,4 @@
-import { API_BASE_URL, apiFetch } from './api';
+import { resolveApiOrigin, apiFetch } from './api';
 
 // ── 类型定义 ─────────────────────────────────────────────
 
@@ -187,5 +187,5 @@ export function sendMessage(sessionId: string, input: SendMessageInput) {
 }
 
 export function buildSseUrl(sessionId: string): string {
-  return `${API_BASE_URL.replace(/\/$/, '')}/api/v1/sessions/${sessionId}/stream`;
+  return `${resolveApiOrigin()}/api/v1/sessions/${sessionId}/stream`;
 }

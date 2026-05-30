@@ -20,9 +20,9 @@ import { UpdateRuleStatusDto } from './dto/update-status.dto';
 import { UpdateRuleDto } from './dto/update-rule.dto';
 import { RuleService } from './rule.service';
 
-/** 规则配置（功能清单 §1.7）；归属「知识库与规则」菜单（knowledge） */
+/** 规则配置（功能清单 §1.7）；归属「规则」菜单（rule） */
 @Controller('api/v1/rules')
-@RequireMenu('knowledge')
+@RequireMenu('rule')
 export class RuleController {
   constructor(
     private readonly ruleService: RuleService,

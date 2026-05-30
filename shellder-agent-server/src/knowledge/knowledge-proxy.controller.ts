@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Delete,
   Get,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Put,
@@ -73,7 +75,12 @@ export class KnowledgeProxyController {
     @Query('tenantId') tenantId: string,
     @Param('layer') layer: string,
     @Query('suffix') suffix?: string,
-    @Query('max_files') maxFiles?: number,
+    @Query(
+      'max_files',
+      new DefaultValuePipe(undefined),
+      new ParseIntPipe({ optional: true }),
+    )
+    maxFiles?: number,
   ) {
     return this.proxy.listLayerFiles(user, tenantId, layer, {
       suffix,
@@ -175,8 +182,18 @@ export class KnowledgeProxyController {
     @CurrentUser() user: AuthUser,
     @Query('tenantId') tenantId: string,
     @Param('layer') layer: string,
-    @Query('max_depth') maxDepth?: number,
-    @Query('max_nodes') maxNodes?: number,
+    @Query(
+      'max_depth',
+      new DefaultValuePipe(undefined),
+      new ParseIntPipe({ optional: true }),
+    )
+    maxDepth?: number,
+    @Query(
+      'max_nodes',
+      new DefaultValuePipe(undefined),
+      new ParseIntPipe({ optional: true }),
+    )
+    maxNodes?: number,
   ) {
     return this.proxy.getDataTree(user, tenantId, layer, maxDepth, maxNodes);
   }

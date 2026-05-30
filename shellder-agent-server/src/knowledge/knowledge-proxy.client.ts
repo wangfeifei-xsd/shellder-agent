@@ -4,6 +4,7 @@ import {
   knowledgeProxyUnavailable,
   knowledgeProxyUpstream,
 } from './knowledge-proxy.errors';
+import { formatUpstreamErrorDetail } from './knowledge-proxy-error.util';
 
 export type ProxyResponseType = 'json' | 'buffer' | 'none';
 
@@ -77,8 +78,8 @@ export class KnowledgeProxyClient {
       const responseType = options.responseType ?? 'json';
 
       if (!res.ok) {
-        const detail = await this.readErrorBody(res);
-        throw knowledgeProxyUpstream(res.status, detail);
+        const { detail, raw } = await this.readErrorBody(res);
+        throw knowledgeProxyUpstream(res.status, detail, raw);
       }
 
       if (responseType === 'none') {
@@ -132,24 +133,38 @@ export class KnowledgeProxyClient {
     if (query) {
       for (const [key, value] of Object.entries(query)) {
         if (value === undefined || value === null || value === '') continue;
+        if (typeof value === 'number') {
+          if (!Number.isFinite(value)) continue;
+          url.searchParams.set(key, String(Math.trunc(value)));
+          continue;
+        }
+        if (typeof value === 'boolean') {
+          url.searchParams.set(key, value ? 'true' : 'false');
+          continue;
+        }
         url.searchParams.set(key, String(value));
       }
     }
     return url.toString();
   }
 
-  private async readErrorBody(res: Response): Promise<string> {
+  private async readErrorBody(
+    res: Response,
+  ): Promise<{ detail: string; raw?: unknown }> {
     try {
       const text = await res.text();
-      if (!text) return res.statusText;
+      if (!text) return { detail: res.statusText };
       try {
-        const json = JSON.parse(text) as { detail?: string; message?: string };
-        return json.detail ?? json.message ?? text.slice(0, 500);
+        const json = JSON.parse(text) as unknown;
+        return {
+          detail: formatUpstreamErrorDetail(json) || text.slice(0, 500),
+          raw: json,
+        };
       } catch {
-        return text.slice(0, 500);
+        return { detail: text.slice(0, 500) };
       }
     } catch {
-      return res.statusText;
+      return { detail: res.statusText };
     }
   }
 }

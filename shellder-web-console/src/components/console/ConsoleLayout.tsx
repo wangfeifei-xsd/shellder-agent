@@ -1,16 +1,19 @@
-'use client';
-
 import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { Dropdown, Layout, Menu, Select, Space, Spin, Tag, Typography } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/components/auth/AuthContext';
 import { ActiveTenantProvider, useActiveTenant } from './ActiveTenantContext';
 import { MENU_PERMISSION_KEY, consoleMenuItems } from './menu-items';
 
 const { Header, Sider, Content } = Layout;
+
+/** 侧栏品牌区与顶栏 Header 统一高度（px） */
+const CONSOLE_TOP_BAR_HEIGHT = 64;
+const CONSOLE_CONTENT_MARGIN = 16;
+const siderMenuScrollHeight = `calc(100vh - ${CONSOLE_TOP_BAR_HEIGHT}px)`;
+const mainContentScrollHeight = `calc(100vh - ${CONSOLE_TOP_BAR_HEIGHT}px - ${CONSOLE_CONTENT_MARGIN * 2}px)`;
 
 function ActiveTenantPicker() {
   const { activeTenantId, setActiveTenantId, tenants } = useActiveTenant();
@@ -64,9 +67,9 @@ function useFilteredMenu(): ItemType[] {
   });
 }
 
-function ConsoleShell({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
-  const router = useRouter();
+function ConsoleShell() {
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
   const { me, loading } = useAuth();
   const selectedKey = pathname === '/' ? '/' : pathname;
   const menuItems = useFilteredMenu();
@@ -74,9 +77,9 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loading && !me) {
       const redirect = encodeURIComponent(pathname);
-      router.replace(`/login?redirect=${redirect}`);
+      navigate(`/login?redirect=${redirect}`, { replace: true });
     }
-  }, [loading, me, pathname, router]);
+  }, [loading, me, pathname, navigate]);
 
   if (loading || !me) {
     return (
@@ -87,39 +90,77 @@ function ConsoleShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <Layout className="min-h-screen">
-      <Sider width={240} theme="light" className="border-r border-gray-200">
-        <div className="flex h-14 items-center px-4">
-          <Link href="/">
-            <Typography.Title level={5} className="!mb-0">
-              shellder-agent
-            </Typography.Title>
+    <Layout className="!h-screen !max-h-screen !overflow-hidden">
+      <Sider
+        width={240}
+        theme="light"
+        className="console-sider !fixed !inset-y-0 !left-0 z-30 !h-screen !max-h-screen !overflow-hidden border-r border-gray-200 [&_.ant-layout-sider-children]:!flex [&_.ant-layout-sider-children]:!h-full [&_.ant-layout-sider-children]:!max-h-screen [&_.ant-layout-sider-children]:!min-h-0 [&_.ant-layout-sider-children]:!flex-col [&_.ant-layout-sider-children]:!overflow-hidden"
+      >
+        <div
+          className="z-10 grid shrink-0 place-items-center border-b border-gray-100 bg-white px-4"
+          style={{ height: CONSOLE_TOP_BAR_HEIGHT }}
+        >
+          <Link
+            to="/"
+            className="flex h-full w-full items-center justify-center no-underline hover:opacity-85"
+          >
+            <span
+              className="text-lg font-bold leading-none tracking-tight text-gray-900 antialiased"
+              style={{
+                fontFamily:
+                  'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+              }}
+            >
+              Shellder Agent
+            </span>
           </Link>
         </div>
-        <Menu
-          mode="inline"
-          selectedKeys={[selectedKey]}
-          defaultOpenKeys={['user', 'tenant', 'session', 'settings']}
-          items={menuItems}
-          className="border-none"
-        />
+        <div
+          className="overflow-x-hidden overflow-y-auto overscroll-contain"
+          style={{ height: siderMenuScrollHeight, maxHeight: siderMenuScrollHeight }}
+        >
+          <Menu
+            mode="inline"
+            selectedKeys={[selectedKey]}
+            defaultOpenKeys={[]}
+            items={menuItems}
+            className="border-none"
+          />
+        </div>
       </Sider>
-      <Layout>
-        <Header className="flex items-center justify-between bg-white px-6 shadow-sm">
+      <Layout className="!ml-[240px] !flex !h-screen !max-h-screen !min-h-0 !flex-col !overflow-hidden">
+        <Header
+          className="z-20 flex shrink-0 items-center justify-between bg-white px-6 shadow-sm"
+          style={{
+            height: CONSOLE_TOP_BAR_HEIGHT,
+            lineHeight: `${CONSOLE_TOP_BAR_HEIGHT}px`,
+            padding: '0 24px',
+          }}
+        >
           <ActiveTenantPicker />
           <UserMenu />
         </Header>
-        <Content className="m-4 rounded-lg bg-white p-6 shadow-sm">{children}</Content>
+        <Content
+          className="!mx-4 !mb-4 !mt-4 overflow-y-auto overscroll-contain rounded-lg bg-white p-6 shadow-sm"
+          style={{
+            height: mainContentScrollHeight,
+            maxHeight: mainContentScrollHeight,
+            minHeight: 0,
+            flex: 'none',
+          }}
+        >
+          <Outlet />
+        </Content>
       </Layout>
     </Layout>
   );
 }
 
-export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
+export default function ConsoleLayout() {
   return (
     <AuthProvider>
       <ActiveTenantProvider>
-        <ConsoleShell>{children}</ConsoleShell>
+        <ConsoleShell />
       </ActiveTenantProvider>
     </AuthProvider>
   );

@@ -17,6 +17,6 @@ import { SqlToolService } from './sql-tool.service';
   imports: [PrismaModule],
   controllers: [ToolController],
   providers: [ToolService, ToolTestService, SqlToolService],
-  exports: [ToolService],
+  exports: [ToolService, SqlToolService],
 })
 export class ToolModule {}

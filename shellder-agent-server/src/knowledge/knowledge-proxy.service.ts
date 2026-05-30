@@ -5,6 +5,7 @@ import {
 import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
 import { KnowledgeProxyClient } from './knowledge-proxy.client';
+import { pickQueryInts } from './knowledge-proxy-query.util';
 import { KnowledgeTenantScopeService } from './knowledge-tenant-scope.service';
 
 export interface DialogueRecallHit {
@@ -81,6 +82,9 @@ export class KnowledgeProxyService {
   ) {
     const wikiPrefix = await this.tenantScope.resolveWikiPrefix(tenantId);
     await this.assertTenantAccess(user, tenantId);
+    const fileQuery: Record<string, string | number> = {};
+    if (query.suffix) fileQuery.suffix = query.suffix;
+    const intQuery = pickQueryInts({ max_files: query.max_files });
     const result = await this.client.request<{
       layer: string;
       paths: string[];
@@ -88,10 +92,7 @@ export class KnowledgeProxyService {
     }>({
       method: 'GET',
       path: `/api/v1/layers/${layer}/files`,
-      query: {
-        suffix: query.suffix,
-        max_files: query.max_files,
-      },
+      query: { ...fileQuery, ...intQuery },
     });
     const prefix = wikiPrefix ? this.tenantScope.normalizePrefix(wikiPrefix) : '';
     if (prefix && result.paths) {
@@ -198,10 +199,11 @@ export class KnowledgeProxyService {
     maxNodes?: number,
   ) {
     await this.assertTenantAccess(user, tenantId);
+    const intQuery = pickQueryInts({ max_depth: maxDepth, max_nodes: maxNodes });
     return this.client.request({
       method: 'GET',
       path: `/api/v1/data-structure/tree/${layer}`,
-      query: { max_depth: maxDepth, max_nodes: maxNodes },
+      ...(intQuery ? { query: intQuery } : {}),
     });
   }
 

@@ -8,7 +8,7 @@ Monorepo 包含 Web 管理后台（`shellder-web-console`）、主后端（`shel
 
 | 目录 | 说明 |
 |------|------|
-| `shellder-web-console` | Next.js + Ant Design 管理后台 |
+| `shellder-web-console` | Vite + React Router + Ant Design 管理后台（CSR SPA） |
 | `shellder-agent-server` | NestJS + Prisma 主 API |
 | `shellder-job-worker` | NestJS + BullMQ 异步任务 |
 | `project-sql/` | 按模块交付的 SQL 演进目录 |
@@ -70,7 +70,7 @@ npm run prisma:migrate:dev          # 交互式迁移；无新迁移时可跳过
 |------|------|------|
 | 1 | `npm run dev:server` | API http://localhost:3001 |
 | 2 | `npm run dev:worker` | Worker http://localhost:3002 |
-| 3 | `npm run dev:web` | 前台 http://localhost:3000 |
+| 3 | `npm run dev:web` | 前台 http://localhost:3000（Vite dev，`/api` 代理至 3001） |
 
 访问：http://localhost:3000/login → 登录占位进入 http://localhost:3000/
 
@@ -98,6 +98,11 @@ docker compose --profile monitoring up -d
 | Redis | 6379 |
 
 ## 常见问题
+
+### 前台 API 连不上 / 跨域
+
+- 本地开发：`VITE_API_BASE_URL` 留空即可，Vite 将 `/api` 代理到 `VITE_API_PROXY_TARGET`（默认 `http://localhost:3001`）
+- Docker 一键：`shellder-web-console` 由 nginx 同域反代 `/api`，无需单独配置
 
 ### `Environment variable not found: DATABASE_URL`
 
