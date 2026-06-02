@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`prompt_template` (
   `prompt_key`       VARCHAR(128) NOT NULL COMMENT '全局逻辑键，如 query.nl2sql.system',
   `name`             VARCHAR(128) NOT NULL COMMENT '展示名',
   `description`      VARCHAR(512) NULL     COMMENT '说明、适用链路',
-  `category`         ENUM('qa','query','connector','routing','runtime','common') NOT NULL COMMENT '分类',
+  `category`         ENUM('qa','query','sql_conversion','connector','routing','runtime','common') NOT NULL COMMENT '分类',
   `role`             ENUM('system','user','fragment') NOT NULL COMMENT 'LLM 消息角色',
   `scope`            ENUM('global','tenant') NOT NULL DEFAULT 'global' COMMENT '作用域',
   `tenant_id`        CHAR(36)     NULL     COMMENT 'scope=tenant 时必填 → tenant.id',

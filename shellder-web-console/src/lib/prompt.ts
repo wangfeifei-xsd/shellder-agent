@@ -1,6 +1,6 @@
 import { apiFetch } from './api';
 
-export type PromptCategory = 'qa' | 'query' | 'connector' | 'routing' | 'runtime' | 'common';
+export type PromptCategory = 'qa' | 'query' | 'sql_conversion' | 'connector' | 'routing' | 'runtime' | 'common';
 export type PromptRole = 'system' | 'user' | 'fragment';
 export type PromptScope = 'global' | 'tenant';
 export type PromptTemplateStatus = 'active' | 'archived';
@@ -79,12 +79,14 @@ export function listPromptTemplates(params?: {
   page?: number;
   pageSize?: number;
   category?: PromptCategory;
+  role?: PromptRole;
   keyword?: string;
 }) {
   const q = new URLSearchParams();
   if (params?.page) q.set('page', String(params.page));
   if (params?.pageSize) q.set('pageSize', String(params.pageSize));
   if (params?.category) q.set('category', params.category);
+  if (params?.role) q.set('role', params.role);
   if (params?.keyword) q.set('keyword', params.keyword);
   const qs = q.toString();
   return apiFetch<PaginatedPromptTemplates>(`/api/v1/prompts/templates${qs ? `?${qs}` : ''}`);

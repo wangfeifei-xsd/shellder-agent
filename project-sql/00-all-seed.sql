@@ -612,7 +612,7 @@ VALUES (
   'connector.er_diagram.system',
   'ER 构图 System',
   '初版 ER 关系图生成',
-  'connector', 'system', 'global', NULL, NULL,
+  'sql_conversion', 'system', 'global', NULL, NULL,
   'active', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3)
 )
 ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `updated_at` = CURRENT_TIMESTAMP(3);
@@ -641,7 +641,7 @@ VALUES (
   'connector.er_diagram.refine.system',
   'ER 构图优化 System',
   '基于 draft 辅助优化 ER',
-  'connector', 'system', 'global', NULL, NULL,
+  'sql_conversion', 'system', 'global', NULL, NULL,
   'active', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3)
 )
 ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `updated_at` = CURRENT_TIMESTAMP(3);
@@ -672,7 +672,7 @@ VALUES (
   'connector.er_diagram.user',
   'ER 构图 User',
   'schema + 可选 current_er_draft 骨架',
-  'connector', 'user', 'global', NULL,
+  'sql_conversion', 'user', 'global', NULL,
   JSON_OBJECT('required', JSON_ARRAY('userMessageBody')),
   'active', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3)
 )

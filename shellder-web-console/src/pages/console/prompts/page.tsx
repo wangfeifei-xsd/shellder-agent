@@ -13,6 +13,7 @@ import {
 } from '@/components/console/tableEllipsis';
 import {
   PromptCategory,
+  PromptRole,
   PromptTemplateListItem,
   listPromptTemplates,
 } from '@/lib/prompt';
@@ -20,12 +21,19 @@ import {
 const { Title } = Typography;
 
 const CATEGORY_OPTIONS: { value: PromptCategory; label: string }[] = [
-  { value: 'qa', label: '问答' },
-  { value: 'query', label: '查询' },
+  { value: 'qa', label: '问答型' },
+  { value: 'query', label: '查询型' },
+  { value: 'sql_conversion', label: 'SQL转化' },
   { value: 'connector', label: '连接器' },
   { value: 'routing', label: '路由' },
   { value: 'runtime', label: 'Runtime' },
   { value: 'common', label: '通用片段' },
+];
+
+const ROLE_OPTIONS: { value: PromptRole; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'user', label: 'User' },
+  { value: 'fragment', label: 'Fragment' },
 ];
 
 export default function PromptListPage() {
@@ -36,12 +44,19 @@ export default function PromptListPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [category, setCategory] = useState<PromptCategory | undefined>();
+  const [role, setRole] = useState<PromptRole | undefined>();
   const [keyword, setKeyword] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listPromptTemplates({ page, pageSize, category, keyword: keyword || undefined });
+      const res = await listPromptTemplates({
+        page,
+        pageSize,
+        category,
+        role,
+        keyword: keyword || undefined,
+      });
       setItems(res.items);
       setTotal(res.total);
     } catch (e) {
@@ -49,14 +64,13 @@ export default function PromptListPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, category, keyword, message]);
+  }, [page, pageSize, category, role, keyword, message]);
 
   useEffect(() => {
     load();
   }, [load]);
 
   const columns: ColumnsType<PromptTemplateListItem> = [
-    ellipsisTextColumn<PromptTemplateListItem>('逻辑键', 'promptKey', 200),
     ellipsisTextColumn<PromptTemplateListItem>('名称', 'name', 160),
     withNowrap<PromptTemplateListItem>({
       title: '分类',
@@ -107,6 +121,17 @@ export default function PromptListPage() {
           value={category}
           onChange={(v) => {
             setCategory(v);
+            setPage(1);
+          }}
+        />
+        <Select
+          allowClear
+          placeholder="角色"
+          style={{ width: 140 }}
+          options={ROLE_OPTIONS}
+          value={role}
+          onChange={(v) => {
+            setRole(v);
             setPage(1);
           }}
         />

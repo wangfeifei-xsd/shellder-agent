@@ -1439,6 +1439,7 @@ model OpenApiCallLog {
 enum PromptCategory {
   qa
   query
+  sql_conversion
   connector
   routing
   runtime

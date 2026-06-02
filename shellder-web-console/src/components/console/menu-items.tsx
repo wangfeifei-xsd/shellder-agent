@@ -79,6 +79,12 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'prompt',
+    icon: <FileTextOutlined />,
+    label: 'Prompt 管理',
+    children: [{ key: '/prompts', label: <Link to="/prompts">模板列表</Link> }],
+  },
+  {
     key: 'user',
     icon: <TeamOutlined />,
     label: '用户与权限',
@@ -109,15 +115,9 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
-    key: 'prompt',
-    icon: <FileTextOutlined />,
-    label: 'Prompt 管理',
-    children: [{ key: '/prompts', label: <Link to="/prompts">模板列表</Link> }],
-  },
-  {
     key: 'session',
     icon: <MessageOutlined />,
-    label: '会话管理',
+    label: '会话管理（实验中）',
     children: [
       { key: '/sessions', label: <Link to="/sessions">会话列表</Link> },
       { key: '/sessions/messages', label: <Link to="/sessions/messages">消息记录</Link> },
@@ -127,7 +127,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'task',
     icon: <DeploymentUnitOutlined />,
-    label: '任务中心',
+    label: '任务中心（实验中）',
     children: [
       { key: '/tasks', label: <Link to="/tasks">任务列表</Link> },
       { key: '/tasks/tracking', label: <Link to="/tasks/tracking">长任务跟踪</Link> },
@@ -137,7 +137,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'routing',
     icon: <ApartmentOutlined />,
-    label: '能力路由',
+    label: '能力路由（实验中）',
     children: [
       { key: '/routing/rules', label: <Link to="/routing/rules">路由规则</Link> },
       { key: '/routing/test', label: <Link to="/routing/test">路由测试</Link> },
@@ -147,7 +147,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'capability',
     icon: <ExperimentOutlined />,
-    label: '业务能力',
+    label: '业务能力（实验中）',
     children: [
       { key: '/capabilities', label: <Link to="/capabilities">能力演示</Link> },
     ],
@@ -155,7 +155,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'skill',
     icon: <BookOutlined />,
-    label: '技能书管理',
+    label: '技能书管理（实验中）',
     children: [
       { key: '/skills', label: <Link to="/skills">技能书列表</Link> },
       { key: '/skills/executions', label: <Link to="/skills/executions">调用记录</Link> },
@@ -164,7 +164,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'tool',
     icon: <ToolOutlined />,
-    label: '工具管理',
+    label: '工具管理（实验中）',
     children: [
       { key: '/tools', label: <Link to="/tools">工具列表</Link> },
       { key: '/tools/sql', label: <Link to="/tools/sql">查询通道调试</Link> },
@@ -173,13 +173,13 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'connector',
     icon: <CloudServerOutlined />,
-    label: '连接器管理',
+    label: '连接器管理（实验中）',
     children: [{ key: '/connectors', label: <Link to="/connectors">连接器列表</Link> }],
   },
   {
     key: 'rule',
     icon: <ControlOutlined />,
-    label: '规则',
+    label: '规则（实验中）',
     children: [
       { key: '/rules', label: <Link to="/rules">规则配置</Link> },
       { key: '/rule-hits', label: <Link to="/rule-hits">规则命中记录</Link> },
@@ -188,7 +188,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'approval',
     icon: <FileProtectOutlined />,
-    label: '审批中心',
+    label: '审批中心（实验中）',
     children: [
       { key: '/approvals', label: <Link to="/approvals">待确认列表</Link> },
       { key: '/approvals/history', label: <Link to="/approvals/history">审批记录</Link> },
@@ -197,7 +197,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'audit',
     icon: <AuditOutlined />,
-    label: '审计中心',
+    label: '审计中心（实验中）',
     children: [
       { key: '/audit', label: <Link to="/audit">工具调用审计</Link> },
       {
@@ -217,7 +217,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'openapi',
     icon: <KeyOutlined />,
-    label: 'OpenAPI 管理',
+    label: 'OpenAPI 管理（实验中）',
     children: [
       { key: '/openapi/apps', label: <Link to="/openapi/apps">应用接入</Link> },
       { key: '/openapi/docs', label: <Link to="/openapi/docs">接口文档</Link> },
@@ -227,7 +227,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'copilot',
     icon: <RobotOutlined />,
-    label: '嵌入式 Copilot',
+    label: '嵌入式 Copilot（实验中）',
     children: [
       { key: '/copilot-admin', label: <Link to="/copilot-admin">Copilot 配置</Link> },
       { key: '/copilot-admin/preview', label: <Link to="/copilot-admin/preview">嵌入预览</Link> },

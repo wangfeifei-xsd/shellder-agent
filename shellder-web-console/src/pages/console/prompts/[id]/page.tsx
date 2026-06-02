@@ -57,6 +57,8 @@ export default function PromptDetailPage() {
   const [varsText, setVarsText] = useState('{}');
   const [renderResult, setRenderResult] = useState('');
   const [llmResult, setLlmResult] = useState('');
+  const [versionPreview, setVersionPreview] = useState('');
+  const [previewVersionLabel, setPreviewVersionLabel] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -135,6 +137,25 @@ export default function PromptDetailPage() {
     }
   };
 
+  const handleLoadVersionToDraft = async (versionItem: PromptVersionItem) => {
+    if (!id) return;
+    setBusy(true);
+    try {
+      let targetDraftId = draftId;
+      if (!targetDraftId) {
+        const created = await createPromptDraft(id);
+        targetDraftId = created.id;
+      }
+      await updatePromptVersion(targetDraftId, { content: versionItem.content ?? '' });
+      message.success(`已将 v${versionItem.version} 内容加载到草稿`);
+      await load();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : '加载到草稿失败');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleRollback = async (versionId: string) => {
     setBusy(true);
     try {
@@ -206,13 +227,30 @@ export default function PromptDetailPage() {
     }),
     withNowrap<PromptVersionItem>({
       title: '操作',
-      width: 100,
-      render: (_, r) =>
-        r.state === 'deprecated' ? (
-          <Button type="link" size="small" disabled={busy} onClick={() => handleRollback(r.id)}>
-            回滚
+      width: 280,
+      render: (_, r) => (
+        <Space size={0} wrap>
+          <Button
+            type="link"
+            size="small"
+            disabled={busy}
+            onClick={() => {
+              setVersionPreview(r.content ?? '');
+              setPreviewVersionLabel(`v${r.version} · ${r.state}`);
+            }}
+          >
+            查看正文
           </Button>
-        ) : null,
+          <Button type="link" size="small" disabled={busy} onClick={() => handleLoadVersionToDraft(r)}>
+            加载到草稿
+          </Button>
+          {r.state === 'deprecated' ? (
+            <Button type="link" size="small" disabled={busy} onClick={() => handleRollback(r.id)}>
+              回滚
+            </Button>
+          ) : null}
+        </Space>
+      ),
     }),
   ];
 
@@ -281,12 +319,20 @@ export default function PromptDetailPage() {
                   )}
                 </Space>
                 {draftId && (
-                  <TextArea
-                    rows={16}
-                    value={draftContent}
-                    onChange={(e) => setDraftContent(e.target.value)}
-                    placeholder="编辑 draft 正文…"
-                  />
+                  <>
+                    <Text type="secondary">草稿编辑器</Text>
+                    <TextArea
+                      rows={16}
+                      value={draftContent}
+                      onChange={(e) => setDraftContent(e.target.value)}
+                      placeholder="编辑 draft 正文…"
+                    />
+                  </>
+                )}
+                {versionPreview && (
+                  <Card size="small" title={`版本正文预览（${previewVersionLabel}）`}>
+                    <Paragraph className="whitespace-pre-wrap text-sm">{versionPreview}</Paragraph>
+                  </Card>
                 )}
                 <Table
                   rowKey="id"
