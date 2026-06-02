@@ -25,6 +25,12 @@ import {
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import {
+  EllipsisCell,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
+import {
   CAPABILITY_TYPE_META,
   CapabilityType,
   MESSAGE_TYPE_META,
@@ -94,15 +100,20 @@ export default function SessionDetailPage() {
     : detail.messages;
 
   const taskColumns: ColumnsType<SessionTaskItem> = [
-    {
+    withNowrap<SessionTaskItem>({
       title: '标题',
       dataIndex: 'title',
       ellipsis: true,
-      render: (v: string | null, row) => (
-        <Link to={`/tasks?id=${row.id}`}>{v || row.id.slice(0, 8)}</Link>
-      ),
-    },
-    {
+      render: (v: string | null, row) => {
+        const text = v || row.id.slice(0, 8);
+        return (
+          <EllipsisCell tooltip={text}>
+            <Link to={`/tasks?id=${row.id}`}>{text}</Link>
+          </EllipsisCell>
+        );
+      },
+    }),
+    withNowrap<SessionTaskItem>({
       title: '状态',
       dataIndex: 'status',
       width: 100,
@@ -110,20 +121,24 @@ export default function SessionDetailPage() {
         const meta = TASK_STATUS_META[s] ?? { label: s, color: 'default' };
         return <Tag color={meta.color}>{meta.label}</Tag>;
       },
-    },
-    {
+    }),
+    withNowrap<SessionTaskItem>({
       title: '能力类型',
       dataIndex: 'capabilityType',
       width: 100,
       render: (c: CapabilityType | null) =>
-        c ? <Tag color={CAPABILITY_TYPE_META[c].color}>{CAPABILITY_TYPE_META[c].label}</Tag> : '—',
-    },
-    {
+        c ? (
+          <Tag color={CAPABILITY_TYPE_META[c].color}>{CAPABILITY_TYPE_META[c].label}</Tag>
+        ) : (
+          renderOptionalText(undefined)
+        ),
+    }),
+    withNowrap<SessionTaskItem>({
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 170,
       render: (v: string) => fmt(v),
-    },
+    }),
   ];
 
   return (
@@ -219,6 +234,7 @@ export default function SessionDetailPage() {
             dataSource={detail.tasks}
             pagination={false}
             size="small"
+            {...tableEllipsisLayout}
           />
         </Card>
       )}

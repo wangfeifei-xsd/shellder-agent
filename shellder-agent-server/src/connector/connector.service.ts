@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -26,6 +28,7 @@ import {
 import { CreateConnectorDto } from './dto/create-connector.dto';
 import { QueryConnectorDto } from './dto/query-connector.dto';
 import { UpdateConnectorDto } from './dto/update-connector.dto';
+import { resolveDbEndpoint } from './db-connection.util';
 
 /** 详情中「最近调用日志」展示条数 */
 const RECENT_CALL_LIMIT = 20;
@@ -52,6 +55,14 @@ export class ConnectorService {
   async create(user: AuthUser, dto: CreateConnectorDto) {
     await this.assertTenantAccess(user, dto.tenantId);
     await this.assertTenantEnabled(dto.tenantId);
+    this.assertDbReadonlyConfig(dto.type, dto.target, dto.properties ?? {});
+    this.assertDbReadonlyAuth(dto.type, dto.authType, dto.secret, { isCreate: true });
+    await this.assertDbEndpointUnique(
+      dto.tenantId,
+      dto.type,
+      dto.target,
+      dto.properties ?? {},
+    );
 
     const config: ConnectorConfig = {
       properties: dto.properties ?? {},
@@ -65,7 +76,7 @@ export class ConnectorService {
         name: dto.name,
         type: dto.type,
         target: dto.target,
-        authType: dto.authType ?? 'none',
+        authType: dto.type === 'db_readonly' ? 'basic' : (dto.authType ?? 'none'),
         timeoutMs: dto.timeoutMs ?? 5000,
         description: dto.description ?? null,
         config: config as unknown as Prisma.InputJsonValue,
@@ -161,10 +172,29 @@ export class ConnectorService {
     await this.assertTenantAccess(user, existing.tenantId);
 
     const current = this.readConfig(existing);
+    const nextType = dto.type ?? existing.type;
+    const nextTarget = dto.target ?? existing.target;
+    const nextProperties = dto.properties ?? current.properties;
+    this.assertDbReadonlyConfig(nextType, nextTarget, nextProperties);
+    const existingSecret = decryptSecret(current.secretCipher);
+    const existingHasSecret = existingSecret !== null;
+    const mergedSecret = this.mergeSecretForUpdate(dto, current);
+    this.assertDbReadonlyAuth(nextType, dto.authType ?? existing.authType, mergedSecret, {
+      isCreate: false,
+      existingHasSecret,
+      clearSecret: dto.clearSecret,
+    });
+    await this.assertDbEndpointUnique(
+      existing.tenantId,
+      nextType,
+      nextTarget,
+      nextProperties,
+      id,
+    );
     const config: ConnectorConfig = {
       properties: dto.properties ?? current.properties,
       allowedToolScopes: dto.allowedToolScopes ?? current.allowedToolScopes,
-      secretCipher: this.resolveSecretCipher(dto, current),
+      secretCipher: this.resolveSecretCipher(dto, current, mergedSecret),
     };
 
     const data: Prisma.ConnectorUpdateInput = {
@@ -173,7 +203,11 @@ export class ConnectorService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.type !== undefined) data.type = dto.type;
     if (dto.target !== undefined) data.target = dto.target;
-    if (dto.authType !== undefined) data.authType = dto.authType;
+    if (nextType === 'db_readonly') {
+      data.authType = 'basic';
+    } else if (dto.authType !== undefined) {
+      data.authType = dto.authType;
+    }
     if (dto.timeoutMs !== undefined) data.timeoutMs = dto.timeoutMs;
     if (dto.description !== undefined) data.description = dto.description || null;
 
@@ -198,12 +232,18 @@ export class ConnectorService {
     return { id };
   }
 
+  /** 加载连接器并校验租户访问（供 SQL 测试等子能力复用）。 */
+  async assertAccessible(user: AuthUser, id: string): Promise<Connector> {
+    const connector = await this.getOrThrow(id);
+    await this.assertTenantAccess(user, connector.tenantId);
+    return connector;
+  }
+
   /**
    * 连通性测试（验收标准 2）：执行测试 → 记入 04 外部接口审计 → 更新最近测试快照。
    */
   async test(user: AuthUser, id: string) {
-    const connector = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, connector.tenantId);
+    const connector = await this.assertAccessible(user, id);
 
     const result = await this.connectivity.test(connector);
 
@@ -212,7 +252,7 @@ export class ConnectorService {
       tenantId: connector.tenantId,
       connectorId: connector.id,
       target: connector.target,
-      method: connector.type === 'db_readonly' ? 'TCP' : 'GET',
+      method: connector.type === 'db_readonly' ? 'SQL' : 'GET',
       callerUserId: user.id,
       requestSummary: `连通性测试：${connector.name}（${connector.type}）`,
       status: result.ok ? 'success' : 'failed',
@@ -239,12 +279,52 @@ export class ConnectorService {
 
   // ── 内部辅助 ────────────────────────────────────────────
 
+  /** 更新时合并凭证：未传的字段保留库内原值（支持仅改用户名、口令留空不改）。 */
+  private mergeSecretForUpdate(
+    dto: UpdateConnectorDto,
+    current: ConnectorConfig,
+  ): Record<string, string> | undefined {
+    if (dto.clearSecret) return {};
+    if (dto.secret === undefined) return undefined;
+    if (Object.keys(dto.secret).length === 0) return {};
+    const existing = (decryptSecret(current.secretCipher) ?? {}) as Record<string, string>;
+    const merged: Record<string, string> = { ...existing };
+    if (dto.secret.username?.trim()) {
+      merged.username = dto.secret.username.trim();
+    }
+    if (dto.secret.password) {
+      merged.password = dto.secret.password;
+    }
+    if (dto.secret.token) {
+      merged.token = dto.secret.token;
+    }
+    if (dto.secret.headerName) {
+      merged.headerName = dto.secret.headerName;
+    }
+    if (dto.secret.apiKey) {
+      merged.apiKey = dto.secret.apiKey;
+    }
+    for (const [key, value] of Object.entries(dto.secret)) {
+      if (key.startsWith('header.')) {
+        merged[key] = value;
+      }
+    }
+    return merged;
+  }
+
   private resolveSecretCipher(
     dto: UpdateConnectorDto,
     current: ConnectorConfig,
+    mergedSecret?: Record<string, string> | undefined,
   ): string | null {
     if (dto.clearSecret) return null;
     if (dto.secret === undefined) return current.secretCipher; // 未传 → 保留
+    if (mergedSecret !== undefined && Object.keys(mergedSecret).length === 0) {
+      return null;
+    }
+    if (mergedSecret !== undefined) {
+      return encryptSecret(mergedSecret);
+    }
     return encryptSecret(dto.secret); // 传空对象 → 清空；非空 → 覆盖
   }
 
@@ -303,6 +383,120 @@ export class ConnectorService {
     return { in: allowed };
   }
 
+  /** 只读库必须使用 Basic 认证且具备用户名与口令（方案 §2.2） */
+  private assertDbReadonlyAuth(
+    type: Connector['type'],
+    authType: string | undefined,
+    secret: Record<string, string> | undefined,
+    opts: { isCreate: boolean; existingHasSecret?: boolean; clearSecret?: boolean },
+  ) {
+    if (type !== 'db_readonly') return;
+
+    if (authType && authType !== 'basic') {
+      throw new BadRequestException({
+        code: 'CONNECTOR_DB_AUTH_REQUIRED',
+        message: '只读数据库连接器仅支持 Basic 认证（用户名 + 口令）',
+      });
+    }
+
+    if (opts.clearSecret) {
+      throw new BadRequestException({
+        code: 'CONNECTOR_DB_AUTH_REQUIRED',
+        message: '只读数据库连接器不可清空数据库凭证',
+      });
+    }
+
+    const hasNewSecret =
+      secret !== undefined && Object.keys(secret).length > 0;
+    const username = hasNewSecret ? secret!.username?.trim() : '';
+    const password = hasNewSecret ? secret!.password : undefined;
+
+    if (opts.isCreate) {
+      if (!username || !password) {
+        throw new BadRequestException({
+          code: 'CONNECTOR_DB_AUTH_REQUIRED',
+          message: '只读数据库连接器须填写数据库用户名与口令',
+        });
+      }
+      return;
+    }
+
+    if (hasNewSecret) {
+      if (!username) {
+        throw new BadRequestException({
+          code: 'CONNECTOR_DB_AUTH_REQUIRED',
+          message: '只读数据库连接器须填写数据库用户名',
+        });
+      }
+      if (!password && !opts.existingHasSecret) {
+        throw new BadRequestException({
+          code: 'CONNECTOR_DB_AUTH_REQUIRED',
+          message: '只读数据库连接器须填写数据库口令',
+        });
+      }
+    } else if (!opts.existingHasSecret) {
+      throw new BadRequestException({
+        code: 'CONNECTOR_DB_AUTH_REQUIRED',
+        message: '只读数据库连接器须配置数据库用户名与口令',
+      });
+    }
+  }
+
+  private assertDbReadonlyConfig(
+    type: Connector['type'],
+    target: string,
+    properties: Record<string, unknown>,
+  ) {
+    if (type !== 'db_readonly') return;
+    try {
+      resolveDbEndpoint(target, properties);
+    } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException({
+        code: 'CONNECTOR_DB_CONFIG_INVALID',
+        message: err instanceof Error ? err.message : '只读库配置无效',
+      });
+    }
+  }
+
+  /** 同租户下 (host, port, database) 不可重复 */
+  private async assertDbEndpointUnique(
+    tenantId: string,
+    type: Connector['type'],
+    target: string,
+    properties: Record<string, unknown>,
+    excludeId?: string,
+  ) {
+    if (type !== 'db_readonly') return;
+    const endpoint = resolveDbEndpoint(target, properties);
+    const peers = await this.prisma.connector.findMany({
+      where: {
+        tenantId,
+        type: 'db_readonly',
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+    });
+    for (const peer of peers) {
+      const peerConfig = this.readConfig(peer);
+      try {
+        const peerEp = resolveDbEndpoint(peer.target, peerConfig.properties);
+        if (
+          peerEp.host === endpoint.host &&
+          peerEp.port === endpoint.port &&
+          peerEp.database.toLowerCase() === endpoint.database.toLowerCase()
+        ) {
+          throw new ConflictException({
+            code: 'CONNECTOR_DB_ENDPOINT_DUPLICATE',
+            message: `同租户下已存在指向 ${endpoint.host}:${endpoint.port}/${endpoint.database} 的只读库连接器「${peer.name}」`,
+          });
+        }
+      } catch (err) {
+        if (err instanceof ConflictException) throw err;
+        // 对端配置不完整则跳过比较
+      }
+    }
+  }
+
   private readConfig(connector: Connector): ConnectorConfig {
     const raw = connector.config;
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
@@ -316,10 +510,16 @@ export class ConnectorService {
     return { ...EMPTY_CONNECTOR_CONFIG };
   }
 
-  /** 视图：脱敏 —— 不回传密文与凭证明文，仅回显凭证字段名掩码与 hasSecret。 */
+  /** 视图：口令不回明文；用户名可回显便于编辑；secretMask 供界面展示掩码。 */
   private toView(connector: Connector) {
     const config = this.readConfig(connector);
     const secret = decryptSecret(config.secretCipher);
+    const username =
+      secret && typeof secret.username === 'string' ? secret.username : null;
+    const passwordFromProps =
+      typeof config.properties.username === 'string'
+        ? config.properties.username
+        : null;
     return {
       id: connector.id,
       tenantId: connector.tenantId,
@@ -334,6 +534,14 @@ export class ConnectorService {
       allowedToolScopes: config.allowedToolScopes,
       hasSecret: secret !== null,
       secretMask: maskSecret(secret),
+      credentialHints: secret
+        ? {
+            username: username ?? passwordFromProps,
+            passwordConfigured: !!secret.password,
+          }
+        : passwordFromProps
+          ? { username: passwordFromProps, passwordConfigured: false }
+          : null,
       lastTestStatus: connector.lastTestStatus,
       lastTestLatencyMs: connector.lastTestLatencyMs,
       lastTestMessage: connector.lastTestMessage,

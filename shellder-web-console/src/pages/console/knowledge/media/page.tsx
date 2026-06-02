@@ -23,6 +23,12 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ellipsisTextColumn,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { KnowledgeProxyErrorAlert } from '@/components/console/KnowledgeProxyErrorAlert';
 import {
@@ -166,22 +172,41 @@ export default function KnowledgeMediaPage() {
   };
 
   const columns: ColumnsType<MediaItem> = [
-    { title: 'Code', dataIndex: 'code', width: 120 },
-    { title: '标题', dataIndex: 'title', ellipsis: true, render: (v: string | undefined) => v || '—' },
-    { title: 'MIME', dataIndex: 'mime', width: 140, render: (v: string | undefined) => v || '—' },
-    { title: '大小', dataIndex: 'size', width: 100, render: (v: number | undefined) => formatSize(v) },
-    { title: '目录', dataIndex: 'target_folder', ellipsis: true, render: (v: string | undefined) => v || '—' },
-    {
+    ellipsisTextColumn<MediaItem>('Code', 'code', 120),
+    withNowrap<MediaItem>({
+      title: '标题',
+      dataIndex: 'title',
+      ellipsis: true,
+      render: (v: string | undefined) => renderOptionalText(v),
+    }),
+    withNowrap<MediaItem>({
+      title: 'MIME',
+      dataIndex: 'mime',
+      width: 140,
+      render: (v: string | undefined) => renderOptionalText(v),
+    }),
+    withNowrap<MediaItem>({
+      title: '大小',
+      dataIndex: 'size',
+      width: 100,
+      render: (v: number | undefined) => formatSize(v),
+    }),
+    ellipsisTextColumn<MediaItem>('目录', 'target_folder', 180),
+    withNowrap<MediaItem>({
       title: '操作',
       key: 'actions',
       width: 140,
       render: (_, row) => (
         <Space size="small">
-          <a onClick={() => void handleDownload(row.code)}><DownloadOutlined /> 下载</a>
-          <a className="text-red-500" onClick={() => handleDelete(row)}><DeleteOutlined /></a>
+          <a onClick={() => void handleDownload(row.code)}>
+            <DownloadOutlined /> 下载
+          </a>
+          <a className="text-red-500" onClick={() => handleDelete(row)}>
+            <DeleteOutlined />
+          </a>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -220,7 +245,14 @@ export default function KnowledgeMediaPage() {
             </Card>
           </div>
 
-          <Table<MediaItem> rowKey="code" loading={loading} columns={columns} dataSource={items} pagination={{ pageSize: 20 }} />
+          <Table<MediaItem>
+            rowKey="code"
+            loading={loading}
+            columns={columns}
+            dataSource={items}
+            pagination={{ pageSize: 20 }}
+            {...tableEllipsisLayout}
+          />
         </>
       )}
 

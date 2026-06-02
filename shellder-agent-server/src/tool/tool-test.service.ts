@@ -6,7 +6,10 @@ import { AuthUser } from '../auth/jwt.types';
 import { PolicyService } from '../policy/policy.service';
 import { PolicyDecision } from '../policy/policy.types';
 import { decryptSecret } from '../connector/connector-secret.util';
+import { Nl2SqlService } from '../query/nl2sql.service';
+import { QueryResultService } from '../query/query-result.service';
 import { SqlToolService } from './sql-tool.service';
+import { Nl2SqlPreviewDto } from './dto/nl2sql-preview.dto';
 import { TestSqlDto, TestToolDto } from './dto/test-tool.dto';
 import { ToolService } from './tool.service';
 import { validateAgainstSchema, SchemaValidationResult } from './schema-validator.util';
@@ -54,6 +57,8 @@ export class ToolTestService {
     private readonly audit: AuditService,
     private readonly sqlTool: SqlToolService,
     private readonly toolService: ToolService,
+    private readonly nl2Sql: Nl2SqlService,
+    private readonly queryResult: QueryResultService,
   ) {}
 
   /** 通用调用测试（action / notification / workflow；query 型走模板或建议改用 SQL 测试）。 */
@@ -116,6 +121,144 @@ export class ToolTestService {
           message: '流程型工具的编排执行属于 12-Agent 运行时 / 13-四类能力，调用测试仅完成 Policy 与入参校验',
         };
     }
+  }
+
+  /** NL2SQL 试跑：仅生成 SQL，不执行（阶段 II 管理端）。 */
+  async nl2sqlPreview(
+    user: AuthUser,
+    tool: Tool,
+    dto: Nl2SqlPreviewDto,
+  ): Promise<{
+    sql: string;
+    explanation: string;
+    referencedTables: string[];
+    params: Record<string, unknown>;
+  }> {
+    if (tool.type !== 'query') {
+      throw new Error('仅查询型工具支持 NL2SQL 试跑');
+    }
+    const connector = await this.requireConnector(tool, 'db_readonly');
+    const sqlConfig = this.readSqlConfig(tool);
+    const decision = await this.evaluatePolicy(user, tool, dto.message);
+    const shortCircuit = this.shortCircuitByPolicy(decision);
+    if (shortCircuit) {
+      throw new Error(shortCircuit.message);
+    }
+
+    const generated = await this.nl2Sql.generate({
+      userMessage: dto.message,
+      connectorId: connector.id,
+      sqlConfig,
+      templates: sqlConfig.templates,
+      tenantId: tool.tenantId,
+    });
+
+    await this.recordAudit(user, tool, {
+      status: 'success',
+      durationMs: 0,
+      highRisk: decision.highRisk,
+      summary: `NL2SQL 预览 | tables: ${generated.referencedTables.join(', ') || '—'} | sql: ${generated.sql.slice(0, 300)}`,
+    });
+
+    return generated;
+  }
+
+  /**
+   * 三步试跑（管理端）：NL2SQL → 执行 → 结果解读，与 Runtime 流水线对齐。
+   */
+  async queryE2ePreview(
+    user: AuthUser,
+    tool: Tool,
+    dto: Nl2SqlPreviewDto,
+  ): Promise<{
+    nl2sql: {
+      sql: string;
+      explanation: string;
+      referencedTables: string[];
+      params: Record<string, unknown>;
+    };
+    execution: {
+      rowCount: number;
+      rows: Record<string, unknown>[];
+      executedSql: string;
+      durationMs: number;
+    };
+    reply: {
+      text: string;
+      summary: string;
+      truncated: boolean;
+      displayedRowCount: number;
+    };
+    totalDurationMs: number;
+  }> {
+    if (tool.type !== 'query') {
+      throw new Error('仅查询型工具支持三步试跑');
+    }
+    const connector = await this.requireConnector(tool, 'db_readonly');
+    const sqlConfig = this.readSqlConfig(tool);
+    const decision = await this.evaluatePolicy(user, tool, dto.message);
+    const shortCircuit = this.shortCircuitByPolicy(decision);
+    if (shortCircuit) {
+      throw new Error(shortCircuit.message);
+    }
+
+    const start = Date.now();
+
+    const generated = await this.nl2Sql.generate({
+      userMessage: dto.message,
+      connectorId: connector.id,
+      sqlConfig,
+      templates: sqlConfig.templates,
+      tenantId: tool.tenantId,
+    });
+
+    const exec = await this.sqlTool.execute(
+      connector,
+      generated.sql,
+      generated.params ?? {},
+      sqlConfig,
+    );
+
+    const summarized = await this.queryResult.summarize({
+      userMessage: dto.message,
+      rows: exec.rows,
+      rowCount: exec.rowCount,
+      tenantId: tool.tenantId,
+    });
+
+    const totalDurationMs = Date.now() - start;
+
+    await this.recordExternalCall(
+      user,
+      tool,
+      connector,
+      'success',
+      exec.durationMs,
+      null,
+    );
+    await this.recordAudit(user, tool, {
+      status: 'success',
+      durationMs: totalDurationMs,
+      highRisk: decision.highRisk,
+      summary: `三步试跑 | tables: ${generated.referencedTables.join(', ') || '—'} | rows: ${exec.rowCount}`,
+    });
+
+    return {
+      nl2sql: generated,
+      execution: {
+        rowCount: exec.rowCount,
+        rows: exec.rows,
+        executedSql: exec.executedSql,
+        durationMs: exec.durationMs,
+      },
+      reply: {
+        text: summarized.replyText,
+        summary: summarized.summary,
+        truncated: summarized.truncated,
+        displayedRowCount: summarized.displayedRowCount,
+      },
+      totalDurationMs,
+    };
   }
 
   /** SQL 查询工具测试（执行计划 §4.5 / 验收标准 3）。 */
@@ -413,7 +556,7 @@ export class ToolTestService {
   private readSqlConfig(tool: Tool): SqlToolConfig {
     const cfg = this.toolService.readConfig(tool).sql;
     return (
-      cfg ?? { tableWhitelist: [], fieldWhitelist: [], maxRows: 100, maxExecutionMs: 3000, templates: [] }
+      cfg ?? { tableBlacklist: [], fieldBlacklist: [], maxRows: 100, maxExecutionMs: 3000, templates: [] }
     );
   }
 

@@ -14,7 +14,7 @@ import {
   Typography,
 } from 'antd';
 import { App } from 'antd';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { KnowledgeProxyErrorAlert } from '@/components/console/KnowledgeProxyErrorAlert';
@@ -24,6 +24,9 @@ import {
   isKnowledgeProxyError,
 } from '@/lib/knowledge-proxy';
 import { isLlmError } from '@/lib/llm-settings';
+import { listPromptTemplates } from '@/lib/prompt';
+
+const QA_DIALOGUE_SYSTEM_KEY = 'qa.dialogue.system';
 
 export default function KnowledgeRecallTestPage() {
   const { message } = App.useApp();
@@ -34,7 +37,7 @@ export default function KnowledgeRecallTestPage() {
   const [bm25TopN, setBm25TopN] = useState(10);
   const [vectorTopN, setVectorTopN] = useState(10);
   const [wikiPrefix, setWikiPrefix] = useState('');
-  const [systemPrompt, setSystemPrompt] = useState('');
+  const [publishedPromptVersion, setPublishedPromptVersion] = useState<number | null>(null);
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<DialogueRecallTestResponse | undefined>();
   const [proxyError, setProxyError] = useState<unknown>();
@@ -43,6 +46,22 @@ export default function KnowledgeRecallTestPage() {
     () => tenants.find((t) => t.id === activeTenantId)?.name,
     [tenants, activeTenantId],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    listPromptTemplates({ keyword: QA_DIALOGUE_SYSTEM_KEY, pageSize: 20 })
+      .then((res) => {
+        if (cancelled) return;
+        const tpl = res.items.find((i) => i.promptKey === QA_DIALOGUE_SYSTEM_KEY);
+        setPublishedPromptVersion(tpl?.publishedVersion ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setPublishedPromptVersion(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleTest = async () => {
     if (!activeTenantId) { message.warning('请先选择租户'); return; }
@@ -57,7 +76,6 @@ export default function KnowledgeRecallTestPage() {
         bm25_top_n: bm25TopN,
         vector_top_n: vectorTopN,
         wiki_prefix: wikiPrefix.trim() || undefined,
-        system_prompt: systemPrompt.trim() || undefined,
       });
       setResult(res);
     } catch (err) {
@@ -86,8 +104,12 @@ export default function KnowledgeRecallTestPage() {
             description={
               <>
                 两阶段与问答型 Runtime 相同：pathy <code>dialogue/recall</code> 仅召回，
-                最终回答由<Link to="/settings/llm"> 平台模型接入 </Link>配置的 LLM 生成。
-                未配置 LLM 时将返回明确错误，不会回退 pathy recall-test。
+                最终回答由<Link to="/settings/llm"> 平台模型接入 </Link>配置的 LLM 生成；
+                System Prompt 使用已发布模板 <code>{QA_DIALOGUE_SYSTEM_KEY}</code>
+                {publishedPromptVersion != null && (
+                  <>（v{publishedPromptVersion}，可在 <Link to="/prompts">Prompt 管理</Link> 修改后发布生效）</>
+                )}
+                。未配置 LLM 时将返回明确错误，不会回退 pathy recall-test。
               </>
             }
           />
@@ -122,11 +144,6 @@ export default function KnowledgeRecallTestPage() {
                     <Input value={wikiPrefix} onChange={(e) => setWikiPrefix(e.target.value)}
                       placeholder="如 notes/" style={{ width: 200 }} />
                   </div>
-                  <div>
-                    <Typography.Text type="secondary" className="block mb-1">System Prompt 覆盖</Typography.Text>
-                    <Input.TextArea rows={2} value={systemPrompt} onChange={(e) => setSystemPrompt(e.target.value)}
-                      placeholder="可选；留空使用平台默认 QA 提示词" style={{ width: 320 }} />
-                  </div>
                 </Space>
               ),
             }]} />
@@ -140,9 +157,18 @@ export default function KnowledgeRecallTestPage() {
             <div className="space-y-4">
               {result.assistant_reply && (
                 <Card title="平台 LLM 回答" size="small">
-                  {result.model && (
-                    <Typography.Text type="secondary" className="block mb-2">模型：{result.model}</Typography.Text>
-                  )}
+                  <Space className="mb-2" wrap>
+                    {result.model && (
+                      <Typography.Text type="secondary">模型：{result.model}</Typography.Text>
+                    )}
+                    {(result.prompt_version ?? result.prompt_key) && (
+                      <Typography.Text type="secondary">
+                        Prompt：{result.prompt_key ?? QA_DIALOGUE_SYSTEM_KEY}
+                        {result.prompt_version != null && ` v${result.prompt_version}`}
+                        {result.prompt_channel && ` (${result.prompt_channel})`}
+                      </Typography.Text>
+                    )}
+                  </Space>
                   <div className="whitespace-pre-wrap">{result.assistant_reply}</div>
                 </Card>
               )}

@@ -20,13 +20,22 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  EllipsisCell,
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   AUTH_TYPE_META,
   AUTH_TYPE_OPTIONS,
   AuthType,
   CONNECTOR_TYPE_META,
-  CONNECTOR_TYPE_OPTIONS,
+  DB_CONNECTOR_TYPE_OPTIONS,
+  GENERAL_CONNECTOR_TYPE_OPTIONS,
   Connector,
   ConnectorDetail,
   ConnectorStatus,
@@ -36,6 +45,7 @@ import {
   UpdateConnectorInput,
   createConnector,
   deleteConnector,
+  formatDbTarget,
   getConnector,
   listConnectors,
   testConnector,
@@ -49,6 +59,7 @@ interface ConnectorFormValues {
   name: string;
   type: ConnectorType;
   target: string;
+  database?: string;
   authType: AuthType;
   timeoutMs: number;
   description?: string;
@@ -96,7 +107,37 @@ function parseProperties(text?: string): Record<string, unknown> | undefined {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
-export default function ConnectorPage() {
+export type ConnectorListVariant = 'general' | 'db';
+
+const PAGE_COPY: Record<
+  ConnectorListVariant,
+  {
+    section: string;
+    title: string;
+    createLabel: string;
+    alert: string;
+    empty: string;
+  }
+> = {
+  general: {
+    section: '连接器管理',
+    title: '连接器列表',
+    createLabel: '新建连接器',
+    alert: 'HTTP API（操作/流程）与消息通知接口。凭证加密存储，详情仅脱敏展示。只读数据库连接请在「『查询型』配置 → 数据库连接器」维护。',
+    empty: '该租户暂无 HTTP / 通知类连接器',
+  },
+  db: {
+    section: '『查询型』配置',
+    title: '数据库连接器',
+    createLabel: '新建数据库连接器',
+    alert: '只读数据库连接（host:port + 逻辑库名 + 只读账号）。表结构抽取与 ER 图发布请在「库表ER图」维护。',
+    empty: '该租户暂无只读数据库连接器',
+  },
+};
+
+export function ConnectorListPage({ variant }: { variant: ConnectorListVariant }) {
+  const isDb = variant === 'db';
+  const copy = PAGE_COPY[variant];
   const { message, modal } = App.useApp();
   const { activeTenantId, tenants } = useActiveTenant();
   const [form] = Form.useForm<ConnectorFormValues>();
@@ -135,13 +176,15 @@ export default function ConnectorPage() {
         status: statusFilter,
         pageSize: 100,
       });
-      setData(res.items);
+      setData(
+        res.items.filter((c) => (isDb ? c.type === 'db_readonly' : c.type !== 'db_readonly')),
+      );
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载连接器列表失败');
     } finally {
       setLoading(false);
     }
-  }, [activeTenantId, keyword, typeFilter, statusFilter, message]);
+  }, [activeTenantId, keyword, typeFilter, statusFilter, message, isDb]);
 
   useEffect(() => {
     void load();
@@ -152,8 +195,8 @@ export default function ConnectorPage() {
     setAuthType('none');
     form.resetFields();
     form.setFieldsValue({
-      type: 'http',
-      authType: 'none',
+      type: isDb ? 'db_readonly' : 'http',
+      authType: isDb ? 'basic' : 'none',
       timeoutMs: 5000,
       allowedToolScopes: [],
     });
@@ -162,20 +205,34 @@ export default function ConnectorPage() {
 
   const openEdit = (c: Connector) => {
     setEditing(c);
-    setAuthType(c.authType);
+    const editAuthType = c.type === 'db_readonly' ? 'basic' : c.authType;
+    setAuthType(editAuthType);
     form.resetFields();
     form.setFieldsValue({
       name: c.name,
       type: c.type,
       target: c.target,
-      authType: c.authType,
+      authType: editAuthType,
       timeoutMs: c.timeoutMs,
       description: c.description ?? undefined,
+      database:
+        c.type === 'db_readonly' && c.properties?.database
+          ? String(c.properties.database)
+          : undefined,
       propertiesText:
         c.properties && Object.keys(c.properties).length
-          ? JSON.stringify(c.properties, null, 2)
+          ? JSON.stringify(
+              Object.fromEntries(
+                Object.entries(c.properties).filter(([k]) => k !== 'database'),
+              ),
+              null,
+              2,
+            )
           : undefined,
       allowedToolScopes: c.allowedToolScopes ?? [],
+      username:
+        c.credentialHints?.username ??
+        (typeof c.properties?.username === 'string' ? c.properties.username : undefined),
     });
     setDrawerOpen(true);
   };
@@ -202,6 +259,30 @@ export default function ConnectorPage() {
     let secret: Record<string, string> | undefined;
     try {
       properties = parseProperties(values.propertiesText);
+      if (values.type === 'db_readonly') {
+        if (!values.database?.trim()) {
+          message.error('只读数据库连接器须填写逻辑库名');
+          return;
+        }
+        properties = { ...properties, database: values.database.trim() };
+        if (values.authType !== 'basic') {
+          message.error('只读数据库连接器须使用 Basic 认证');
+          return;
+        }
+        if (!values.username?.trim()) {
+          message.error('请填写数据库用户名');
+          return;
+        }
+        if (values.clearSecret) {
+          message.error('只读数据库连接器不可清空凭证');
+          return;
+        }
+        const needPassword = !editing?.hasSecret;
+        if (needPassword && !values.password) {
+          message.error('请填写数据库口令');
+          return;
+        }
+      }
     } catch {
       message.error('附加配置不是合法 JSON');
       return;
@@ -213,6 +294,14 @@ export default function ConnectorPage() {
       return;
     }
 
+    if (values.type === 'db_readonly') {
+      values.authType = 'basic';
+      if (!secret?.username?.trim() || (!editing?.hasSecret && !secret?.password)) {
+        message.error('只读数据库连接器须填写用户名与口令');
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       if (editing) {
@@ -220,7 +309,7 @@ export default function ConnectorPage() {
           name: values.name,
           type: values.type,
           target: values.target,
-          authType: values.authType,
+          authType: values.type === 'db_readonly' ? 'basic' : values.authType,
           timeoutMs: values.timeoutMs,
           description: values.description,
           properties,
@@ -235,7 +324,7 @@ export default function ConnectorPage() {
           name: values.name,
           type: values.type,
           target: values.target,
-          authType: values.authType,
+          authType: values.type === 'db_readonly' ? 'basic' : values.authType,
           timeoutMs: values.timeoutMs,
           description: values.description,
           properties,
@@ -300,41 +389,57 @@ export default function ConnectorPage() {
   };
 
   const columns: ColumnsType<Connector> = [
-    {
+    withNowrap<Connector>({
       title: '连接器名称',
       dataIndex: 'name',
-      render: (v: string, row) => <a onClick={() => openDetail(row)}>{v}</a>,
-    },
-    {
-      title: '类型',
-      dataIndex: 'type',
-      width: 120,
-      render: (t: ConnectorType) => (
-        <Tag color={CONNECTOR_TYPE_META[t].color}>{CONNECTOR_TYPE_META[t].label}</Tag>
-      ),
-    },
-    {
-      title: '目标系统',
-      dataIndex: 'target',
+      width: 200,
       ellipsis: true,
-      render: (v: string) => <Typography.Text className="text-xs">{v}</Typography.Text>,
-    },
-    {
+      render: (v: string, row) => renderEllipsisLink(v, () => openDetail(row)),
+    }),
+    ...(!isDb
+      ? [
+          withNowrap<Connector>({
+            title: '类型',
+            dataIndex: 'type' as const,
+            width: 120,
+            render: (t: ConnectorType) => (
+              <Tag color={CONNECTOR_TYPE_META[t].color}>{CONNECTOR_TYPE_META[t].label}</Tag>
+            ),
+          }),
+        ]
+      : []),
+    withNowrap<Connector>({
+      title: isDb ? '目标库' : '目标系统',
+      dataIndex: 'target',
+      width: 220,
+      ellipsis: true,
+      render: (_: string, row) => {
+        const text = formatDbTarget(row);
+        return (
+          <EllipsisCell tooltip={text}>
+            <Typography.Text className="text-xs">{text}</Typography.Text>
+          </EllipsisCell>
+        );
+      },
+    }),
+    withNowrap<Connector>({
       title: '认证',
       dataIndex: 'authType',
       width: 110,
       render: (a: AuthType) => <Tag>{AUTH_TYPE_META[a].label}</Tag>,
-    },
-    {
+    }),
+    withNowrap<Connector>({
       title: '最近测试',
       dataIndex: 'lastTestStatus',
       width: 150,
       render: (s: Connector['lastTestStatus'], row) =>
         s ? (
-          <Space size={4}>
-            <Tag color={TEST_STATUS_META[s].color}>{TEST_STATUS_META[s].label}</Tag>
+          <Space size={4} className="flex-nowrap">
+            <Tag className="shrink-0" color={TEST_STATUS_META[s].color}>
+              {TEST_STATUS_META[s].label}
+            </Tag>
             {row.lastTestLatencyMs != null && (
-              <Typography.Text type="secondary" className="text-xs">
+              <Typography.Text type="secondary" className="shrink-0 text-xs">
                 {row.lastTestLatencyMs}ms
               </Typography.Text>
             )}
@@ -342,8 +447,8 @@ export default function ConnectorPage() {
         ) : (
           <Typography.Text type="secondary">未测试</Typography.Text>
         ),
-    },
-    {
+    }),
+    withNowrap<Connector>({
       title: '状态',
       dataIndex: 'status',
       width: 90,
@@ -355,8 +460,8 @@ export default function ConnectorPage() {
           onChange={(checked) => handleToggleStatus(row, checked)}
         />
       ),
-    },
-    {
+    }),
+    withNowrap<Connector>({
       title: '操作',
       key: 'actions',
       width: 170,
@@ -371,15 +476,20 @@ export default function ConnectorPage() {
           </a>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
-        <Typography.Title level={3} className="!mb-0">
-          连接器管理
-        </Typography.Title>
+        <div>
+          <Typography.Text type="secondary" className="text-xs">
+            {copy.section}
+          </Typography.Text>
+          <Typography.Title level={3} className="!mb-0">
+            {copy.title}
+          </Typography.Title>
+        </div>
         <Space>
           <Button
             type="primary"
@@ -387,7 +497,7 @@ export default function ConnectorPage() {
             onClick={openCreate}
             disabled={!activeTenantId}
           >
-            新建连接器
+            {copy.createLabel}
           </Button>
         </Space>
       </div>
@@ -406,7 +516,7 @@ export default function ConnectorPage() {
             type="info"
             showIcon
             message={`当前租户：${activeTenantName ?? activeTenantId}`}
-            description="三类连接方式：只读数据库（查询型）、HTTP API（操作/流程）、消息通知接口。凭证加密存储，详情仅脱敏展示。"
+            description={copy.alert}
           />
           <Space className="mb-4" wrap>
             <Input.Search
@@ -415,14 +525,16 @@ export default function ConnectorPage() {
               style={{ width: 240 }}
               onSearch={setKeyword}
             />
-            <Select
-              allowClear
-              placeholder="连接类型"
-              style={{ width: 150 }}
-              options={CONNECTOR_TYPE_OPTIONS}
-              value={typeFilter}
-              onChange={setTypeFilter}
-            />
+            {!isDb && (
+              <Select
+                allowClear
+                placeholder="连接类型"
+                style={{ width: 150 }}
+                options={GENERAL_CONNECTOR_TYPE_OPTIONS}
+                value={typeFilter}
+                onChange={setTypeFilter}
+              />
+            )}
             <Select
               allowClear
               placeholder="状态"
@@ -445,12 +557,14 @@ export default function ConnectorPage() {
             columns={columns}
             dataSource={data}
             pagination={false}
-            locale={{ emptyText: <Empty description="该租户暂无连接器" /> }}
+            locale={{ emptyText: <Empty description={copy.empty} /> }}
+            {...tableEllipsisLayout}
           />
         </>
       )}
 
       <ConnectorFormDrawer
+        variant={variant}
         open={drawerOpen}
         editing={editing}
         form={form}
@@ -480,7 +594,7 @@ export default function ConnectorPage() {
           )
         }
       >
-        {detail && <ConnectorDetailView detail={detail} />}
+        {detail && <ConnectorDetailView variant={variant} detail={detail} />}
       </Drawer>
     </>
   );
@@ -489,6 +603,7 @@ export default function ConnectorPage() {
 // ── 新建 / 编辑抽屉 ───────────────────────────────────────
 
 function ConnectorFormDrawer({
+  variant,
   open,
   editing,
   form,
@@ -498,6 +613,7 @@ function ConnectorFormDrawer({
   onClose,
   onSubmit,
 }: {
+  variant: ConnectorListVariant;
   open: boolean;
   editing?: Connector;
   form: ReturnType<typeof Form.useForm<ConnectorFormValues>>[0];
@@ -507,9 +623,29 @@ function ConnectorFormDrawer({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const lockDbType = variant === 'db';
+  const connectorType = Form.useWatch('type', form);
+  const isDbReadonly = lockDbType || connectorType === 'db_readonly';
+  const typeOptions = lockDbType ? DB_CONNECTOR_TYPE_OPTIONS : GENERAL_CONNECTOR_TYPE_OPTIONS;
+
+  useEffect(() => {
+    if (isDbReadonly) {
+      form.setFieldsValue({ authType: 'basic' });
+      onAuthTypeChange('basic');
+    }
+  }, [isDbReadonly, form, onAuthTypeChange]);
+
   return (
     <Drawer
-      title={editing ? '编辑连接器' : '新建连接器'}
+      title={
+        editing
+          ? lockDbType
+            ? '编辑数据库连接器'
+            : '编辑连接器'
+          : lockDbType
+            ? '新建数据库连接器'
+            : '新建连接器'
+      }
       width={620}
       open={open}
       onClose={onClose}
@@ -532,14 +668,20 @@ function ConnectorFormDrawer({
           <Input placeholder="如：报表只读库 / 订单中心 API" />
         </Form.Item>
         <Space className="flex" size="large">
-          <Form.Item
-            label="连接类型"
-            name="type"
-            rules={[{ required: true }]}
-            style={{ width: 200 }}
-          >
-            <Select options={CONNECTOR_TYPE_OPTIONS} />
-          </Form.Item>
+          {lockDbType ? (
+            <Form.Item name="type" hidden initialValue="db_readonly">
+              <Input />
+            </Form.Item>
+          ) : (
+            <Form.Item
+              label="连接类型"
+              name="type"
+              rules={[{ required: true }]}
+              style={{ width: 200 }}
+            >
+              <Select options={typeOptions} />
+            </Form.Item>
+          )}
           <Form.Item
             label="超时（毫秒）"
             name="timeoutMs"
@@ -550,19 +692,71 @@ function ConnectorFormDrawer({
           </Form.Item>
         </Space>
         <Form.Item
-          label="目标系统"
+          label="目标主机"
           name="target"
-          rules={[{ required: true, message: '请输入目标系统地址' }]}
-          tooltip="HTTP / 通知为 URL；只读数据库为 host:port"
+          rules={[{ required: true, message: '请输入目标地址' }]}
+          tooltip="HTTP / 通知为 URL；只读数据库为 host:port（不含库名）"
         >
           <Input placeholder="https://api.example.com 或 db.internal:3306" />
         </Form.Item>
 
-        <Form.Item label="认证方式" name="authType" rules={[{ required: true }]}>
-          <Select options={AUTH_TYPE_OPTIONS} onChange={onAuthTypeChange} />
-        </Form.Item>
+        {connectorType === 'db_readonly' && (
+          <Form.Item
+            label="逻辑库名 (database)"
+            name="database"
+            rules={[{ required: true, message: '只读库连接器必须指定逻辑库名' }]}
+            tooltip="一连接器对应一个逻辑库，不可在执行层切换"
+          >
+            <Input placeholder="如 report、order_db" />
+          </Form.Item>
+        )}
 
-        {editing?.hasSecret && (
+        {isDbReadonly ? (
+          <>
+            <Form.Item name="authType" hidden>
+              <Input />
+            </Form.Item>
+            <Alert
+              className="mb-4"
+              type="info"
+              showIcon
+              message="只读数据库须使用 Basic 认证"
+              description="须填写只读库账号与口令（口令加密存储）；不支持无认证或其它认证方式。"
+            />
+            <Space className="flex" size="large">
+              <Form.Item
+                label="数据库用户名"
+                name="username"
+                rules={[{ required: true, message: '请填写数据库用户名' }]}
+                style={{ width: 260 }}
+              >
+                <Input autoComplete="off" placeholder="只读账号" />
+              </Form.Item>
+              <Form.Item
+                label="数据库口令"
+                name="password"
+                rules={[
+                  {
+                    required: !editing?.hasSecret,
+                    message: '请填写数据库口令',
+                  },
+                ]}
+                style={{ width: 260 }}
+              >
+                <Input.Password
+                  autoComplete="new-password"
+                  placeholder={editing?.hasSecret ? '留空则保留原口令' : '口令（加密存储）'}
+                />
+              </Form.Item>
+            </Space>
+          </>
+        ) : (
+          <Form.Item label="认证方式" name="authType" rules={[{ required: true }]}>
+            <Select options={AUTH_TYPE_OPTIONS} onChange={onAuthTypeChange} />
+          </Form.Item>
+        )}
+
+        {editing?.hasSecret && !isDbReadonly && (
           <Alert
             className="mb-4"
             type="info"
@@ -572,7 +766,7 @@ function ConnectorFormDrawer({
           />
         )}
 
-        {authType === 'basic' && (
+        {!isDbReadonly && authType === 'basic' && (
           <Space className="flex" size="large">
             <Form.Item label="用户名" name="username" style={{ width: 260 }}>
               <Input autoComplete="off" placeholder="账号" />
@@ -582,12 +776,12 @@ function ConnectorFormDrawer({
             </Form.Item>
           </Space>
         )}
-        {authType === 'bearer' && (
+        {!isDbReadonly && authType === 'bearer' && (
           <Form.Item label="Token" name="token">
             <Input.Password autoComplete="new-password" placeholder="Bearer Token（加密存储）" />
           </Form.Item>
         )}
-        {authType === 'api_key' && (
+        {!isDbReadonly && authType === 'api_key' && (
           <Space className="flex" size="large">
             <Form.Item label="Header 名称" name="headerName" style={{ width: 220 }}>
               <Input placeholder="X-API-Key" />
@@ -597,7 +791,7 @@ function ConnectorFormDrawer({
             </Form.Item>
           </Space>
         )}
-        {authType === 'custom' && (
+        {!isDbReadonly && authType === 'custom' && (
           <Form.Item
             label="自定义凭证（JSON）"
             name="customSecretText"
@@ -607,7 +801,7 @@ function ConnectorFormDrawer({
           </Form.Item>
         )}
 
-        {editing?.hasSecret && (
+        {editing?.hasSecret && !isDbReadonly && (
           <Form.Item name="clearSecret" valuePropName="checked">
             <Switch checkedChildren="清空凭证" unCheckedChildren="保留凭证" />
           </Form.Item>
@@ -637,35 +831,42 @@ function ConnectorFormDrawer({
 
 // ── 详情视图 ──────────────────────────────────────────────
 
-function ConnectorDetailView({ detail }: { detail: ConnectorDetail }) {
-  const recentColumns: ColumnsType<ConnectorDetail['recentCalls'][number]> = [
-    {
-      title: '时间',
-      dataIndex: 'createdAt',
-      width: 170,
-      render: (v: string) => fmt(v),
-    },
-    {
+function ConnectorDetailView({
+  variant,
+  detail,
+}: {
+  variant: ConnectorListVariant;
+  detail: ConnectorDetail;
+}) {
+  type RecentCall = ConnectorDetail['recentCalls'][number];
+  const recentColumns: ColumnsType<RecentCall> = [
+    withNowrap<RecentCall>({ title: '时间', dataIndex: 'createdAt', width: 170, render: (v: string) => fmt(v) }),
+    withNowrap<RecentCall>({
       title: '结果',
       dataIndex: 'status',
       width: 80,
       render: (s: string) => (
         <Tag color={s === 'success' ? 'green' : s === 'failed' ? 'red' : 'gold'}>{s}</Tag>
       ),
-    },
-    { title: '状态码', dataIndex: 'statusCode', width: 80, render: (v: number | null) => v ?? '—' },
-    {
+    }),
+    withNowrap<RecentCall>({
+      title: '状态码',
+      dataIndex: 'statusCode',
+      width: 80,
+      render: (v: number | null) => (v == null ? '—' : v),
+    }),
+    withNowrap<RecentCall>({
       title: '耗时',
       dataIndex: 'durationMs',
       width: 80,
       render: (v: number | null) => (v != null ? `${v}ms` : '—'),
-    },
-    {
+    }),
+    withNowrap<RecentCall>({
       title: '错误',
       dataIndex: 'errorMessage',
       ellipsis: true,
-      render: (v: string | null) => v || '—',
-    },
+      render: (v: string | null) => renderOptionalText(v),
+    }),
   ];
 
   return (
@@ -678,7 +879,7 @@ function ConnectorDetailView({ detail }: { detail: ConnectorDetail }) {
             {CONNECTOR_TYPE_META[detail.type].label}
           </Tag>
         </Descriptions.Item>
-        <Descriptions.Item label="目标系统">{detail.target}</Descriptions.Item>
+        <Descriptions.Item label="目标系统">{formatDbTarget(detail)}</Descriptions.Item>
         <Descriptions.Item label="认证方式">
           {AUTH_TYPE_META[detail.authType].label}
         </Descriptions.Item>
@@ -774,7 +975,30 @@ function ConnectorDetailView({ detail }: { detail: ConnectorDetail }) {
         dataSource={detail.recentCalls}
         pagination={false}
         locale={{ emptyText: <Empty description="暂无外部调用记录" /> }}
+        {...tableEllipsisLayout}
       />
+
+      {variant === 'db' && detail.type === 'db_readonly' && (
+        <Alert
+          className="mt-4"
+          type="info"
+          showIcon
+          message="库表 ER 图"
+          description={
+            <>
+              表结构抽取、LLM 生成 ER 图与发布请在「库表ER图」维护。{' '}
+              <Link to={`/query/db-er?connectorId=${detail.id}`}>前往库表ER图</Link>
+              {!detail.lastTestStatus || detail.lastTestStatus === 'failed' ? (
+                <span className="text-orange-600"> · 建议先完成连通性测试</span>
+              ) : null}
+            </>
+          }
+        />
+      )}
     </>
   );
+}
+
+export default function ConnectorPage() {
+  return <ConnectorListPage variant="general" />;
 }

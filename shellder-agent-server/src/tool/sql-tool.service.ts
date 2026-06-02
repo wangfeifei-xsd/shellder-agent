@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Connector } from '@prisma/client';
 import { createConnection } from 'mysql2/promise';
-import { decryptSecret } from '../connector/connector-secret.util';
-import { SqlToolConfig } from './tool.types';
+import { resolveDbConnectionParams } from '../connector/db-connection.util';
+import { LegacySqlToolConfig, SqlToolConfig } from './tool.types';
 
 /** SQL 工具执行结果（应用层） */
 export interface SqlExecResult {
@@ -47,7 +47,7 @@ const FORBIDDEN_KEYWORDS = [
  * 仅用于 query 型 Tool + db_readonly 连接器（查询型仅经只读 DB，不经 HTTP 查数，架构 §4.4）。
  * 安全约束（执行前 / 执行中逐层拦截）：
  * 1. 只读校验：仅允许 SELECT / WITH...SELECT 单条语句；命中写 / DDL 关键字一律拒绝。
- * 2. 表白名单：SQL 引用的表必须全部在 config.sql.tableWhitelist 内，否则拒绝。
+ * 2. 表黑名单：SQL 引用的表不得命中 config.sql.tableBlacklist（未配置则不限制表）。
  * 3. 最大返回行数：以子查询包裹 + LIMIT(maxRows+1) 执行；超出 maxRows 拒绝（验收标准 3）。
  * 4. 最大执行时长：mysql2 query timeout = maxExecutionMs；超时拒绝（验收标准 3）。
  * 命名参数（:name）经 mysql2 占位符绑定，避免拼接注入。
@@ -56,8 +56,8 @@ const FORBIDDEN_KEYWORDS = [
 export class SqlToolService {
   private readonly logger = new Logger(SqlToolService.name);
 
-  /** 静态校验：只读 + 单语句 + 表白名单（不连接数据库；供保存 / 执行前拦截）。 */
-  assertReadonlyAndWhitelisted(sql: string, sqlConfig: SqlToolConfig): void {
+  /** 静态校验：只读 + 单语句 + 表黑名单（不连接数据库；供保存 / 执行前拦截）。 */
+  assertReadonlySql(sql: string, sqlConfig: SqlToolConfig): void {
     const cleaned = this.stripComments(sql).trim().replace(/;+\s*$/, '');
     if (!cleaned) {
       throw new BadRequestException({ code: 'SQL_EMPTY', message: 'SQL 不能为空' });
@@ -83,16 +83,32 @@ export class SqlToolService {
         });
       }
     }
-    // 表白名单校验
-    const whitelist = (sqlConfig.tableWhitelist ?? []).map((t) => t.toLowerCase());
-    if (whitelist.length === 0) {
-      throw new BadRequestException({
-        code: 'SQL_WHITELIST_EMPTY',
-        message: '未配置表白名单，禁止执行任意 SQL',
-      });
-    }
     const referenced = this.extractTables(lower);
-    const illegal = referenced.filter((t) => !whitelist.includes(t));
+    this.assertTableAccess(referenced, sqlConfig);
+  }
+
+  /** @deprecated 使用 assertReadonlySql */
+  assertReadonlyAndWhitelisted(sql: string, sqlConfig: SqlToolConfig): void {
+    this.assertReadonlySql(sql, sqlConfig);
+  }
+
+  private assertTableAccess(referenced: string[], sqlConfig: SqlToolConfig): void {
+    const legacy = sqlConfig as LegacySqlToolConfig;
+    const blacklist = (sqlConfig.tableBlacklist ?? []).map((t) => t.toLowerCase());
+    if (blacklist.length > 0) {
+      const blocked = referenced.filter((t) => blacklist.includes(t));
+      if (blocked.length > 0) {
+        throw new BadRequestException({
+          code: 'SQL_TABLE_BLACKLISTED',
+          message: `引用了黑名单中的表：${blocked.join(', ')}`,
+        });
+      }
+      return;
+    }
+    // 历史数据：仍配置了表白名单时沿用白名单语义，直至重新保存为黑名单配置
+    const legacyWhitelist = (legacy.tableWhitelist ?? []).map((t) => t.toLowerCase());
+    if (legacyWhitelist.length === 0) return;
+    const illegal = referenced.filter((t) => !legacyWhitelist.includes(t));
     if (illegal.length > 0) {
       throw new BadRequestException({
         code: 'SQL_TABLE_NOT_ALLOWED',
@@ -110,7 +126,7 @@ export class SqlToolService {
     params: Record<string, unknown>,
     sqlConfig: SqlToolConfig,
   ): Promise<SqlExecResult> {
-    this.assertReadonlyAndWhitelisted(rawSql, sqlConfig);
+    this.assertReadonlySql(rawSql, sqlConfig);
 
     const maxRows = sqlConfig.maxRows > 0 ? sqlConfig.maxRows : 100;
     const maxExecutionMs =
@@ -123,27 +139,18 @@ export class SqlToolService {
     // 子查询包裹 + LIMIT(maxRows+1)：超出即判定超行数（验收标准 3）
     const wrapped = `SELECT * FROM (${boundSql}) AS __shellder_sub LIMIT ${maxRows + 1}`;
 
-    const { host, port } = this.parseTarget(connector.target);
-    const secret = decryptSecret(
-      (connector.config as { secretCipher?: string | null })?.secretCipher,
-    );
-    const properties =
-      (connector.config as { properties?: Record<string, unknown> })?.properties ?? {};
-    const database = this.str(properties.database);
-    const user = this.str(secret?.username) || this.str(properties.username);
-    const password = this.str(secret?.password);
+    const dbParams = resolveDbConnectionParams(connector);
 
     const start = Date.now();
     let conn: Awaited<ReturnType<typeof createConnection>> | undefined;
     try {
       conn = await createConnection({
-        host,
-        port,
-        user: user || undefined,
-        password: password || undefined,
-        database: database || undefined,
-        connectTimeout: connector.timeoutMs ?? 5000,
-        // 只读会话保护：禁用本地文件、不自动多语句
+        host: dbParams.host,
+        port: dbParams.port,
+        user: dbParams.user,
+        password: dbParams.password,
+        database: dbParams.database,
+        connectTimeout: dbParams.connectTimeoutMs,
         multipleStatements: false,
       });
 
@@ -224,26 +231,6 @@ export class SqlToolService {
     return [...tables];
   }
 
-  private parseTarget(target: string): { host: string; port: number } {
-    const cleaned = target.replace(/^[a-z]+:\/\//i, '').split('/')[0];
-    const idx = cleaned.lastIndexOf(':');
-    if (idx <= 0) {
-      throw new BadRequestException({
-        code: 'CONNECTOR_TARGET_INVALID',
-        message: `连接器目标格式无效（应为 host:port）：${target}`,
-      });
-    }
-    const host = cleaned.slice(0, idx);
-    const port = Number(cleaned.slice(idx + 1));
-    if (!host || !Number.isInteger(port) || port <= 0 || port > 65535) {
-      throw new BadRequestException({
-        code: 'CONNECTOR_TARGET_INVALID',
-        message: `连接器目标格式无效（应为 host:port）：${target}`,
-      });
-    }
-    return { host, port };
-  }
-
   private normalizeDbError(err: unknown, maxExecutionMs: number): string {
     const e = err as { code?: string; message?: string };
     if (e?.code === 'PROTOCOL_SEQUENCE_TIMEOUT' || /timeout/i.test(e?.message ?? '')) {
@@ -252,7 +239,4 @@ export class SqlToolService {
     return e?.message ?? String(err);
   }
 
-  private str(v: unknown): string {
-    return typeof v === 'string' ? v : v == null ? '' : String(v);
-  }
 }

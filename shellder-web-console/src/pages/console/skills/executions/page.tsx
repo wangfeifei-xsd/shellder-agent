@@ -4,6 +4,12 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { Alert, App, Button, Empty, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  ellipsisTextColumn,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   EXEC_STATUS_META,
@@ -45,22 +51,56 @@ export default function SkillExecutionsPage() {
   useEffect(() => { void load(); }, [load]);
 
   const columns: ColumnsType<SkillExecution> = [
-    { title: '时间', dataIndex: 'startedAt', width: 160, render: (v: string) => fmt(v) },
-    {
-      title: '状态', dataIndex: 'status', width: 80,
-      render: (s: SkillExecStatus) => <Tag color={EXEC_STATUS_META[s].color}>{EXEC_STATUS_META[s].label}</Tag>,
-    },
-    { title: '会话', dataIndex: 'sessionId', width: 160, ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '任务', dataIndex: 'taskId', width: 160, ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '用户', dataIndex: 'userId', width: 140, ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '失败原因', dataIndex: 'errorSummary', ellipsis: true, render: (v: string | null) => v || '—' },
-    {
-      title: '耗时', key: 'duration', width: 80,
+    withNowrap<SkillExecution>({
+      title: '时间',
+      dataIndex: 'startedAt',
+      width: 160,
+      render: (v: string) => fmt(v),
+    }),
+    withNowrap<SkillExecution>({
+      title: '状态',
+      dataIndex: 'status',
+      width: 80,
+      render: (s: SkillExecStatus) => (
+        <Tag color={EXEC_STATUS_META[s].color}>{EXEC_STATUS_META[s].label}</Tag>
+      ),
+    }),
+    withNowrap<SkillExecution>({
+      title: '会话',
+      dataIndex: 'sessionId',
+      width: 160,
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<SkillExecution>({
+      title: '任务',
+      dataIndex: 'taskId',
+      width: 160,
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<SkillExecution>({
+      title: '用户',
+      dataIndex: 'userId',
+      width: 140,
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<SkillExecution>({
+      title: '失败原因',
+      dataIndex: 'errorSummary',
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<SkillExecution>({
+      title: '耗时',
+      key: 'duration',
+      width: 80,
       render: (_, row) => {
         if (!row.finishedAt) return '—';
         return `${new Date(row.finishedAt).getTime() - new Date(row.startedAt).getTime()}ms`;
       },
-    },
+    }),
   ];
 
   return (
@@ -81,8 +121,14 @@ export default function SkillExecutionsPage() {
             />
             <Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button>
           </Space>
-          <Table<SkillExecution> rowKey="id" loading={loading} columns={columns} dataSource={data} pagination={false}
+          <Table<SkillExecution>
+            rowKey="id"
+            loading={loading}
+            columns={columns}
+            dataSource={data}
+            pagination={false}
             locale={{ emptyText: <Empty description="暂无调用记录" /> }}
+            {...tableEllipsisLayout}
           />
         </>
       )}

@@ -16,6 +16,11 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
+import {
+  ellipsisTextColumn,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   CAPABILITY_TYPE_META,
@@ -53,19 +58,23 @@ export default function RoutingTestPage() {
   };
 
   const candidateColumns: ColumnsType<RoutingCandidate> = [
-    { title: '能力名称', dataIndex: 'capabilityName' },
-    {
-      title: '类型', dataIndex: 'type', width: 100,
+    ellipsisTextColumn<RoutingCandidate>('能力名称', 'capabilityName', 180),
+    withNowrap<RoutingCandidate>({
+      title: '类型',
+      dataIndex: 'type',
+      width: 100,
       render: (t: string) => {
         const meta = CAPABILITY_TYPE_META[t as CapabilityType];
         return meta ? <Tag color={meta.color}>{meta.label}</Tag> : t;
       },
-    },
-    { title: '得分', dataIndex: 'score', width: 80 },
-    {
-      title: '可调用工具数', dataIndex: 'toolIds', width: 100,
+    }),
+    ellipsisTextColumn<RoutingCandidate>('得分', 'score', 80),
+    withNowrap<RoutingCandidate>({
+      title: '可调用工具数',
+      dataIndex: 'toolIds',
+      width: 100,
       render: (ids: string[]) => ids?.length ?? 0,
-    },
+    }),
   ];
 
   return (
@@ -136,6 +145,7 @@ export default function RoutingTestPage() {
                     dataSource={result.candidates}
                     pagination={false}
                     locale={{ emptyText: <Empty description="无候选" /> }}
+                    {...tableEllipsisLayout}
                   />
                 </>
               )}

@@ -97,6 +97,16 @@ docker compose --profile monitoring up -d
 | MySQL | 3306 |
 | Redis | 6379 |
 
+## Prompt 防回归（21-C）
+
+在 `shellder-agent-server` 目录执行（CI 未接入前建议提交前本地跑）：
+
+```bash
+cd shellder-agent-server && npm run check:prompt-constants
+```
+
+校验：禁止新增 `src/**/*.prompt.ts`（白名单仅 `connector/er-diagram.prompt.ts` 工具函数）、禁止 `export const *_SYSTEM_PROMPT`。规范见 [`project-analysis/implementation-constraints.md`](../project-analysis/implementation-constraints.md) §1D。
+
 ## 常见问题
 
 ### 前台 API 连不上 / 跨域
@@ -168,15 +178,15 @@ npm run prisma:migrate       # 部署（migrate deploy）
 - [x] **03** 用户与权限 — `user`/`role`/`user_role`/`user_tenant`、JWT + RBAC、`/api/v1/auth`·`/users`·`/roles`·`/permission-policies`、登录与用户/角色/权限页
 - [x] **04** 审计模块与审计中心 — `tool_call_audit`/`user_action_audit`/`external_call_audit`、`@Audit` 采集、`/api/v1/audit`、页面 `/audit/*`
 - [x] **05** 策略引擎与规则配置 — `rule`/`rule_hit`、`PolicyService.evaluate`、`/api/v1/rules`·`/rule-hits`、页面 `/rules`·`/rule-hits`
-- [x] **06** 连接器管理 — `connector` 表、`/api/v1/connectors`、页面 `/connectors`
-- [x] **07** 工具注册与工具管理 — `tool` 表、`/api/v1/tools`、页面 `/tools`·`/tools/sql`
+- [x] **06** 连接器管理 — `connector` 表、`connector_db_metadata`（06b）、`db_readonly` 库级 `SELECT 1` 连通性、结构抽取与 ER 图 API、页面 `/connectors`
+- [x] **07** 工具注册与工具管理 — `tool` 表、`/api/v1/tools`、SQL 查询工具（只读 + 可选表/字段黑名单）、页面 `/tools`·`/tools/sql`
 - [x] **08** 会话与消息核心 — `session`/`message` 表、`/api/v1/sessions`·`/messages`、页面 `/sessions`
 - [x] **09** 任务中心与异步 Worker — `task`/`task_step`/`task_log`、`/api/v1/tasks`、BullMQ `shellder-job-worker`、页面 `/tasks/*`[^07]
 - [x] **10** 能力路由 — `capability`/`routing_rule`、`/api/v1/capabilities`·`/routing-rules`·`/routing/test`、页面 `/routing/*`
 - [x] **11** 技能书管理 — `skill`/`skill_trigger`/`skill_binding`/`skill_execution_log`、`/api/v1/skills`、页面 `/skills/*`
 - [x] **11A** 知识库代理与知识库管理 — `knowledge_base` 租户绑定、`/api/v1/knowledge/*` 代理 pathy、`/api/v1/knowledge-bases`、页面 `/knowledge/*`（`project-sql/12-knowledge-base`）[^02][^08]
 - [x] **12** Agent 运行时与流式响应 — `session`/`task` 枚举 `pending_confirm`、`/api/v1/sessions/:id/messages`·`/stream`·`/confirm`、SSE 事件（`project-sql/13-agent-runtime`）[^04]
-- [x] **13** 四类业务能力 — qa/query/action/workflow Handler 编排、`task` 进度索引（`project-sql/14-business-capabilities`）[^05]；问答型 **pathy recall + 平台 LLM 两阶段**
+- [x] **13** 四类业务能力 — qa/query/action/workflow Handler 编排；问答型 **pathy recall + 平台 LLM**；查询型 **ER 图 + NL2SQL + SqlToolService 执行**（`QueryModule` / `Nl2SqlService`，非 pathy）
 - [x] **14** 审批中心 — `approval` 表、`/api/v1/approvals`、`ApprovalRuntimeService` 断点恢复、页面 `/approvals/*`（`project-sql/15-approval-center`）[^04]
 - [x] **15** OpenAPI 对外接口与管理 — `openapi_app`/`openapi_call_log`、`/openapi/v1/*`·`/api/v1/openapi-apps`、页面 `/openapi/*`（`project-sql/16-openapi`）[^03]
 - [x] **16** 会话管理与调试台 — 无新表、调试 API、页面 `/sessions/[id]`·`/sessions/messages`·`/sessions/debug`（`project-sql/17-session-debug-console`）

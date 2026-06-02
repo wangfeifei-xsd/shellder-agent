@@ -43,8 +43,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code = this.codeFromStatus(status);
       } else if (typeof body === 'object' && body !== null) {
         const obj = body as Record<string, unknown>;
-        message = (obj.message as string) ?? message;
+        if (typeof obj.message === 'string') {
+          message = obj.message;
+        } else if (typeof obj.message === 'object' && obj.message !== null) {
+          const nested = obj.message as Record<string, unknown>;
+          message = (nested.message as string) ?? message;
+          code = (nested.code as string) ?? code;
+          if (nested.details !== undefined) details = nested.details;
+        }
         code = (obj.code as string) ?? this.codeFromStatus(status);
+        if (obj.details !== undefined) details = obj.details;
         if (Array.isArray(obj.message)) {
           details = obj.message;
           message = 'Validation failed';

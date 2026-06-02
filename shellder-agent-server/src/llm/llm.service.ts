@@ -36,6 +36,7 @@ export class LlmService {
     base_url?: string;
     model?: string;
     api_key?: string;
+    enable_thinking?: boolean;
   }): Promise<{
     ok: boolean;
     model: string;
@@ -53,6 +54,10 @@ export class LlmService {
         overrides?.api_key !== undefined
           ? overrides.api_key.trim() || null
           : stored.apiKey,
+      enableThinking:
+        overrides?.enable_thinking !== undefined
+          ? overrides.enable_thinking
+          : stored.enableThinking,
     };
 
     if (!this.configService.isConfigured(config)) {
@@ -66,6 +71,7 @@ export class LlmService {
       };
     }
 
+    const chatUrl = this.buildChatUrl(config);
     const start = Date.now();
     try {
       const result = await this.chatCompletion(
@@ -83,14 +89,14 @@ export class LlmService {
     } catch (err) {
       const elapsed_ms = Date.now() - start;
       const errorMsg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`LLM 连通性测试失败：${errorMsg}`);
+      this.logger.warn(`LLM 连通性测试失败：${errorMsg}（${chatUrl}）`);
       return {
         ok: false,
         model: config.model,
         base_url: config.baseUrl,
         elapsed_ms,
         message: '连接失败',
-        error: errorMsg,
+        error: `${errorMsg}（请求 ${chatUrl}）`,
       };
     }
   }
@@ -124,27 +130,25 @@ export class LlmService {
       const res = await fetch(url, {
         method: 'POST',
         headers: this.buildHeaders(config),
-        body: JSON.stringify({
-          model: config.model,
-          messages,
-          max_tokens: maxTokens ?? config.maxTokens,
-          stream: false,
-        }),
+        body: JSON.stringify(
+          this.buildChatRequestBody(config, messages, {
+            maxTokens: maxTokens ?? config.maxTokens,
+            stream: false,
+          }),
+        ),
         signal: controller.signal,
       });
 
-      const body = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
-        error?: { message?: string };
-      };
+      const { body, rawText } = await this.readUpstreamBody(res);
 
       if (!res.ok) {
-        throw llmUpstreamError(
-          body.error?.message ?? `HTTP ${res.status}`,
-        );
+        throw llmUpstreamError(this.formatUpstreamError(res, body, rawText));
       }
 
-      const text = body.choices?.[0]?.message?.content ?? '';
+      const choices = body.choices as
+        | { message?: { content?: string } }[]
+        | undefined;
+      const text = choices?.[0]?.message?.content ?? '';
       return { text, model: config.model, elapsedMs: Date.now() - start };
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') {
@@ -174,22 +178,18 @@ export class LlmService {
       const res = await fetch(url, {
         method: 'POST',
         headers: this.buildHeaders(config),
-        body: JSON.stringify({
-          model: config.model,
-          messages,
-          max_tokens: config.maxTokens,
-          stream: true,
-        }),
+        body: JSON.stringify(
+          this.buildChatRequestBody(config, messages, {
+            maxTokens: config.maxTokens,
+            stream: true,
+          }),
+        ),
         signal: controller.signal,
       });
 
       if (!res.ok) {
-        const errBody = (await res.json().catch(() => ({}))) as {
-          error?: { message?: string };
-        };
-        throw llmUpstreamError(
-          errBody.error?.message ?? `HTTP ${res.status}`,
-        );
+        const { body, rawText } = await this.readUpstreamBody(res);
+        throw llmUpstreamError(this.formatUpstreamError(res, body, rawText));
       }
 
       if (!res.body) {
@@ -241,10 +241,62 @@ export class LlmService {
     }
   }
 
+  private buildChatRequestBody(
+    config: LlmEffectiveConfig,
+    messages: ChatMessage[],
+    opts: { maxTokens: number; stream: boolean },
+  ): Record<string, unknown> {
+    const body: Record<string, unknown> = {
+      model: config.model,
+      messages,
+      max_tokens: opts.maxTokens,
+      stream: opts.stream,
+    };
+    if (config.enableThinking) {
+      body.enable_thinking = true;
+    }
+    return body;
+  }
+
   private buildChatUrl(config: LlmEffectiveConfig): string {
     const base = config.baseUrl.replace(/\/+$/, '');
-    const path = (config.chatPath || 'v1/chat/completions').replace(/^\/+/, '');
+    let path = (config.chatPath || 'chat/completions').replace(/^\/+/, '');
+    // Base URL 已含 /v1 时，避免拼成 .../v1/v1/chat/completions 导致 404
+    if (/\/v1$/i.test(base) && path.toLowerCase().startsWith('v1/')) {
+      path = path.replace(/^v1\//i, '');
+    }
     return `${base}/${path}`;
+  }
+
+  private async readUpstreamBody(res: Response): Promise<{
+    body: Record<string, unknown>;
+    rawText: string;
+  }> {
+    const rawText = await res.text();
+    if (!rawText.trim()) {
+      return { body: {}, rawText };
+    }
+    try {
+      return { body: JSON.parse(rawText) as Record<string, unknown>, rawText };
+    } catch {
+      return { body: {}, rawText };
+    }
+  }
+
+  private formatUpstreamError(
+    res: Response,
+    body: Record<string, unknown>,
+    rawText: string,
+  ): string {
+    const errObj = body.error as { message?: string } | undefined;
+    if (errObj?.message) {
+      return `HTTP ${res.status}：${errObj.message}`;
+    }
+    const snippet = rawText.trim().slice(0, 240);
+    if (snippet) {
+      return `HTTP ${res.status}：${snippet}`;
+    }
+    return `HTTP ${res.status}`;
   }
 
   private buildHeaders(config: LlmEffectiveConfig): Record<string, string> {

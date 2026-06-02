@@ -90,13 +90,40 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   });
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text) as unknown;
+    } catch {
+      data = null;
+    }
+  }
 
   if (!res.ok) {
     if (res.status === 401) {
       handleUnauthorized();
     }
-    throw new ApiError(res.status, (data ?? {}) as Partial<ApiErrorBody>);
+    const body = (data ?? {}) as Partial<ApiErrorBody>;
+    const fallbackMessage =
+      text.trim().slice(0, 300) || `请求失败（HTTP ${res.status}）`;
+    if (!body.error?.message) {
+      body.error = {
+        code: body.error?.code ?? 'HTTP_ERROR',
+        message: fallbackMessage,
+        details: body.error?.details,
+      };
+    }
+    throw new ApiError(res.status, body);
+  }
+
+  if (text && data === null) {
+    throw new ApiError(res.status || 500, {
+      error: {
+        code: 'INVALID_RESPONSE',
+        message: text.trim().slice(0, 300) || '响应不是合法 JSON',
+      },
+      requestId: 'unknown',
+    });
   }
 
   return data as T;

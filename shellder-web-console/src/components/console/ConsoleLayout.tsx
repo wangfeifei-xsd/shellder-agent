@@ -1,7 +1,7 @@
 import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
 import { Dropdown, Layout, Menu, Select, Space, Spin, Tag, Typography } from 'antd';
 import type { ItemType } from 'antd/es/menu/interface';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/components/auth/AuthContext';
 import { ActiveTenantProvider, useActiveTenant } from './ActiveTenantContext';
@@ -56,6 +56,35 @@ function UserMenu() {
   );
 }
 
+/** 根据当前路径展开对应的一级子菜单 */
+function submenuOpenKeysFromPath(pathname: string): string[] {
+  const keys: string[] = [];
+  if (pathname.startsWith('/sessions')) keys.push('session');
+  if (pathname.startsWith('/tasks')) keys.push('task');
+  if (pathname.startsWith('/routing')) keys.push('routing');
+  if (pathname.startsWith('/capabilities')) keys.push('capability');
+  if (pathname.startsWith('/skills')) keys.push('skill');
+  if (pathname.startsWith('/tools')) keys.push('tool');
+  if (pathname.startsWith('/connectors')) keys.push('connector');
+  if (pathname.startsWith('/query')) keys.push('query');
+  if (pathname.startsWith('/knowledge')) keys.push('knowledge');
+  if (pathname.startsWith('/rules') || pathname.startsWith('/rule-hits')) keys.push('rule');
+  if (pathname.startsWith('/approvals')) keys.push('approval');
+  if (pathname.startsWith('/audit')) keys.push('audit');
+  if (
+    pathname.startsWith('/users') ||
+    pathname.startsWith('/roles') ||
+    pathname.startsWith('/permissions')
+  ) {
+    keys.push('user');
+  }
+  if (pathname.startsWith('/tenants')) keys.push('tenant');
+  if (pathname.startsWith('/openapi')) keys.push('openapi');
+  if (pathname.startsWith('/copilot-admin')) keys.push('copilot');
+  if (pathname.startsWith('/settings')) keys.push('settings');
+  return keys;
+}
+
 /** 按当前用户菜单权限过滤侧栏顶级项 */
 function useFilteredMenu(): ItemType[] {
   const { hasMenu, me } = useAuth();
@@ -73,6 +102,13 @@ function ConsoleShell() {
   const { me, loading } = useAuth();
   const selectedKey = pathname === '/' ? '/' : pathname;
   const menuItems = useFilteredMenu();
+  const routeOpenKeys = useMemo(() => submenuOpenKeysFromPath(pathname), [pathname]);
+  const [openKeys, setOpenKeys] = useState<string[]>(routeOpenKeys);
+
+  // 路由变化时自动展开对应分组，但不阻止用户手动折叠/展开其它分组
+  useEffect(() => {
+    setOpenKeys((prev) => Array.from(new Set([...prev, ...routeOpenKeys])));
+  }, [routeOpenKeys]);
 
   useEffect(() => {
     if (!loading && !me) {
@@ -122,7 +158,8 @@ function ConsoleShell() {
           <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
-            defaultOpenKeys={[]}
+            openKeys={openKeys}
+            onOpenChange={setOpenKeys}
             items={menuItems}
             className="border-none"
           />

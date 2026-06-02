@@ -23,6 +23,13 @@ const SkillExecutionsPage = lazy(() => import('@/pages/console/skills/executions
 const ToolPage = lazy(() => import('@/pages/console/tools/page'));
 const SqlToolPage = lazy(() => import('@/pages/console/tools/sql/page'));
 const ConnectorPage = lazy(() => import('@/pages/console/connectors/page'));
+const DbConnectorPage = lazy(() => import('@/pages/console/query/db-connectors/page'));
+const DbErPage = lazy(() => import('@/pages/console/query/db-er/page'));
+const QueryTestPage = lazy(() => import('@/pages/console/query/query-test/page'));
+const DbChannelToolsPage = lazy(() => import('@/pages/console/query/db-channel-tools/page'));
+const DbSchemaLegacyRedirect = lazy(
+  () => import('@/pages/console/connectors/db-schema-redirect'),
+);
 const RuleConfigPage = lazy(() => import('@/pages/console/rules/page'));
 const RuleHitsPage = lazy(() => import('@/pages/console/rule-hits/page'));
 const KnowledgePage = lazy(() => import('@/pages/console/knowledge/page'));
@@ -54,6 +61,8 @@ const BasicSettingsPage = lazy(() => import('@/pages/console/settings/page'));
 const ModelSettingsPage = lazy(() => import('@/pages/console/settings/model/page'));
 const LlmIntegrationPage = lazy(() => import('@/pages/console/settings/llm/page'));
 const NotificationSettingsPage = lazy(() => import('@/pages/console/settings/notification/page'));
+const PromptListPage = lazy(() => import('@/pages/console/prompts/page'));
+const PromptDetailPage = lazy(() => import('@/pages/console/prompts/[id]/page'));
 
 export const appRoutes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
@@ -85,6 +94,11 @@ export const appRoutes: RouteObject[] = [
       { path: 'tools', element: <ToolPage /> },
       { path: 'tools/sql', element: <SqlToolPage /> },
       { path: 'connectors', element: <ConnectorPage /> },
+      { path: 'connectors/db-schema', element: <DbSchemaLegacyRedirect /> },
+      { path: 'query/db-connectors', element: <DbConnectorPage /> },
+      { path: 'query/db-er', element: <DbErPage /> },
+      { path: 'query/db-channel-tools', element: <DbChannelToolsPage /> },
+      { path: 'query/query-test', element: <QueryTestPage /> },
       { path: 'rules', element: <RuleConfigPage /> },
       { path: 'rule-hits', element: <RuleHitsPage /> },
       { path: 'knowledge', element: <KnowledgePage /> },
@@ -116,6 +130,8 @@ export const appRoutes: RouteObject[] = [
       { path: 'settings/llm', element: <LlmIntegrationPage /> },
       { path: 'settings/model', element: <ModelSettingsPage /> },
       { path: 'settings/notification', element: <NotificationSettingsPage /> },
+      { path: 'prompts', element: <PromptListPage /> },
+      { path: 'prompts/:id', element: <PromptDetailPage /> },
     ],
   },
 ];

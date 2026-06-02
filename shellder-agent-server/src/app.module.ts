@@ -23,6 +23,7 @@ import { OpenApiModule } from './openapi/openapi.module';
 import { SystemSettingsModule } from './system-settings/system-settings.module';
 import { LlmModule } from './llm/llm.module';
 import { CopilotModule } from './copilot/copilot.module';
+import { PromptModule } from './prompt/prompt.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { CopilotModule } from './copilot/copilot.module';
     SystemSettingsModule,
     LlmModule,
     CopilotModule,
+    PromptModule,
   ],
 })
 export class AppModule {}

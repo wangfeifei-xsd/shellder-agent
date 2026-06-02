@@ -17,6 +17,12 @@ import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  EllipsisCell,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   CAPABILITY_TYPE_META,
@@ -80,15 +86,20 @@ export default function SessionListPage() {
   }, [load]);
 
   const columns: ColumnsType<SessionItem> = [
-    {
+    withNowrap<SessionItem>({
       title: '标题',
       dataIndex: 'title',
       ellipsis: true,
-      render: (v: string | null, row) => (
-        <Link to={`/sessions/${row.id}`}>{v || `会话 ${row.id.slice(0, 8)}`}</Link>
-      ),
-    },
-    {
+      render: (v: string | null, row) => {
+        const text = v || `会话 ${row.id.slice(0, 8)}`;
+        return (
+          <EllipsisCell tooltip={text}>
+            <Link to={`/sessions/${row.id}`}>{text}</Link>
+          </EllipsisCell>
+        );
+      },
+    }),
+    withNowrap<SessionItem>({
       title: '状态',
       dataIndex: 'status',
       width: 100,
@@ -97,8 +108,8 @@ export default function SessionListPage() {
           {SESSION_STATUS_META[s]?.label ?? s}
         </Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<SessionItem>({
       title: '能力类型',
       dataIndex: 'capabilityType',
       width: 100,
@@ -106,36 +117,36 @@ export default function SessionListPage() {
         c ? (
           <Tag color={CAPABILITY_TYPE_META[c].color}>{CAPABILITY_TYPE_META[c].label}</Tag>
         ) : (
-          <Typography.Text type="secondary">—</Typography.Text>
+          renderOptionalText(undefined)
         ),
-    },
-    {
+    }),
+    withNowrap<SessionItem>({
       title: '触发任务',
       dataIndex: 'hasTask',
       width: 90,
       render: (b: boolean) =>
         b ? <Tag color="blue">是</Tag> : <Typography.Text type="secondary">否</Typography.Text>,
-    },
-    {
+    }),
+    withNowrap<SessionItem>({
       title: '人工确认',
       dataIndex: 'hasConfirmation',
       width: 90,
       render: (b: boolean) =>
         b ? <Tag color="orange">是</Tag> : <Typography.Text type="secondary">否</Typography.Text>,
-    },
-    {
+    }),
+    withNowrap<SessionItem>({
       title: '最近消息',
       dataIndex: 'lastMessageAt',
       width: 170,
       render: (v: string | null) => fmt(v),
-    },
-    {
+    }),
+    withNowrap<SessionItem>({
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 170,
       render: (v: string) => fmt(v),
-    },
-    {
+    }),
+    withNowrap<SessionItem>({
       title: '操作',
       key: 'action',
       width: 150,
@@ -159,7 +170,7 @@ export default function SessionListPage() {
           </Button>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -229,6 +240,7 @@ export default function SessionListPage() {
             loading={loading}
             columns={columns}
             dataSource={data}
+            {...tableEllipsisLayout}
             pagination={{
               current: page,
               pageSize,

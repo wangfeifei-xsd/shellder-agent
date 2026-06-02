@@ -46,7 +46,7 @@
 
 | 字段 | 适用类型 | 说明 |
 |------|----------|------|
-| `config.sql` | query | SQL 查询工具配置：`tableWhitelist`、`fieldWhitelist`、`maxRows`、`maxExecutionMs`、`templates[]` |
+| `config.sql` | query | SQL 查询工具配置：`tableBlacklist`、`fieldBlacklist`、`maxRows`、`maxExecutionMs`、`templates[]`（只读由执行层强制） |
 | `config.http` | action / notification | HTTP 调用配置：`method`、`path`、`headers`、`bodyTemplate`（认证头由连接器凭证注入） |
 | `config.workflow` | workflow | 步骤编排 `steps[]`（编排执行见 12/13） |
 

@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { Prisma, Tool, ToolType } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { ErDiagramService } from '../connector/er-diagram.service';
+import { ErDiagram } from '../connector/connector-schema.types';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
@@ -47,6 +49,7 @@ export class ToolService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissionService: PermissionService,
+    private readonly erDiagram: ErDiagramService,
   ) {}
 
   async create(user: AuthUser, dto: CreateToolDto) {
@@ -148,8 +151,11 @@ export class ToolService {
       ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
       : null;
 
+    const erSummary = await this.buildErPublishedSummary(tool);
+
     return {
       ...this.toView(tool),
+      erPublishedSummary: erSummary,
       stats: {
         sampleSize: totalSample,
         successRate: totalSample ? Math.round((success / totalSample) * 1000) / 1000 : 0,
@@ -260,6 +266,21 @@ export class ToolService {
     return { id };
   }
 
+  private async buildErPublishedSummary(tool: Tool) {
+    if (tool.type !== 'query' || !tool.connectorId) return null;
+    const meta = await this.prisma.connectorDbMetadata.findUnique({
+      where: { connectorId: tool.connectorId },
+    });
+    if (!meta?.erDiagramPublished) return null;
+    const published = meta.erDiagramPublished as unknown as ErDiagram;
+    return {
+      tableCount: published.tables?.length ?? 0,
+      relationshipCount: published.relationships?.length ?? 0,
+      version: meta.erPublishedVersion,
+      publishedAt: meta.erPublishedAt,
+    };
+  }
+
   // ── 校验与归一化 ─────────────────────────────────────────
 
   /** 校验 inputSchema/outputSchema 为合法 JSON Schema（验收标准 1）。 */
@@ -324,8 +345,8 @@ export class ToolService {
       });
     }
     return {
-      tableWhitelist: this.strArray(c.tableWhitelist),
-      fieldWhitelist: this.strArray(c.fieldWhitelist),
+      tableBlacklist: this.strArray(c.tableBlacklist),
+      fieldBlacklist: this.strArray(c.fieldBlacklist),
       maxRows,
       maxExecutionMs,
       templates: Array.isArray(c.templates)

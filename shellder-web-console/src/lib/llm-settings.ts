@@ -6,7 +6,9 @@ export interface LlmSettingsView {
   timeout_ms: number;
   max_tokens: number;
   chat_path: string;
+  api_key: string | null;
   api_key_configured: boolean;
+  enable_thinking: boolean;
 }
 
 export interface UpsertLlmSettingsInput {
@@ -16,6 +18,7 @@ export interface UpsertLlmSettingsInput {
   timeout_ms?: number;
   max_tokens?: number;
   chat_path?: string;
+  enable_thinking?: boolean;
 }
 
 export interface LlmTestResult {
@@ -37,7 +40,12 @@ export function updateLlmSettings(input: UpsertLlmSettingsInput) {
   return apiFetch<LlmSettingsView>(`${BASE}/llm`, { method: 'PUT', body: input });
 }
 
-export function testLlmConnection(input?: { base_url?: string; model?: string; api_key?: string }) {
+export function testLlmConnection(input?: {
+  base_url?: string;
+  model?: string;
+  api_key?: string;
+  enable_thinking?: boolean;
+}) {
   return apiFetch<LlmTestResult>(`${BASE}/llm/test`, { method: 'POST', body: input ?? {} });
 }
 

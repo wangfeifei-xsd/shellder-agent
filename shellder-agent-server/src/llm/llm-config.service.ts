@@ -10,6 +10,7 @@ export const LLM_CONFIG_KEYS = {
   MAX_TOKENS: 'llm.maxTokens',
   API_KEY_CIPHER: 'llm.apiKeyCipher',
   CHAT_PATH: 'llm.chatPath',
+  ENABLE_THINKING: 'llm.enableThinking',
 } as const;
 
 const LLM_DEFAULTS: Record<string, string> = {
@@ -18,7 +19,8 @@ const LLM_DEFAULTS: Record<string, string> = {
   [LLM_CONFIG_KEYS.TIMEOUT_MS]: '60000',
   [LLM_CONFIG_KEYS.MAX_TOKENS]: '4096',
   [LLM_CONFIG_KEYS.API_KEY_CIPHER]: '',
-  [LLM_CONFIG_KEYS.CHAT_PATH]: 'v1/chat/completions',
+  [LLM_CONFIG_KEYS.CHAT_PATH]: 'chat/completions',
+  [LLM_CONFIG_KEYS.ENABLE_THINKING]: 'false',
 };
 
 export interface LlmEffectiveConfig {
@@ -28,6 +30,7 @@ export interface LlmEffectiveConfig {
   maxTokens: number;
   chatPath: string;
   apiKey: string | null;
+  enableThinking: boolean;
 }
 
 export interface LlmSettingsView {
@@ -36,7 +39,11 @@ export interface LlmSettingsView {
   timeout_ms: number;
   max_tokens: number;
   chat_path: string;
+  /** 管理端编辑回显（已配置时解密返回） */
+  api_key: string | null;
   api_key_configured: boolean;
+  /** 上游 Chat 请求 enable_thinking（通义等 OpenAI 兼容网关） */
+  enable_thinking: boolean;
 }
 
 @Injectable()
@@ -44,21 +51,30 @@ export class LlmConfigService {
   constructor(private readonly settings: SystemSettingsService) {}
 
   async getSettingsView(): Promise<LlmSettingsView> {
-    const [baseUrl, model, timeoutMs, maxTokens, chatPath, cipher] = await Promise.all([
-      this.getRaw(LLM_CONFIG_KEYS.BASE_URL),
-      this.getRaw(LLM_CONFIG_KEYS.MODEL),
-      this.getRaw(LLM_CONFIG_KEYS.TIMEOUT_MS),
-      this.getRaw(LLM_CONFIG_KEYS.MAX_TOKENS),
-      this.getRaw(LLM_CONFIG_KEYS.CHAT_PATH),
-      this.getRaw(LLM_CONFIG_KEYS.API_KEY_CIPHER),
-    ]);
+    const [baseUrl, model, timeoutMs, maxTokens, chatPath, enableThinkingRaw, cipher] =
+      await Promise.all([
+        this.getRaw(LLM_CONFIG_KEYS.BASE_URL),
+        this.getRaw(LLM_CONFIG_KEYS.MODEL),
+        this.getRaw(LLM_CONFIG_KEYS.TIMEOUT_MS),
+        this.getRaw(LLM_CONFIG_KEYS.MAX_TOKENS),
+        this.getRaw(LLM_CONFIG_KEYS.CHAT_PATH),
+        this.getRaw(LLM_CONFIG_KEYS.ENABLE_THINKING),
+        this.getRaw(LLM_CONFIG_KEYS.API_KEY_CIPHER),
+      ]);
+    const secret = decryptSecret(cipher || null);
+    const apiKey =
+      typeof secret?.api_key === 'string' && secret.api_key.length > 0
+        ? secret.api_key
+        : null;
     return {
       base_url: baseUrl,
       model,
       timeout_ms: Number(timeoutMs) || 60_000,
       max_tokens: Number(maxTokens) || 4096,
       chat_path: chatPath || LLM_DEFAULTS[LLM_CONFIG_KEYS.CHAT_PATH],
-      api_key_configured: Boolean(cipher?.trim()),
+      api_key: apiKey,
+      api_key_configured: Boolean(apiKey),
+      enable_thinking: parseLlmBoolean(enableThinkingRaw),
     };
   }
 
@@ -78,6 +94,7 @@ export class LlmConfigService {
       maxTokens: overrides?.maxTokens ?? view.max_tokens,
       chatPath: overrides?.chatPath ?? view.chat_path,
       apiKey: overrides?.apiKey !== undefined ? overrides.apiKey : apiKey,
+      enableThinking: overrides?.enableThinking ?? view.enable_thinking,
     };
   }
 
@@ -92,6 +109,7 @@ export class LlmConfigService {
     max_tokens?: number;
     chat_path?: string;
     api_key?: string;
+    enable_thinking?: boolean;
   }): Promise<LlmSettingsView> {
     const upserts: { configKey: string; configValue: string; description?: string }[] = [];
 
@@ -138,6 +156,13 @@ export class LlmConfigService {
         description: 'LLM API Key（加密）',
       });
     }
+    if (input.enable_thinking !== undefined) {
+      upserts.push({
+        configKey: LLM_CONFIG_KEYS.ENABLE_THINKING,
+        configValue: input.enable_thinking ? 'true' : 'false',
+        description: 'LLM 思考模式（enable_thinking）',
+      });
+    }
 
     if (upserts.length > 0) {
       await this.settings.batchUpsert(upserts);
@@ -150,4 +175,9 @@ export class LlmConfigService {
     if (val !== '') return val;
     return LLM_DEFAULTS[key] ?? '';
   }
+}
+
+function parseLlmBoolean(raw: string): boolean {
+  const v = raw.trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes' || v === 'on';
 }

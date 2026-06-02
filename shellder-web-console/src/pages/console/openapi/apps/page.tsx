@@ -23,6 +23,13 @@ import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  EllipsisCell,
+  renderCompactTags,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
+import {
   APP_STATUS_META,
   APP_STATUS_OPTIONS,
   CAPABILITY_OPTIONS,
@@ -141,80 +148,79 @@ export default function OpenApiAppsPage() {
   };
 
   const columns: ColumnsType<OpenApiAppItem> = [
-    {
+    withNowrap<OpenApiAppItem>({
       title: '应用名称',
       dataIndex: 'name',
       width: 180,
       render: (v: string, row) => (
-        <Link to={`/openapi/apps/${row.id}`}>{v}</Link>
+        <EllipsisCell tooltip={v}>
+          <Link to={`/openapi/apps/${row.id}`}>{v}</Link>
+        </EllipsisCell>
       ),
-    },
-    {
+    }),
+    withNowrap<OpenApiAppItem>({
       title: '描述',
       dataIndex: 'description',
       ellipsis: true,
-      render: (v: string | null) => v ?? '—',
-    },
-    {
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<OpenApiAppItem>({
       title: 'Client ID',
       dataIndex: 'clientId',
       width: 220,
       render: (v: string) => (
-        <Typography.Text copyable={{ text: v }} className="font-mono text-xs">
-          {v}
-        </Typography.Text>
+        <EllipsisCell tooltip={v}>
+          <Typography.Text copyable={{ text: v }} className="font-mono text-xs">
+            {v}
+          </Typography.Text>
+        </EllipsisCell>
       ),
-    },
-    {
+    }),
+    withNowrap<OpenApiAppItem>({
       title: '状态',
       dataIndex: 'status',
       width: 90,
       render: (v: OpenApiAppStatus) => (
         <Tag color={APP_STATUS_META[v].color}>{APP_STATUS_META[v].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<OpenApiAppItem>({
       title: '允许租户',
       dataIndex: 'allowedTenantIds',
       width: 100,
       render: (v: string[]) => `${v.length} 个`,
-    },
-    {
+    }),
+    withNowrap<OpenApiAppItem>({
       title: '能力范围',
       dataIndex: 'allowedCapabilities',
       width: 200,
       render: (v: CapabilityType[]) =>
-        v.map((c) => {
-          const opt = CAPABILITY_OPTIONS.find((o) => o.value === c);
-          return (
-            <Tag key={c} className="mb-1">
-              {opt?.label ?? c}
-            </Tag>
-          );
-        }),
-    },
-    {
+        renderCompactTags(
+          v.map((c) => {
+            const opt = CAPABILITY_OPTIONS.find((o) => o.value === c);
+            return { key: c, label: <Tag>{opt?.label ?? c}</Tag> };
+          }),
+        ),
+    }),
+    withNowrap<OpenApiAppItem>({
       title: '最近调用',
       dataIndex: 'lastCalledAt',
       width: 170,
       render: fmt,
-    },
-    {
+    }),
+    withNowrap<OpenApiAppItem>({
       title: '操作',
       key: 'actions',
       width: 120,
       render: (_, row) => (
-        <Space>
+        <Space size="small">
           <Link to={`/openapi/apps/${row.id}`}>详情</Link>
-          <Popconfirm
-            title="确认删除此应用？"
-            onConfirm={() => handleDelete(row.id)}
-          >
+          <Popconfirm title="确认删除此应用？" onConfirm={() => handleDelete(row.id)}>
             <Button type="link" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -257,6 +263,7 @@ export default function OpenApiAppsPage() {
         loading={loading}
         columns={columns}
         dataSource={data}
+        {...tableEllipsisLayout}
         pagination={{
           current: page,
           pageSize,

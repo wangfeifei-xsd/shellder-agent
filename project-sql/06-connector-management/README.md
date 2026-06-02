@@ -28,6 +28,7 @@
 |------|------|
 | `schema.sql` | `connector` 表结构、索引与外键 |
 | `seed.sql` | 无平台级初始化数据（连接器按租户运行期配置），保留空文件并注明 |
+| `../06b-connector-db-metadata/` | `connector_db_metadata`（只读库结构抽取与 ER 图，查询型 §4） |
 
 ## 执行顺序
 
@@ -75,7 +76,7 @@
 
 - `POST /api/v1/connectors/:id/test`：
   - `http` / `notification`：对 `target` 发起真实 HTTP `GET`（带认证头），`< 400` 视为连通且认证有效，`401/403` 视为认证失败，返回状态码与响应耗时。
-  - `db_readonly`：对 `host:port` 做 TCP 可达性探测（查询型不经 HTTP）；深度库认证有效性校验留待 **07-工具**（SQL 查询工具）结合驱动完成。
+  - `db_readonly`：使用 mysql2 执行 **`SELECT 1`** 校验库级连通（见 **06b-connector-db-metadata** 元数据与 ER 图）。
 - 测试结果记入 `external_call_audit`（`connector_id` 关联、`target`、`status`、`status_code`、`duration_ms`、`error_message`）。
 - 最近一次测试快照同时冗余写入 `connector.last_test_*` 字段，供列表 / 详情直接展示。
 

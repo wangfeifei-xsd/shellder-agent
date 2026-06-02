@@ -20,6 +20,13 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  EllipsisCell,
+  ellipsisTextColumn,
+  renderEllipsisLink,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   CAPABILITY_OPTIONS,
@@ -291,38 +298,44 @@ export default function RuleConfigPage() {
   };
 
   const columns: ColumnsType<Rule> = [
-    {
+    withNowrap<Rule>({
       title: '规则名称',
       dataIndex: 'name',
-      render: (v: string, row) => <a onClick={() => openEdit(row)}>{v}</a>,
-    },
-    {
+      width: 180,
+      render: (v: string, row) => renderEllipsisLink(v, () => openEdit(row)),
+    }),
+    withNowrap<Rule>({
       title: '类型',
       dataIndex: 'type',
       width: 120,
       render: (t: RuleType) => (
         <Tag color={RULE_TYPE_META[t].color}>{RULE_TYPE_META[t].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<Rule>({
       title: '动作',
       dataIndex: 'action',
       width: 120,
       render: (a: RuleAction) => (
         <Tag color={RULE_ACTION_META[a].color}>{RULE_ACTION_META[a].label}</Tag>
       ),
-    },
-    { title: '优先级', dataIndex: 'priority', width: 90 },
-    {
+    }),
+    ellipsisTextColumn<Rule>('优先级', 'priority', 90),
+    withNowrap<Rule>({
       title: '匹配条件',
       dataIndex: 'conditions',
-      render: (c: RuleConditions) => (
-        <Typography.Text type="secondary" className="text-xs">
-          {conditionSummary(c)}
-        </Typography.Text>
-      ),
-    },
-    {
+      render: (c: RuleConditions) => {
+        const summary = conditionSummary(c);
+        return (
+          <EllipsisCell tooltip={summary}>
+            <Typography.Text type="secondary" className="text-xs">
+              {summary}
+            </Typography.Text>
+          </EllipsisCell>
+        );
+      },
+    }),
+    withNowrap<Rule>({
       title: '状态',
       dataIndex: 'status',
       width: 90,
@@ -334,8 +347,8 @@ export default function RuleConfigPage() {
           onChange={(checked) => handleToggleStatus(row, checked)}
         />
       ),
-    },
-    {
+    }),
+    withNowrap<Rule>({
       title: '操作',
       key: 'actions',
       width: 120,
@@ -347,7 +360,7 @@ export default function RuleConfigPage() {
           </a>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -406,6 +419,7 @@ export default function RuleConfigPage() {
             dataSource={data}
             pagination={false}
             locale={{ emptyText: <Empty description="该租户暂无规则" /> }}
+            {...tableEllipsisLayout}
           />
         </>
       )}

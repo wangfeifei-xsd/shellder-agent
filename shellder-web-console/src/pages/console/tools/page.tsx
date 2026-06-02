@@ -22,6 +22,12 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
+import {
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { ToolTestResultView } from '@/components/console/ToolTestResultView';
 import { Connector, listConnectors } from '@/lib/connector';
 import {
@@ -37,7 +43,8 @@ import {
   ToolType,
   TOOL_TYPE_CONNECTOR_TYPE,
   TOOL_TYPE_META,
-  TOOL_TYPE_OPTIONS,
+  TOOL_TYPE_OPTIONS_EXCLUDING_QUERY,
+  TOOL_TYPE_OPTIONS_QUERY_ONLY,
   UpdateToolInput,
   createTool,
   deleteTool,
@@ -70,8 +77,8 @@ interface ToolFormValues {
   inputSchemaText: string;
   outputSchemaText?: string;
   // query
-  sqlTableWhitelist?: string[];
-  sqlFieldWhitelist?: string[];
+  sqlTableBlacklist?: string[];
+  sqlFieldBlacklist?: string[];
   sqlMaxRows?: number;
   sqlMaxExecutionMs?: number;
   sqlTemplatesText?: string;
@@ -94,8 +101,8 @@ function buildConfig(v: ToolFormValues): ToolConfig {
     case 'query':
       return {
         sql: {
-          tableWhitelist: v.sqlTableWhitelist ?? [],
-          fieldWhitelist: v.sqlFieldWhitelist ?? [],
+          tableBlacklist: v.sqlTableBlacklist ?? [],
+          fieldBlacklist: v.sqlFieldBlacklist ?? [],
           maxRows: v.sqlMaxRows ?? 100,
           maxExecutionMs: v.sqlMaxExecutionMs ?? 3000,
           templates: parseJsonOr(v.sqlTemplatesText, []),
@@ -120,7 +127,32 @@ function buildConfig(v: ToolFormValues): ToolConfig {
   }
 }
 
-export default function ToolPage() {
+export type ToolPageVariant = 'default' | 'queryOnly';
+
+const PAGE_COPY: Record<
+  ToolPageVariant,
+  { title: string; createLabel: string; description: string }
+> = {
+  default: {
+    title: '工具管理',
+    createLabel: '新建工具',
+    description:
+      'V1 所有 Tool 必须经注册中心。操作型 / 通知型（HTTP）、流程型（编排）在本页维护；查询型（只读 SQL 通道）请在「『查询型』配置 → 数据库连接工具」。执行前统一走 Policy。',
+  },
+  queryOnly: {
+    title: '数据库连接工具',
+    createLabel: '新建数据库连接工具',
+    description:
+      '查询型 Tool 即查询通道：绑定只读库连接器，承载 Policy 与审计元数据。NL2SQL 与三步试跑请在「工具管理 → 查询通道调试」；只读 SQL 直连请在「查询测试」。',
+  },
+};
+
+export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant }) {
+  const isQueryOnly = variant === 'queryOnly';
+  const copy = PAGE_COPY[variant];
+  const typeFilterOptions = isQueryOnly
+    ? TOOL_TYPE_OPTIONS_QUERY_ONLY
+    : TOOL_TYPE_OPTIONS_EXCLUDING_QUERY;
   const { message, modal } = App.useApp();
   const { activeTenantId, tenants } = useActiveTenant();
   const [form] = Form.useForm<ToolFormValues>();
@@ -136,7 +168,7 @@ export default function ToolPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<Tool | undefined>();
   const [submitting, setSubmitting] = useState(false);
-  const [formType, setFormType] = useState<ToolType>('query');
+  const [formType, setFormType] = useState<ToolType>(isQueryOnly ? 'query' : 'action');
 
   const [detail, setDetail] = useState<ToolDetail | undefined>();
   const [detailLoading, setDetailLoading] = useState(false);
@@ -158,18 +190,21 @@ export default function ToolPage() {
       const res = await listTools({
         tenantId: activeTenantId,
         keyword,
-        type: typeFilter,
+        type: isQueryOnly ? (typeFilter ?? 'query') : typeFilter,
         status: statusFilter,
         riskLevel: riskFilter,
         pageSize: 100,
       });
-      setData(res.items);
+      const items = isQueryOnly
+        ? res.items.filter((t) => t.type === 'query')
+        : res.items.filter((t) => t.type !== 'query');
+      setData(items);
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载工具列表失败');
     } finally {
       setLoading(false);
     }
-  }, [activeTenantId, keyword, typeFilter, statusFilter, riskFilter, message]);
+  }, [activeTenantId, keyword, typeFilter, statusFilter, riskFilter, message, isQueryOnly]);
 
   useEffect(() => {
     void load();
@@ -194,17 +229,18 @@ export default function ToolPage() {
 
   const openCreate = () => {
     setEditing(undefined);
-    setFormType('query');
+    const createType: ToolType = isQueryOnly ? 'query' : 'action';
+    setFormType(createType);
     form.resetFields();
     form.setFieldsValue({
-      type: 'query',
+      type: createType,
       riskLevel: 'low',
       needConfirmation: false,
       timeoutMs: 10000,
       inputSchemaText: DEFAULT_INPUT_SCHEMA,
       sqlMaxRows: 100,
       sqlMaxExecutionMs: 3000,
-      sqlTableWhitelist: [],
+      sqlTableBlacklist: [],
       httpMethod: 'POST',
     });
     void loadConnectors();
@@ -230,8 +266,8 @@ export default function ToolPage() {
       outputSchemaText: t.outputSchema
         ? JSON.stringify(t.outputSchema, null, 2)
         : undefined,
-      sqlTableWhitelist: t.config.sql?.tableWhitelist ?? [],
-      sqlFieldWhitelist: t.config.sql?.fieldWhitelist ?? [],
+      sqlTableBlacklist: t.config.sql?.tableBlacklist ?? [],
+      sqlFieldBlacklist: t.config.sql?.fieldBlacklist ?? [],
       sqlMaxRows: t.config.sql?.maxRows ?? 100,
       sqlMaxExecutionMs: t.config.sql?.maxExecutionMs ?? 3000,
       sqlTemplatesText: t.config.sql?.templates?.length
@@ -372,48 +408,50 @@ export default function ToolPage() {
   };
 
   const columns: ColumnsType<Tool> = [
-    {
+    withNowrap<Tool>({
       title: '工具名称',
       dataIndex: 'name',
-      render: (v: string, row) => <a onClick={() => openDetail(row)}>{v}</a>,
-    },
-    {
+      width: 180,
+      render: (v: string, row) => renderEllipsisLink(v, () => openDetail(row)),
+    }),
+    withNowrap<Tool>({
       title: '类型',
       dataIndex: 'type',
       width: 100,
       render: (t: ToolType) => (
         <Tag color={TOOL_TYPE_META[t].color}>{TOOL_TYPE_META[t].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<Tool>({
       title: '风险',
       dataIndex: 'riskLevel',
       width: 80,
       render: (r: ToolRiskLevel) => (
         <Tag color={RISK_LEVEL_META[r].color}>{RISK_LEVEL_META[r].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<Tool>({
       title: '需确认',
       dataIndex: 'needConfirmation',
       width: 80,
       render: (b: boolean) =>
         b ? <Tag color="orange">是</Tag> : <Typography.Text type="secondary">否</Typography.Text>,
-    },
-    {
+    }),
+    withNowrap<Tool>({
       title: '权限范围',
       dataIndex: 'permissionScope',
       width: 140,
-      render: (v: string | null) => v || '—',
-    },
-    {
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<Tool>({
       title: '关联连接器',
       dataIndex: 'connector',
       width: 150,
       render: (c: Tool['connector']) =>
-        c ? <Tag>{c.name}</Tag> : <Typography.Text type="secondary">—</Typography.Text>,
-    },
-    {
+        c ? <Tag>{c.name}</Tag> : renderOptionalText(undefined),
+    }),
+    withNowrap<Tool>({
       title: '状态',
       dataIndex: 'status',
       width: 90,
@@ -425,8 +463,8 @@ export default function ToolPage() {
           onChange={(checked) => handleToggleStatus(row, checked)}
         />
       ),
-    },
-    {
+    }),
+    withNowrap<Tool>({
       title: '操作',
       key: 'actions',
       width: 180,
@@ -439,14 +477,14 @@ export default function ToolPage() {
           </a>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
         <Typography.Title level={3} className="!mb-0">
-          工具管理
+          {copy.title}
         </Typography.Title>
         <Button
           type="primary"
@@ -454,7 +492,7 @@ export default function ToolPage() {
           onClick={openCreate}
           disabled={!activeTenantId}
         >
-          新建工具
+          {copy.createLabel}
         </Button>
       </div>
 
@@ -472,7 +510,7 @@ export default function ToolPage() {
             type="info"
             showIcon
             message={`当前租户：${activeTenantName ?? activeTenantId}`}
-            description="V1 所有 Tool 必须经注册中心。四类工具：查询型（只读 SQL）、操作型 / 通知型（HTTP）、流程型（编排）。执行前统一走 Policy。"
+            description={copy.description}
           />
           <Space className="mb-4" wrap>
             <Input.Search
@@ -481,14 +519,16 @@ export default function ToolPage() {
               style={{ width: 260 }}
               onSearch={setKeyword}
             />
-            <Select
-              allowClear
-              placeholder="类型"
-              style={{ width: 130 }}
-              options={TOOL_TYPE_OPTIONS}
-              value={typeFilter}
-              onChange={setTypeFilter}
-            />
+            {!isQueryOnly && (
+              <Select
+                allowClear
+                placeholder="类型"
+                style={{ width: 130 }}
+                options={typeFilterOptions}
+                value={typeFilter}
+                onChange={setTypeFilter}
+              />
+            )}
             <Select
               allowClear
               placeholder="风险等级"
@@ -520,6 +560,7 @@ export default function ToolPage() {
             dataSource={data}
             pagination={false}
             locale={{ emptyText: <Empty description="该租户暂无工具" /> }}
+            {...tableEllipsisLayout}
           />
         </>
       )}
@@ -529,6 +570,8 @@ export default function ToolPage() {
         editing={editing}
         form={form}
         formType={formType}
+        typeOptions={typeFilterOptions}
+        typeLocked={isQueryOnly}
         connectorOptions={connectorOptions}
         submitting={submitting}
         onTypeChange={setFormType}
@@ -552,6 +595,10 @@ export default function ToolPage() {
   );
 }
 
+export default function ToolListPage() {
+  return <ToolPage variant="default" />;
+}
+
 // ── 新建 / 编辑抽屉 ───────────────────────────────────────
 
 function ToolFormDrawer({
@@ -559,6 +606,8 @@ function ToolFormDrawer({
   editing,
   form,
   formType,
+  typeOptions,
+  typeLocked,
   connectorOptions,
   submitting,
   onTypeChange,
@@ -569,6 +618,8 @@ function ToolFormDrawer({
   editing?: Tool;
   form: ReturnType<typeof Form.useForm<ToolFormValues>>[0];
   formType: ToolType;
+  typeOptions: { value: ToolType; label: string }[];
+  typeLocked?: boolean;
   connectorOptions: { value: string; label: string }[];
   submitting: boolean;
   onTypeChange: (t: ToolType) => void;
@@ -606,7 +657,11 @@ function ToolFormDrawer({
 
         <Space className="flex" size="large" align="start">
           <Form.Item label="类型" name="type" rules={[{ required: true }]} style={{ width: 150 }}>
-            <Select options={TOOL_TYPE_OPTIONS} onChange={onTypeChange} />
+            <Select
+              options={typeOptions}
+              disabled={typeLocked}
+              onChange={onTypeChange}
+            />
           </Form.Item>
           <Form.Item
             label="风险等级"
@@ -682,15 +737,18 @@ function ToolFormDrawer({
           <>
             <Typography.Title level={5}>SQL 查询工具配置</Typography.Title>
             <Form.Item
-              label="表白名单"
-              name="sqlTableWhitelist"
-              rules={[{ required: true, message: '请配置至少一张允许访问的表' }]}
-              tooltip="仅允许查询白名单内的表"
+              label="表黑名单（可选）"
+              name="sqlTableBlacklist"
+              tooltip="禁止查询的表；留空表示不限制表，仅受只读（SELECT）约束"
             >
-              <Select mode="tags" allowClear placeholder="输入表名回车添加" />
+              <Select mode="tags" allowClear placeholder="输入表名回车添加，留空=不限制" />
             </Form.Item>
-            <Form.Item label="字段白名单（可选）" name="sqlFieldWhitelist">
-              <Select mode="tags" allowClear placeholder="table.field，回车添加（空=不限制）" />
+            <Form.Item
+              label="字段黑名单（可选）"
+              name="sqlFieldBlacklist"
+              tooltip="禁止引用的字段；留空表示不限制字段"
+            >
+              <Select mode="tags" allowClear placeholder="table.field，回车添加，留空=不限制" />
             </Form.Item>
             <Space className="flex" size="large">
               <Form.Item
@@ -775,24 +833,35 @@ function ToolFormDrawer({
 // ── 详情视图 ──────────────────────────────────────────────
 
 function ToolDetailView({ detail }: { detail: ToolDetail }) {
-  const recentColumns: ColumnsType<ToolDetail['recentCalls'][number]> = [
-    { title: '时间', dataIndex: 'createdAt', width: 160, render: (v: string) => fmt(v) },
-    {
+  type RecentCall = ToolDetail['recentCalls'][number];
+  const recentColumns: ColumnsType<RecentCall> = [
+    withNowrap<RecentCall>({ title: '时间', dataIndex: 'createdAt', width: 160, render: (v: string) => fmt(v) }),
+    withNowrap<RecentCall>({
       title: '结果',
       dataIndex: 'status',
       width: 80,
       render: (s: string) => (
         <Tag color={s === 'success' ? 'green' : s === 'failed' ? 'red' : 'gold'}>{s}</Tag>
       ),
-    },
-    { title: '调用人', dataIndex: 'callerName', width: 100, render: (v: string | null) => v || '—' },
-    {
+    }),
+    withNowrap<RecentCall>({
+      title: '调用人',
+      dataIndex: 'callerName',
+      width: 100,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<RecentCall>({
       title: '耗时',
       dataIndex: 'durationMs',
       width: 80,
       render: (v: number | null) => (v != null ? `${v}ms` : '—'),
-    },
-    { title: '摘要', dataIndex: 'requestSummary', ellipsis: true, render: (v: string | null) => v || '—' },
+    }),
+    withNowrap<RecentCall>({
+      title: '摘要',
+      dataIndex: 'requestSummary',
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
   ];
 
   return (
@@ -878,6 +947,7 @@ function ToolDetailView({ detail }: { detail: ToolDetail }) {
         dataSource={detail.recentCalls}
         pagination={false}
         locale={{ emptyText: <Empty description="暂无调用记录" /> }}
+        {...tableEllipsisLayout}
       />
     </>
   );

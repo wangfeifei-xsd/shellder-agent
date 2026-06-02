@@ -17,6 +17,14 @@ import { Link } from 'react-router-dom';
 import { useNavigate } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  EllipsisCell,
+  ellipsisTextColumn,
+  renderCompactTags,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
+import {
   CAPABILITY_LABEL,
   CAPABILITY_OPTIONS,
   Tenant,
@@ -70,42 +78,47 @@ export default function TenantListPage() {
 
   const columns: ColumnsType<Tenant> = [
     {
-      title: '名称',
-      dataIndex: 'name',
-      render: (name: string, row) => <Link to={`/tenants/${row.id}`}>{name}</Link>,
+      ...ellipsisTextColumn<Tenant>('名称', 'name', 160),
+      render: (name: string, row) => (
+        <EllipsisCell tooltip={name}>
+          <Link to={`/tenants/${row.id}`}>{name}</Link>
+        </EllipsisCell>
+      ),
     },
-    { title: '编码', dataIndex: 'code' },
-    {
+    ellipsisTextColumn<Tenant>('编码', 'code', 120),
+    withNowrap<Tenant>({
       title: '状态',
       dataIndex: 'status',
+      width: 88,
       render: (s: TenantStatus) =>
         s === 'enabled' ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>,
-    },
-    {
+    }),
+    withNowrap<Tenant>({
       title: '管理员',
       dataIndex: 'adminUserId',
-      render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text>,
-    },
-    {
+      width: 140,
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<Tenant>({
       title: '开通能力',
       dataIndex: 'capabilities',
+      width: 200,
       render: (caps: TenantCapability[]) =>
-        caps?.length ? (
-          <Space size={4} wrap>
-            {caps.map((c) => (
-              <Tag key={c}>{CAPABILITY_LABEL[c]}</Tag>
-            ))}
-          </Space>
-        ) : (
-          <Typography.Text type="secondary">—</Typography.Text>
+        renderCompactTags(
+          (caps ?? []).map((c) => ({
+            key: c,
+            label: <Tag>{CAPABILITY_LABEL[c]}</Tag>,
+          })),
         ),
-    },
-    {
+    }),
+    withNowrap<Tenant>({
       title: '创建时间',
       dataIndex: 'createdAt',
+      width: 176,
       render: (v: string) => new Date(v).toLocaleString('zh-CN'),
-    },
-    {
+    }),
+    withNowrap<Tenant>({
       title: '操作',
       key: 'actions',
       width: 220,
@@ -121,7 +134,7 @@ export default function TenantListPage() {
           </Popconfirm>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -180,6 +193,7 @@ export default function TenantListPage() {
         loading={loading}
         columns={columns}
         dataSource={data}
+        {...tableEllipsisLayout}
         pagination={{
           current: page,
           pageSize,

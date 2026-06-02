@@ -16,6 +16,12 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { AuditStatus, RiskAction, listRiskActions, statusMeta } from '@/lib/audit';
 
 const fmt = (s: string) => new Date(s).toLocaleString('zh-CN');
@@ -55,23 +61,25 @@ export default function RiskActionAuditPage() {
   }, [load]);
 
   const columns: ColumnsType<RiskAction> = [
-    {
+    withNowrap<RiskAction>({
       title: '动作',
       dataIndex: 'action',
-      render: (v: string, row) => <a onClick={() => setDetail(row)}>{v}</a>,
-    },
-    {
+      width: 200,
+      render: (v: string, row) => renderEllipsisLink(v, () => setDetail(row)),
+    }),
+    withNowrap<RiskAction>({
       title: '来源',
       dataIndex: 'source',
       width: 160,
       render: (v: RiskAction['source']) => <Tag color="volcano">{SOURCE_LABEL[v]}</Tag>,
-    },
-    {
+    }),
+    withNowrap<RiskAction>({
       title: '操作人',
       dataIndex: 'operator',
-      render: (v: string | null) => v || <Typography.Text type="secondary">系统</Typography.Text>,
-    },
-    {
+      width: 120,
+      render: (v: string | null) => (v ? renderOptionalText(v) : renderOptionalText('系统')),
+    }),
+    withNowrap<RiskAction>({
       title: '状态',
       dataIndex: 'status',
       width: 100,
@@ -79,13 +87,13 @@ export default function RiskActionAuditPage() {
         const meta = statusMeta(s);
         return <Tag color={meta.color}>{meta.label}</Tag>;
       },
-    },
-    {
+    }),
+    withNowrap<RiskAction>({
       title: '时间',
       dataIndex: 'createdAt',
       width: 180,
       render: (v: string) => fmt(v),
-    },
+    }),
   ];
 
   return (
@@ -124,6 +132,7 @@ export default function RiskActionAuditPage() {
         loading={loading}
         columns={columns}
         dataSource={data}
+        {...tableEllipsisLayout}
         locale={{
           emptyText: (
             <Empty description="暂无风险动作（无高风险工具调用与审批数据）" />

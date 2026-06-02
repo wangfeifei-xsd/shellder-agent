@@ -11,6 +11,7 @@ import {
   DeploymentUnitOutlined,
   ExperimentOutlined,
   FileProtectOutlined,
+  FileTextOutlined,
   KeyOutlined,
   MessageOutlined,
   RobotOutlined,
@@ -32,6 +33,7 @@ export const MENU_PERMISSION_KEY: Record<string, string> = {
   skill: 'skill',
   tool: 'tool',
   connector: 'connector',
+  query: 'connector',
   knowledge: 'knowledge',
   rule: 'rule',
   approval: 'approval',
@@ -41,11 +43,77 @@ export const MENU_PERMISSION_KEY: Record<string, string> = {
   openapi: 'openapi',
   copilot: 'openapi',
   settings: 'settings',
+  prompt: 'prompt',
 };
 
 /** 侧栏菜单（与架构 §6.1.1 对齐，链接随阶段推进逐步启用） */
 export const consoleMenuItems: MenuProps['items'] = [
   { key: '/', icon: <DashboardOutlined />, label: <Link to="/">工作台</Link> },
+  {
+    key: 'knowledge',
+    icon: <DatabaseOutlined />,
+    label: '知识库',
+    children: [
+      { key: '/knowledge', label: <Link to="/knowledge">知识库管理</Link> },
+      { key: '/knowledge/layers', label: <Link to="/knowledge/layers">知识层管理</Link> },
+      { key: '/knowledge/structure', label: <Link to="/knowledge/structure">存储结构</Link> },
+      { key: '/knowledge/media', label: <Link to="/knowledge/media">媒体库</Link> },
+      { key: '/knowledge/recall-test', label: <Link to="/knowledge/recall-test">问答测试</Link> },
+    ],
+  },
+  {
+    key: 'query',
+    icon: <DatabaseOutlined />,
+    label: '『查询型』配置',
+    children: [
+      {
+        key: '/query/db-connectors',
+        label: <Link to="/query/db-connectors">数据库连接器</Link>,
+      },
+      { key: '/query/db-er', label: <Link to="/query/db-er">库表ER图</Link> },
+      {
+        key: '/query/db-channel-tools',
+        label: <Link to="/query/db-channel-tools">数据库连接工具</Link>,
+      },
+      { key: '/query/query-test', label: <Link to="/query/query-test">查询测试</Link> },
+    ],
+  },
+  {
+    key: 'user',
+    icon: <TeamOutlined />,
+    label: '用户与权限',
+    children: [
+      { key: '/users', label: <Link to="/users">用户管理</Link> },
+      { key: '/roles', label: <Link to="/roles">角色管理</Link> },
+      { key: '/permissions', label: <Link to="/permissions">权限策略</Link> },
+    ],
+  },
+  {
+    key: 'tenant',
+    icon: <ApartmentOutlined />,
+    label: '租户管理',
+    children: [
+      { key: '/tenants', label: <Link to="/tenants">租户列表</Link> },
+      { key: '/tenants/new', label: <Link to="/tenants/new">新建租户</Link> },
+    ],
+  },
+  {
+    key: 'settings',
+    icon: <SettingOutlined />,
+    label: '系统设置',
+    children: [
+      { key: '/settings', label: <Link to="/settings">基础配置</Link> },
+      { key: '/settings/llm', label: <Link to="/settings/llm">模型接入</Link> },
+      { key: '/settings/model', label: <Link to="/settings/model">模型与响应配置</Link> },
+      { key: '/settings/notification', label: <Link to="/settings/notification">通知配置</Link> },
+    ],
+  },
+  {
+    key: 'prompt',
+    icon: <FileTextOutlined />,
+    label: 'Prompt 管理',
+    children: [{ key: '/prompts', label: <Link to="/prompts">模板列表</Link> }],
+  },
   {
     key: 'session',
     icon: <MessageOutlined />,
@@ -99,28 +167,14 @@ export const consoleMenuItems: MenuProps['items'] = [
     label: '工具管理',
     children: [
       { key: '/tools', label: <Link to="/tools">工具列表</Link> },
-      { key: '/tools/sql', label: <Link to="/tools/sql">SQL 查询工具</Link> },
+      { key: '/tools/sql', label: <Link to="/tools/sql">查询通道调试</Link> },
     ],
   },
   {
     key: 'connector',
     icon: <CloudServerOutlined />,
     label: '连接器管理',
-    children: [
-      { key: '/connectors', label: <Link to="/connectors">连接器列表</Link> },
-    ],
-  },
-  {
-    key: 'knowledge',
-    icon: <DatabaseOutlined />,
-    label: '知识库',
-    children: [
-      { key: '/knowledge', label: <Link to="/knowledge">知识库管理</Link> },
-      { key: '/knowledge/layers', label: <Link to="/knowledge/layers">知识层管理</Link> },
-      { key: '/knowledge/structure', label: <Link to="/knowledge/structure">存储结构</Link> },
-      { key: '/knowledge/media', label: <Link to="/knowledge/media">媒体库</Link> },
-      { key: '/knowledge/recall-test', label: <Link to="/knowledge/recall-test">问答测试</Link> },
-    ],
+    children: [{ key: '/connectors', label: <Link to="/connectors">连接器列表</Link> }],
   },
   {
     key: 'rule',
@@ -161,25 +215,6 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
-    key: 'user',
-    icon: <TeamOutlined />,
-    label: '用户与权限',
-    children: [
-      { key: '/users', label: <Link to="/users">用户管理</Link> },
-      { key: '/roles', label: <Link to="/roles">角色管理</Link> },
-      { key: '/permissions', label: <Link to="/permissions">权限策略</Link> },
-    ],
-  },
-  {
-    key: 'tenant',
-    icon: <ApartmentOutlined />,
-    label: '租户管理',
-    children: [
-      { key: '/tenants', label: <Link to="/tenants">租户列表</Link> },
-      { key: '/tenants/new', label: <Link to="/tenants/new">新建租户</Link> },
-    ],
-  },
-  {
     key: 'openapi',
     icon: <KeyOutlined />,
     label: 'OpenAPI 管理',
@@ -196,17 +231,6 @@ export const consoleMenuItems: MenuProps['items'] = [
     children: [
       { key: '/copilot-admin', label: <Link to="/copilot-admin">Copilot 配置</Link> },
       { key: '/copilot-admin/preview', label: <Link to="/copilot-admin/preview">嵌入预览</Link> },
-    ],
-  },
-  {
-    key: 'settings',
-    icon: <SettingOutlined />,
-    label: '系统设置',
-    children: [
-      { key: '/settings', label: <Link to="/settings">基础配置</Link> },
-      { key: '/settings/llm', label: <Link to="/settings/llm">模型接入</Link> },
-      { key: '/settings/model', label: <Link to="/settings/model">模型与响应配置</Link> },
-      { key: '/settings/notification', label: <Link to="/settings/notification">通知配置</Link> },
     ],
   },
 ];

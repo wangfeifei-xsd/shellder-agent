@@ -12,12 +12,20 @@ export interface SqlTemplate {
 }
 
 export interface SqlToolConfig {
-  tableWhitelist: string[];
-  fieldWhitelist: string[];
+  /** 禁止访问的表；空数组表示不限制（仅受只读约束） */
+  tableBlacklist: string[];
+  /** 禁止访问的字段；空数组表示不限制 */
+  fieldBlacklist: string[];
   maxRows: number;
   maxExecutionMs: number;
   templates: SqlTemplate[];
 }
+
+/** 历史 config 可能仍含表白名单字段 */
+export type LegacySqlToolConfig = SqlToolConfig & {
+  tableWhitelist?: string[];
+  fieldWhitelist?: string[];
+};
 
 export interface HttpToolConfig {
   method: string;
@@ -83,9 +91,17 @@ export interface ToolRecentCall {
   createdAt: string;
 }
 
+export interface ErPublishedSummary {
+  tableCount: number;
+  relationshipCount: number;
+  version: number | null;
+  publishedAt: string | null;
+}
+
 export interface ToolDetail extends Tool {
   stats: ToolStats;
   recentCalls: ToolRecentCall[];
+  erPublishedSummary?: ErPublishedSummary | null;
 }
 
 export interface MatchedRule {
@@ -205,6 +221,44 @@ export function sqlTestTool(
   });
 }
 
+export interface Nl2SqlPreviewResult {
+  sql: string;
+  explanation: string;
+  referencedTables: string[];
+  params: Record<string, unknown>;
+}
+
+export function nl2sqlPreviewTool(id: string, message: string) {
+  return apiFetch<Nl2SqlPreviewResult>(`${BASE}/${id}/nl2sql-preview`, {
+    method: 'POST',
+    body: { message },
+  });
+}
+
+export interface QueryE2ePreviewResult {
+  nl2sql: Nl2SqlPreviewResult;
+  execution: {
+    rowCount: number;
+    rows: Record<string, unknown>[];
+    executedSql: string;
+    durationMs: number;
+  };
+  reply: {
+    text: string;
+    summary: string;
+    truncated: boolean;
+    displayedRowCount: number;
+  };
+  totalDurationMs: number;
+}
+
+export function queryE2ePreviewTool(id: string, message: string) {
+  return apiFetch<QueryE2ePreviewResult>(`${BASE}/${id}/query-e2e-preview`, {
+    method: 'POST',
+    body: { message },
+  });
+}
+
 // ── 展示元数据 ────────────────────────────────────────────
 
 export const TOOL_TYPE_META: Record<ToolType, { label: string; color: string }> = {
@@ -217,6 +271,12 @@ export const TOOL_TYPE_META: Record<ToolType, { label: string; color: string }> 
 export const TOOL_TYPE_OPTIONS = (
   Object.entries(TOOL_TYPE_META) as [ToolType, { label: string }][]
 ).map(([value, m]) => ({ value, label: m.label }));
+
+/** 工具管理列表：不含查询型（查询型在『查询型』配置 → 数据库连接工具维护） */
+export const TOOL_TYPE_OPTIONS_EXCLUDING_QUERY = TOOL_TYPE_OPTIONS.filter((o) => o.value !== 'query');
+
+/** 数据库连接工具：仅查询型 */
+export const TOOL_TYPE_OPTIONS_QUERY_ONLY = TOOL_TYPE_OPTIONS.filter((o) => o.value === 'query');
 
 export const RISK_LEVEL_META: Record<ToolRiskLevel, { label: string; color: string }> = {
   low: { label: '低', color: 'green' },

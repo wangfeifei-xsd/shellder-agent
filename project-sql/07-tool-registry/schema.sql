@@ -70,8 +70,8 @@ ALTER TABLE `agent_platform`.`tool` ADD CONSTRAINT `tool_connector_id_fkey`
 -- config JSON 约定结构（应用层维护，DB 不强约束）：
 -- {
 --   "sql": {                              -- query 型（SQL 查询工具，执行计划 §4.5）
---     "tableWhitelist": ["orders", "order_items"],   -- 允许访问的表白名单（必填，命中外的表拒绝）
---     "fieldWhitelist": ["orders.id", "orders.amount"],-- 字段白名单（可空；空=不限制字段）
+--     "tableBlacklist": ["audit_log"],               -- 禁止访问的表黑名单（可空；空=不限制表，仅只读）
+--     "fieldBlacklist": ["users.password_hash"],     -- 字段黑名单（可空；空=不限制字段）
 --     "maxRows": 100,                     -- 最大返回行数（超出拒绝）
 --     "maxExecutionMs": 3000,             -- 最大执行时长（超时拒绝）
 --     "templates": [                      -- SQL 模板（SQL 模板管理）

@@ -100,6 +100,8 @@ export interface CapabilityHandlerResult {
   error?: string;
   /** 执行过程产生的消息片段（用于 SSE delta 推送） */
   textChunks?: string[];
+  /** 可选：覆盖 tool_call_audit 的 requestSummary（如 NL2SQL 生成 SQL） */
+  auditRequestSummary?: string;
 }
 
 /**

@@ -37,7 +37,8 @@ VALUES
   (UUID(), 'llm', 'llm.timeoutMs',    '60000',             'LLM Chat 单次超时（毫秒）'),
   (UUID(), 'llm', 'llm.maxTokens',    '4096',              'LLM max_tokens'),
   (UUID(), 'llm', 'llm.apiKeyCipher', '',                  'LLM API Key（AES-GCM 加密）'),
-  (UUID(), 'llm', 'llm.chatPath',     'v1/chat/completions', 'Chat Completions 相对路径')
+  (UUID(), 'llm', 'llm.chatPath',     'chat/completions', 'Chat Completions 相对路径'),
+  (UUID(), 'llm', 'llm.enableThinking', 'false', 'LLM 思考模式（enable_thinking）')
 ON DUPLICATE KEY UPDATE `agent_platform`.`config_value` = VALUES(`config_value`);
 
 -- ── 通知配置 ──────────────────────────────────────────────

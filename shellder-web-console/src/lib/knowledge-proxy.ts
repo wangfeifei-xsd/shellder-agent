@@ -65,6 +65,10 @@ export interface DialogueRecallTestResponse {
   message?: string;
   context_truncated?: boolean;
   files_scanned?: number;
+  /** 平台 QA 预览使用的已发布 Prompt 版本号 */
+  prompt_version?: number;
+  prompt_key?: string;
+  prompt_channel?: string;
 }
 
 export interface MediaItem {
@@ -273,6 +277,7 @@ export function dialogueRecallTest(
     top_k_chunks?: number;
     bm25_top_n?: number;
     vector_top_n?: number;
+    /** @deprecated 生产路径已忽略；请使用 Prompt 管理 */
     system_prompt?: string;
   },
 ) {
@@ -282,7 +287,7 @@ export function dialogueRecallTest(
   });
 }
 
-/** 与 Runtime 一致：pathy recall + 平台 LLM */
+/** 与 Runtime 一致：pathy recall + 平台 LLM（system 来自 published qa.dialogue.system） */
 export function dialogueQaPreview(
   tenantId: string,
   body: {
@@ -291,13 +296,18 @@ export function dialogueQaPreview(
     top_k_chunks?: number;
     bm25_top_n?: number;
     vector_top_n?: number;
-    system_prompt?: string;
   },
+  options?: { channel?: 'published' | 'draft'; promptKey?: string },
 ) {
-  return proxyFetch<DialogueRecallTestResponse>('/dialogue/qa-preview', tenantId, {
-    method: 'POST',
-    body,
-  });
+  const q = new URLSearchParams();
+  if (options?.channel) q.set('channel', options.channel);
+  if (options?.promptKey) q.set('prompt_key', options.promptKey);
+  const qs = q.toString();
+  return proxyFetch<DialogueRecallTestResponse>(
+    `/dialogue/qa-preview${qs ? `?${qs}` : ''}`,
+    tenantId,
+    { method: 'POST', body },
+  );
 }
 
 // ── media ───────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import { Audit } from '../audit/decorators/audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
+import { ConnectorSchemaService } from './connector-schema.service';
 import { ConnectorService } from './connector.service';
 import { CreateConnectorDto } from './dto/create-connector.dto';
 import { QueryConnectorDto } from './dto/query-connector.dto';
@@ -22,11 +23,23 @@ import { UpdateConnectorDto } from './dto/update-connector.dto';
 @Controller('api/v1/connectors')
 @RequireMenu('connector')
 export class ConnectorController {
-  constructor(private readonly connectorService: ConnectorService) {}
+  constructor(
+    private readonly connectorService: ConnectorService,
+    private readonly connectorSchemaService: ConnectorSchemaService,
+  ) {}
 
   @Get()
   list(@CurrentUser() user: AuthUser, @Query() query: QueryConnectorDto) {
     return this.connectorService.findMany(user, query);
+  }
+
+  /** 库表结构列表（静态路由须在 :id 之前，避免把 db-schema 当成连接器 id） */
+  @Get('db-schema')
+  listDbSchema(
+    @CurrentUser() user: AuthUser,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.connectorSchemaService.listDbSchemaSummaries(user, tenantId);
   }
 
   @Post()
@@ -68,12 +81,5 @@ export class ConnectorController {
   @Audit({ action: 'connector.delete', module: 'connector.manage', targetType: 'connector' })
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.connectorService.remove(user, id);
-  }
-
-  /** 连通性测试（验收标准 2）：结果记入外部接口审计并更新最近测试快照。 */
-  @Post(':id/test')
-  @Audit({ action: 'connector.test', module: 'connector.manage', targetType: 'connector' })
-  test(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.connectorService.test(user, id);
   }
 }

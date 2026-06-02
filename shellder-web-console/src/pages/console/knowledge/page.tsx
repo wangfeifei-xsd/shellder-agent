@@ -19,6 +19,13 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  EllipsisCell,
+  ellipsisTextColumn,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   CreateKbInput,
@@ -164,24 +171,43 @@ export default function KnowledgePage() {
   };
 
   const columns: ColumnsType<KnowledgeBase> = [
-    { title: '名称', dataIndex: 'name', ellipsis: true },
-    { title: '描述', dataIndex: 'description', ellipsis: true, render: (v: string | null) => v || '—' },
-    {
+    ellipsisTextColumn<KnowledgeBase>('名称', 'name', 160),
+    withNowrap<KnowledgeBase>({
+      title: '描述',
+      dataIndex: 'description',
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<KnowledgeBase>({
       title: 'pathy wiki 前缀',
       dataIndex: 'pathyWikiPrefix',
       ellipsis: true,
-      render: (v: string | null) => (
-        <Typography.Text code className="text-xs">{v || `（默认）tenants/${activeTenantId}/`}</Typography.Text>
-      ),
-    },
-    {
+      render: (v: string | null) => {
+        const text = v || `（默认）tenants/${activeTenantId}/`;
+        return (
+          <EllipsisCell tooltip={text}>
+            <Typography.Text code className="text-xs">
+              {text}
+            </Typography.Text>
+          </EllipsisCell>
+        );
+      },
+    }),
+    withNowrap<KnowledgeBase>({
       title: '状态',
       dataIndex: 'status',
       width: 90,
-      render: (s: KbStatus) => <Tag color={KB_STATUS_META[s]?.color}>{KB_STATUS_META[s]?.label ?? s}</Tag>,
-    },
-    { title: '创建时间', dataIndex: 'createdAt', width: 160, render: (v: string) => fmt(v) },
-    {
+      render: (s: KbStatus) => (
+        <Tag color={KB_STATUS_META[s]?.color}>{KB_STATUS_META[s]?.label ?? s}</Tag>
+      ),
+    }),
+    withNowrap<KnowledgeBase>({
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 160,
+      render: (v: string) => fmt(v),
+    }),
+    withNowrap<KnowledgeBase>({
       title: '操作',
       key: 'actions',
       width: 160,
@@ -189,10 +215,12 @@ export default function KnowledgePage() {
         <Space size="small">
           <a onClick={() => void openDetail(row)}>详情</a>
           <a onClick={() => openEdit(row)}>编辑</a>
-          <a className="text-red-500" onClick={() => handleDelete(row)}>删除</a>
+          <a className="text-red-500" onClick={() => handleDelete(row)}>
+            删除
+          </a>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -234,8 +262,14 @@ export default function KnowledgePage() {
             <Select allowClear placeholder="状态" style={{ width: 120 }} options={KB_STATUS_OPTIONS} value={statusFilter} onChange={setStatusFilter} />
             <Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button>
           </Space>
-          <Table<KnowledgeBase> rowKey="id" loading={loading} columns={columns} dataSource={data} pagination={false}
+          <Table<KnowledgeBase>
+            rowKey="id"
+            loading={loading}
+            columns={columns}
+            dataSource={data}
+            pagination={false}
             locale={{ emptyText: <Empty description="该租户暂无知识库绑定" /> }}
+            {...tableEllipsisLayout}
           />
         </>
       )}

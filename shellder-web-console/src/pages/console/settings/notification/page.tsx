@@ -24,6 +24,12 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  ellipsisTextColumn,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
+import {
   type ConfigMap,
   type NotificationTemplate,
   type NotificationTemplateType,
@@ -157,41 +163,39 @@ export default function NotificationSettingsPage() {
   };
 
   const columns: ColumnsType<NotificationTemplate> = [
-    {
+    withNowrap<NotificationTemplate>({
       title: '类型',
       dataIndex: 'type',
       width: 140,
-      render: (t: NotificationTemplateType) => (
-        <Tag>{TEMPLATE_TYPE_LABEL[t]}</Tag>
-      ),
-    },
-    { title: '名称', dataIndex: 'name' },
-    { title: '主题', dataIndex: 'subject', render: (v: string | null) => v || '—' },
-    {
+      render: (t: NotificationTemplateType) => <Tag>{TEMPLATE_TYPE_LABEL[t]}</Tag>,
+    }),
+    ellipsisTextColumn<NotificationTemplate>('名称', 'name', 160),
+    withNowrap<NotificationTemplate>({
+      title: '主题',
+      dataIndex: 'subject',
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<NotificationTemplate>({
       title: '状态',
       dataIndex: 'enabled',
       width: 80,
       render: (v: boolean) =>
         v ? <Tag color="green">启用</Tag> : <Tag color="red">停用</Tag>,
-    },
-    {
+    }),
+    withNowrap<NotificationTemplate>({
       title: '更新时间',
       dataIndex: 'updatedAt',
       width: 180,
       render: (v: string) => new Date(v).toLocaleString('zh-CN'),
-    },
-    {
+    }),
+    withNowrap<NotificationTemplate>({
       title: '操作',
       key: 'actions',
       width: 140,
       render: (_, row) => (
         <Space size="small">
-          <Button
-            type="link"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => openEdit(row)}
-          >
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(row)}>
             编辑
           </Button>
           <Popconfirm title="确认删除？" onConfirm={() => handleDelete(row.id)}>
@@ -201,7 +205,7 @@ export default function NotificationSettingsPage() {
           </Popconfirm>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -246,6 +250,7 @@ export default function NotificationSettingsPage() {
           columns={columns}
           dataSource={templates}
           pagination={false}
+          {...tableEllipsisLayout}
         />
       </Card>
 

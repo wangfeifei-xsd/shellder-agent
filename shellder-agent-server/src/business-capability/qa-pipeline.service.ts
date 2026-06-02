@@ -1,14 +1,19 @@
 import { HttpException, Injectable } from '@nestjs/common';
 import { KnowledgeProxyService, DialogueRecallResponse } from '../knowledge/knowledge-proxy.service';
 import { LlmService, ChatMessage } from '../llm/llm.service';
+import { PROMPT_KEYS } from '../prompt/prompt-keys';
+import { PromptResolverService } from '../prompt/prompt-resolver.service';
 import { Citation } from './capability-result';
+import { buildQaDialogueSystemVariables } from './qa-pipeline.variables';
 
 export interface QaPipelineInput {
   tenantId: string;
   userMessage: string;
   topKChunks?: number;
   recallBody?: Record<string, unknown>;
-  systemPromptOverride?: string;
+  /** 仅管理端预览：draft 须 prompt:debug，Runtime 固定 published */
+  promptChannel?: 'published' | 'draft';
+  promptKey?: string;
 }
 
 export interface QaPipelineResult {
@@ -17,6 +22,7 @@ export interface QaPipelineResult {
   recall: DialogueRecallResponse;
   model: string;
   elapsedMs: number;
+  promptVersion?: number;
 }
 
 /**
@@ -27,6 +33,7 @@ export class QaPipelineService {
   constructor(
     private readonly knowledgeProxy: KnowledgeProxyService,
     private readonly llmService: LlmService,
+    private readonly promptResolver: PromptResolverService,
   ) {}
 
   async run(input: QaPipelineInput): Promise<QaPipelineResult> {
@@ -39,11 +46,13 @@ export class QaPipelineService {
     });
 
     const citations = this.buildCitations(recall);
-    const messages = this.buildChatMessages(
+    const { messages, promptVersion } = await this.buildChatMessages(
+      input.tenantId,
       input.userMessage,
       citations,
       recall.injected_context,
-      input.systemPromptOverride,
+      input.promptChannel ?? 'published',
+      input.promptKey ?? PROMPT_KEYS.QA_DIALOGUE_SYSTEM,
     );
 
     const start = Date.now();
@@ -54,6 +63,7 @@ export class QaPipelineService {
       recall,
       model: completion.model,
       elapsedMs: Date.now() - start,
+      promptVersion,
     };
   }
 
@@ -70,11 +80,13 @@ export class QaPipelineService {
     });
 
     const citations = this.buildCitations(recall);
-    const messages = this.buildChatMessages(
+    const { messages, promptVersion } = await this.buildChatMessages(
+      input.tenantId,
       input.userMessage,
       citations,
       recall.injected_context,
-      input.systemPromptOverride,
+      'published',
+      PROMPT_KEYS.QA_DIALOGUE_SYSTEM,
     );
 
     const start = Date.now();
@@ -85,6 +97,7 @@ export class QaPipelineService {
       recall,
       model: streamResult.model,
       elapsedMs: Date.now() - start,
+      promptVersion,
     };
   }
 
@@ -96,45 +109,29 @@ export class QaPipelineService {
     }));
   }
 
-  buildChatMessages(
+  async buildChatMessages(
+    tenantId: string,
     userMessage: string,
     citations: Citation[],
     injectedContext?: string,
-    systemPromptOverride?: string,
-  ): ChatMessage[] {
-    const systemContent =
-      systemPromptOverride?.trim() ||
-      this.composeSystemPrompt(citations, injectedContext);
+    channel: 'published' | 'draft' = 'published',
+    promptKey: string = PROMPT_KEYS.QA_DIALOGUE_SYSTEM,
+  ): Promise<{ messages: ChatMessage[]; promptVersion: number }> {
+    const variables = buildQaDialogueSystemVariables(citations, injectedContext);
+    const rendered = await this.promptResolver.render({
+      promptKey,
+      channel,
+      tenantId,
+      variables,
+    });
 
-    return [
-      { role: 'system', content: systemContent },
-      { role: 'user', content: userMessage },
-    ];
-  }
-
-  composeSystemPrompt(citations: Citation[], injectedContext?: string): string {
-    const citationLines =
-      citations.length > 0
-        ? citations
-            .slice(0, 6)
-            .map(
-              (c, i) =>
-                `[${i + 1}] ${c.documentTitle ?? '未命名'} (score=${c.score?.toFixed(4) ?? 'n/a'})\n${c.content ?? ''}`,
-            )
-            .join('\n\n')
-        : '（无召回命中）';
-
-    const contextBlock = injectedContext?.trim()
-      ? `\n\n## 注入上下文\n${injectedContext.trim()}`
-      : '';
-
-    return `你是 shellder-agent 平台的问答助手。请基于下方「知识库召回结果」回答用户问题。
-- 优先使用注入上下文与引用片段中的事实；不要编造未出现的信息。
-- 若知识库无相关内容，礼貌说明未找到相关信息，并建议用户换种问法或联系管理员。
-- 回答末尾可简要列出引用来源编号。
-
-## 召回引用
-${citationLines}${contextBlock}`;
+    return {
+      messages: [
+        { role: 'system', content: rendered.content },
+        { role: 'user', content: userMessage },
+      ],
+      promptVersion: rendered.version,
+    };
   }
 
   formatProxyError(err: unknown): string {

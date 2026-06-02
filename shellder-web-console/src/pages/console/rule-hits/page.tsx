@@ -16,6 +16,12 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   RESULT_META,
@@ -71,47 +77,49 @@ export default function RuleHitsPage() {
   }, [load]);
 
   const columns: ColumnsType<RuleHit> = [
-    {
+    withNowrap<RuleHit>({
       title: '规则',
       dataIndex: 'ruleName',
+      width: 200,
       render: (v: string, row) => (
-        <a onClick={() => setDetail(row)}>
-          {v}
-          {row.ruleId ? null : (
-            <Tag className="ml-2" color="default">
+        <Space size={4} className="flex-nowrap">
+          {renderEllipsisLink(v, () => setDetail(row))}
+          {!row.ruleId ? (
+            <Tag className="shrink-0" color="default">
               已删除
             </Tag>
-          )}
-        </a>
+          ) : null}
+        </Space>
       ),
-    },
-    {
+    }),
+    withNowrap<RuleHit>({
       title: '类型',
       dataIndex: 'ruleType',
       width: 120,
       render: (t: RuleType) => (
         <Tag color={RULE_TYPE_META[t].color}>{RULE_TYPE_META[t].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<RuleHit>({
       title: 'Tool',
       dataIndex: 'toolName',
-      render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text>,
-    },
-    {
+      width: 160,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<RuleHit>({
       title: '处理结果',
       dataIndex: 'result',
       width: 100,
       render: (r: RuleHit['result']) => (
         <Tag color={RESULT_META[r].color}>{RESULT_META[r].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<RuleHit>({
       title: '时间',
       dataIndex: 'createdAt',
       width: 180,
       render: (v: string) => fmt(v),
-    },
+    }),
   ];
 
   return (
@@ -154,6 +162,7 @@ export default function RuleHitsPage() {
         columns={columns}
         dataSource={data}
         locale={{ emptyText: <Empty description="暂无规则命中记录" /> }}
+        {...tableEllipsisLayout}
         pagination={{
           current: page,
           pageSize,

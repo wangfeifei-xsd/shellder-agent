@@ -15,6 +15,13 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
 import UserFormDrawer from '@/components/console/UserFormDrawer';
+import {
+  renderCompactTags,
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { MeTenant, UserStatus } from '@/lib/auth';
 import { Role, listRoles } from '@/lib/role';
 import { listTenants } from '@/lib/tenant';
@@ -116,58 +123,50 @@ export default function UserListPage() {
   };
 
   const columns: ColumnsType<PlatformUser> = [
-    {
+    withNowrap<PlatformUser>({
       title: '用户名',
       dataIndex: 'username',
+      width: 180,
       render: (v: string, row) => (
-        <Space>
-          <a onClick={() => openEdit(row)}>{v}</a>
-          {row.isSystem ? <Tag color="gold">内置</Tag> : null}
+        <Space size={4} className="max-w-full flex-nowrap">
+          {renderEllipsisLink(v, () => openEdit(row))}
+          {row.isSystem ? <Tag color="gold" className="shrink-0">内置</Tag> : null}
         </Space>
       ),
-    },
-    {
+    }),
+    withNowrap<PlatformUser>({
       title: '显示名',
       dataIndex: 'displayName',
-      render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text>,
-    },
-    {
+      width: 140,
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<PlatformUser>({
       title: '状态',
       dataIndex: 'status',
+      width: 88,
       render: (s: UserStatus) =>
         s === 'enabled' ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>,
-    },
-    {
+    }),
+    withNowrap<PlatformUser>({
       title: '角色',
       dataIndex: 'roles',
+      width: 160,
       render: (rs: PlatformUser['roles']) =>
-        rs.length ? (
-          <Space size={4} wrap>
-            {rs.map((r) => (
-              <Tag key={r.id}>{r.name}</Tag>
-            ))}
-          </Space>
-        ) : (
-          <Typography.Text type="secondary">—</Typography.Text>
+        renderCompactTags(
+          rs.map((r) => ({ key: r.id, label: <Tag>{r.name}</Tag> })),
         ),
-    },
-    {
+    }),
+    withNowrap<PlatformUser>({
       title: '绑定租户',
       dataIndex: 'tenants',
+      width: 180,
       render: (ts: PlatformUser['tenants']) =>
-        ts.length ? (
-          <Space size={4} wrap>
-            {ts.map((t) => (
-              <Tag key={t.id} color="blue">
-                {t.name}
-              </Tag>
-            ))}
-          </Space>
-        ) : (
-          <Typography.Text type="secondary">—</Typography.Text>
+        renderCompactTags(
+          ts.map((t) => ({ key: t.id, label: <Tag color="blue">{t.name}</Tag> })),
         ),
-    },
-    {
+    }),
+    withNowrap<PlatformUser>({
       title: '操作',
       key: 'actions',
       width: 200,
@@ -190,7 +189,7 @@ export default function UserListPage() {
           )}
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -238,6 +237,7 @@ export default function UserListPage() {
         loading={loading}
         columns={columns}
         dataSource={data}
+        {...tableEllipsisLayout}
         pagination={{
           current: page,
           pageSize,

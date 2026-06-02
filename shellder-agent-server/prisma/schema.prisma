@@ -56,6 +56,8 @@ model Tenant {
   approvals              Approval[]
   openApiCallLogs    OpenApiCallLog[]
   copilotConfigs     CopilotConfig[]
+  promptTemplates    PromptTemplate[]
+  promptBindings     PromptBinding[]
 
   @@index([status])
   @@index([externalTenantId])
@@ -372,14 +374,30 @@ model Connector {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  tools  Tool[]
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  tools      Tool[]
+  dbMetadata ConnectorDbMetadata?
 
   @@index([tenantId])
   @@index([type])
   @@index([status])
   @@index([tenantId, type, status])
   @@map("connector")
+}
+
+/// 只读库连接器元数据：表结构抽取 + ER 关系图（查询型能力 §4）
+model ConnectorDbMetadata {
+  connectorId         String    @id @map("connector_id") @db.Char(36)
+  introspectedSchema  Json?     @map("introspected_schema")
+  introspectedAt      DateTime? @map("introspected_at")
+  erDiagramDraft      Json?     @map("er_diagram_draft")
+  erDiagramPublished  Json?     @map("er_diagram_published")
+  erPublishedVersion  Int?      @map("er_published_version")
+  erPublishedAt       DateTime? @map("er_published_at")
+
+  connector Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  @@map("connector_db_metadata")
 }
 
 // ───────────────────────────────────────────────────────────
@@ -1411,4 +1429,109 @@ model OpenApiCallLog {
   @@index([appId, status])
   @@index([appId, createdAt])
   @@map("openapi_call_log")
+}
+
+// ───────────────────────────────────────────────────────────
+// 阶段 21 — Prompt 管理（方案 §5.3）
+// LLM 提示词 SSOT：模板、版本、业务绑定。
+// ───────────────────────────────────────────────────────────
+
+enum PromptCategory {
+  qa
+  query
+  connector
+  routing
+  runtime
+  common
+}
+
+enum PromptRole {
+  system
+  user
+  fragment
+}
+
+enum PromptScope {
+  global
+  tenant
+}
+
+enum PromptTemplateStatus {
+  active
+  archived
+}
+
+enum PromptVersionState {
+  draft
+  published
+  deprecated
+}
+
+enum PromptBindType {
+  capability
+  skill
+  tool
+  connector
+  default
+}
+
+model PromptTemplate {
+  id             String               @id @default(uuid()) @db.Char(36)
+  promptKey      String               @map("prompt_key") @db.VarChar(128)
+  name           String               @db.VarChar(128)
+  description    String?              @db.VarChar(512)
+  category       PromptCategory
+  role           PromptRole
+  scope          PromptScope          @default(global)
+  tenantId       String?              @map("tenant_id") @db.Char(36)
+  variableSchema Json?                @map("variable_schema")
+  status         PromptTemplateStatus @default(active)
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  tenant   Tenant?         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  versions PromptVersion[]
+
+  @@unique([promptKey, scope, tenantId])
+  @@index([category])
+  @@index([status])
+  @@index([tenantId])
+  @@map("prompt_template")
+}
+
+model PromptVersion {
+  id          String             @id @default(uuid()) @db.Char(36)
+  templateId  String             @map("template_id") @db.Char(36)
+  version     Int
+  content     String             @db.MediumText
+  contentHash String             @map("content_hash") @db.Char(64)
+  changelog   String?            @db.VarChar(512)
+  state       PromptVersionState @default(draft)
+  publishedAt DateTime?          @map("published_at")
+  publishedBy String?            @map("published_by") @db.Char(36)
+  createdAt   DateTime           @default(now()) @map("created_at")
+
+  template PromptTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, version])
+  @@index([templateId, state])
+  @@map("prompt_version")
+}
+
+model PromptBinding {
+  id        String         @id @default(uuid()) @db.Char(36)
+  tenantId  String?        @map("tenant_id") @db.Char(36)
+  bindType  PromptBindType @map("bind_type")
+  bindId    String?        @map("bind_id") @db.Char(36)
+  promptKey String         @map("prompt_key") @db.VarChar(128)
+  priority  Int            @default(0)
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([bindType, bindId, tenantId])
+  @@index([promptKey])
+  @@map("prompt_binding")
 }

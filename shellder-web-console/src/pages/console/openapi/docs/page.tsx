@@ -1,8 +1,59 @@
 'use client';
 
 import { Card, Collapse, Descriptions, Table, Tag, Typography } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import {
+  ellipsisTextColumn,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 
-const endpoints = [
+interface EndpointRow {
+  method: string;
+  path: string;
+  description: string;
+  auth: string;
+}
+
+interface ErrorCodeRow {
+  code: string;
+  status: number;
+  description: string;
+}
+
+const METHOD_COLOR: Record<string, string> = {
+  GET: 'blue',
+  POST: 'green',
+  PUT: 'orange',
+  DELETE: 'red',
+};
+
+const endpointColumns: ColumnsType<EndpointRow> = [
+  withNowrap<EndpointRow>({
+    title: '方法',
+    dataIndex: 'method',
+    width: 80,
+    render: (v: string) => <Tag color={METHOD_COLOR[v] ?? 'default'}>{v}</Tag>,
+  }),
+  ellipsisTextColumn<EndpointRow>('路径', 'path', 320),
+  ellipsisTextColumn<EndpointRow>('描述', 'description', 200),
+  ellipsisTextColumn<EndpointRow>('鉴权', 'auth', 200),
+];
+
+const errorCodeColumns: ColumnsType<ErrorCodeRow> = [
+  ellipsisTextColumn<ErrorCodeRow>('错误码', 'code', 280),
+  withNowrap<ErrorCodeRow>({
+    title: 'HTTP 状态',
+    dataIndex: 'status',
+    width: 100,
+    render: (v: number) => (
+      <Tag color={v >= 400 && v < 500 ? 'warning' : 'error'}>{v}</Tag>
+    ),
+  }),
+  ellipsisTextColumn<ErrorCodeRow>('描述', 'description', 240),
+];
+
+const endpoints: EndpointRow[] = [
   { method: 'POST', path: '/openapi/v1/auth/token', description: '应用鉴权，换取 Token', auth: 'Client ID + Client Secret' },
   { method: 'POST', path: '/openapi/v1/sessions', description: '创建会话', auth: 'Bearer Token' },
   { method: 'GET', path: '/openapi/v1/sessions/:id', description: '获取会话历史', auth: 'Bearer Token' },
@@ -12,7 +63,7 @@ const endpoints = [
   { method: 'POST', path: '/openapi/v1/confirmations/:id', description: '提交人工确认结果', auth: 'Bearer Token' },
 ];
 
-const errorCodes = [
+const errorCodes: ErrorCodeRow[] = [
   { code: 'OPENAPI_UNAUTHENTICATED', status: 401, description: '缺少或无效的访问令牌' },
   { code: 'OPENAPI_INVALID_CREDENTIALS', status: 401, description: 'Client ID 或 Secret 不正确' },
   { code: 'OPENAPI_APP_DISABLED', status: 403, description: '接入应用已被禁用' },
@@ -24,13 +75,6 @@ const errorCodes = [
   { code: 'APPROVAL_NOT_FOUND', status: 404, description: '审批记录不存在' },
   { code: 'APPROVAL_ALREADY_PROCESSED', status: 403, description: '审批已处理' },
 ];
-
-const METHOD_COLOR: Record<string, string> = {
-  GET: 'blue',
-  POST: 'green',
-  PUT: 'orange',
-  DELETE: 'red',
-};
 
 export default function OpenApiDocsPage() {
   return (
@@ -63,19 +107,8 @@ export default function OpenApiDocsPage() {
           dataSource={endpoints}
           pagination={false}
           size="small"
-          columns={[
-            {
-              title: '方法',
-              dataIndex: 'method',
-              width: 80,
-              render: (v: string) => (
-                <Tag color={METHOD_COLOR[v] ?? 'default'}>{v}</Tag>
-              ),
-            },
-            { title: '路径', dataIndex: 'path', width: 320 },
-            { title: '描述', dataIndex: 'description' },
-            { title: '鉴权', dataIndex: 'auth', width: 200 },
-          ]}
+          {...tableEllipsisLayout}
+          columns={endpointColumns}
         />
       </Card>
 
@@ -174,18 +207,8 @@ export default function OpenApiDocsPage() {
           dataSource={errorCodes}
           pagination={false}
           size="small"
-          columns={[
-            { title: '错误码', dataIndex: 'code', width: 280 },
-            {
-              title: 'HTTP 状态',
-              dataIndex: 'status',
-              width: 100,
-              render: (v: number) => (
-                <Tag color={v >= 400 && v < 500 ? 'warning' : 'error'}>{v}</Tag>
-              ),
-            },
-            { title: '描述', dataIndex: 'description' },
-          ]}
+          {...tableEllipsisLayout}
+          columns={errorCodeColumns}
         />
       </Card>
     </>

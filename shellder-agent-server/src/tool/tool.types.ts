@@ -2,7 +2,7 @@ import { ToolType } from '@prisma/client';
 
 /**
  * tool.config 的内部归一化结构（按 Tool 类型使用对应子配置）。
- * - query        → sql：SQL 查询工具配置（表白名单 / 行数 / 时长 / 模板）。
+ * - query        → sql：SQL 查询工具配置（表黑名单 / 行数 / 时长 / 模板；只读由执行层强制）。
  * - action / notification → http：HTTP 调用配置（方法 / 路径 / 附加头 / 体模板）。
  * - workflow     → workflow：步骤编排（编排执行见 12/13）。
  */
@@ -14,10 +14,10 @@ export interface ToolConfig {
 
 /** SQL 查询工具配置（执行计划 §4.5） */
 export interface SqlToolConfig {
-  /** 允许访问的表白名单（命中外的表拒绝执行） */
-  tableWhitelist: string[];
-  /** 字段白名单（格式 table.field 或 field；空数组表示不限制字段） */
-  fieldWhitelist: string[];
+  /** 禁止访问的表黑名单（命中则拒绝；空数组表示不限制表，仅受只读约束） */
+  tableBlacklist: string[];
+  /** 禁止访问的字段黑名单（格式 table.field 或 field；空数组表示不限制字段） */
+  fieldBlacklist: string[];
   /** 最大返回行数（超出拒绝） */
   maxRows: number;
   /** 最大执行时长（毫秒，超时拒绝） */
@@ -60,11 +60,17 @@ export interface WorkflowStep {
 export const EMPTY_TOOL_CONFIG: ToolConfig = {};
 
 export const DEFAULT_SQL_CONFIG: SqlToolConfig = {
-  tableWhitelist: [],
-  fieldWhitelist: [],
+  tableBlacklist: [],
+  fieldBlacklist: [],
   maxRows: 100,
   maxExecutionMs: 3000,
   templates: [],
+};
+
+/** 历史 config.sql 可能仍含表白名单字段（读取兼容，保存时归一为黑名单） */
+export type LegacySqlToolConfig = SqlToolConfig & {
+  tableWhitelist?: string[];
+  fieldWhitelist?: string[];
 };
 
 export const TOOL_TYPE_LABEL: Record<ToolType, string> = {

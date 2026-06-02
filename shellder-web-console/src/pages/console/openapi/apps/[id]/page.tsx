@@ -3,6 +3,12 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  ellipsisTextColumn,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
+import {
   App,
   Button,
   Card,
@@ -140,20 +146,35 @@ export default function OpenApiAppDetailPage() {
   };
 
   const logColumns: ColumnsType<OpenApiCallLogItem> = [
-    { title: '方法', dataIndex: 'method', width: 70 },
-    { title: '路径', dataIndex: 'path', ellipsis: true },
-    { title: '状态码', dataIndex: 'statusCode', width: 80 },
-    {
+    withNowrap<OpenApiCallLogItem>({ title: '方法', dataIndex: 'method', width: 70 }),
+    ellipsisTextColumn<OpenApiCallLogItem>('路径', 'path', 240),
+    withNowrap<OpenApiCallLogItem>({ title: '状态码', dataIndex: 'statusCode', width: 80 }),
+    withNowrap<OpenApiCallLogItem>({
       title: '状态',
       dataIndex: 'status',
       width: 80,
       render: (v: OpenApiCallStatus) => (
         <Tag color={CALL_STATUS_META[v].color}>{CALL_STATUS_META[v].label}</Tag>
       ),
-    },
-    { title: '耗时(ms)', dataIndex: 'durationMs', width: 90, render: (v: number | null) => v ?? '—' },
-    { title: 'IP', dataIndex: 'ip', width: 130, render: (v: string | null) => v ?? '—' },
-    { title: '时间', dataIndex: 'createdAt', width: 170, render: fmt },
+    }),
+    withNowrap<OpenApiCallLogItem>({
+      title: '耗时(ms)',
+      dataIndex: 'durationMs',
+      width: 90,
+      render: (v: number | null) => (v == null ? '—' : v),
+    }),
+    withNowrap<OpenApiCallLogItem>({
+      title: 'IP',
+      dataIndex: 'ip',
+      width: 130,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<OpenApiCallLogItem>({
+      title: '时间',
+      dataIndex: 'createdAt',
+      width: 170,
+      render: fmt,
+    }),
   ];
 
   if (!app) {
@@ -265,6 +286,7 @@ export default function OpenApiAppDetailPage() {
           columns={logColumns}
           dataSource={logs}
           size="small"
+          {...tableEllipsisLayout}
           pagination={{
             current: logPage,
             pageSize: 10,

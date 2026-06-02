@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class UpsertLlmSettingsDto {
   @IsOptional()
@@ -28,6 +28,11 @@ export class UpsertLlmSettingsDto {
   @IsOptional()
   @IsString()
   chat_path?: string;
+
+  /** 上游 Chat 请求 enable_thinking（通义等 OpenAI 兼容网关） */
+  @IsOptional()
+  @IsBoolean()
+  enable_thinking?: boolean;
 }
 
 export class LlmConnectionTestDto {
@@ -42,4 +47,8 @@ export class LlmConnectionTestDto {
   @IsOptional()
   @IsString()
   api_key?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  enable_thinking?: boolean;
 }

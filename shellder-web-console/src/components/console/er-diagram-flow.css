@@ -1,0 +1,181 @@
+.er-flow-wrap {
+  position: relative;
+  height: 480px;
+  border: 1px solid #e8e8e8;
+  border-radius: 10px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.er-flow-wrap:fullscreen {
+  height: 100vh !important;
+  width: 100vw !important;
+  border: none;
+  border-radius: 0;
+}
+
+.er-flow-fullscreen-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 12;
+  box-shadow: 0 1px 4px rgb(15 23 42 / 12%);
+}
+
+.er-flow-wrap .react-flow {
+  --xy-edge-stroke-width-default: 2;
+}
+
+.er-flow-wrap .react-flow__minimap {
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.er-table-node {
+  width: 240px;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 6%),
+    0 4px 12px rgb(15 23 42 / 8%);
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.er-table-node-header {
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #1677ff 0%, #0958d9 100%);
+  color: #fff;
+}
+
+.er-table-node-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.er-table-node-subtitle {
+  margin-top: 2px;
+  font-size: 10px;
+  opacity: 0.88;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.er-table-node-columns {
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.er-table-node-col {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.er-table-node-col:last-child {
+  border-bottom: none;
+}
+
+.er-table-node-col-icons {
+  display: flex;
+  gap: 2px;
+  min-width: 28px;
+}
+
+.er-badge {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.er-badge-pk {
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1px solid #ffd591;
+}
+
+.er-badge-fk {
+  background: #e6f4ff;
+  color: #0958d9;
+  border: 1px solid #91caff;
+}
+
+.er-table-node-col-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #334155;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.er-table-node-col-type {
+  color: #94a3b8;
+  font-size: 10px;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.er-table-node-more {
+  padding: 6px 10px 8px;
+  font-size: 10px;
+  color: #64748b;
+  background: #f8fafc;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.er-table-handle {
+  width: 8px !important;
+  height: 8px !important;
+  border: 2px solid #fff !important;
+  box-shadow: 0 0 0 1px #94a3b8;
+}
+
+.er-table-handle-target {
+  left: -5px !important;
+  background: #64748b !important;
+}
+
+.er-table-handle-source {
+  right: -5px !important;
+  background: #1677ff !important;
+}
+
+.er-flow-wrap .react-flow__edge.er-edge-confirmed path {
+  stroke: #1677ff;
+}
+
+.er-flow-wrap .react-flow__edge.er-edge-inferred path {
+  stroke: #d48806;
+  stroke-dasharray: 7 5;
+}
+
+.er-flow-wrap .react-flow__edge-textwrapper {
+  pointer-events: none;
+}
+
+.er-flow-wrap .react-flow__edge-textbg {
+  fill: #fff;
+  fill-opacity: 0.95;
+  rx: 4;
+  ry: 4;
+}
+
+.er-flow-wrap .react-flow__edge-text {
+  font-size: 10px !important;
+  fill: #475569 !important;
+  font-weight: 500;
+}

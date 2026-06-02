@@ -15,6 +15,12 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
+import {
   AuditStatus,
   UserActionAudit,
   listUserActionAudits,
@@ -53,30 +59,36 @@ export default function UserActionAuditPage() {
   }, [load]);
 
   const columns: ColumnsType<UserActionAudit> = [
-    {
+    withNowrap<UserActionAudit>({
       title: '操作',
       dataIndex: 'action',
-      render: (v: string, row) => <a onClick={() => setDetail(row)}>{v}</a>,
-    },
-    {
+      width: 180,
+      render: (v: string, row) => renderEllipsisLink(v, () => setDetail(row)),
+    }),
+    withNowrap<UserActionAudit>({
       title: '操作人',
       dataIndex: 'operatorName',
-      render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text>,
-    },
-    {
+      width: 120,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<UserActionAudit>({
       title: '目标',
       key: 'target',
-      render: (_, row) =>
-        row.targetType
+      width: 180,
+      render: (_, row) => {
+        const text = row.targetType
           ? `${row.targetType}${row.targetId ? `#${row.targetId}` : ''}`
-          : '—',
-    },
-    {
+          : '';
+        return renderOptionalText(text || undefined);
+      },
+    }),
+    withNowrap<UserActionAudit>({
       title: '模块',
       dataIndex: 'module',
-      render: (v: string | null) => (v ? <Tag>{v}</Tag> : '—'),
-    },
-    {
+      width: 120,
+      render: (v: string | null) => (v ? <Tag>{v}</Tag> : renderOptionalText(undefined)),
+    }),
+    withNowrap<UserActionAudit>({
       title: '状态',
       dataIndex: 'status',
       width: 100,
@@ -84,13 +96,13 @@ export default function UserActionAuditPage() {
         const meta = statusMeta(s);
         return <Tag color={meta.color}>{meta.label}</Tag>;
       },
-    },
-    {
+    }),
+    withNowrap<UserActionAudit>({
       title: '时间',
       dataIndex: 'createdAt',
       width: 180,
       render: (v: string) => fmt(v),
-    },
+    }),
   ];
 
   return (
@@ -122,6 +134,7 @@ export default function UserActionAuditPage() {
         columns={columns}
         dataSource={data}
         locale={{ emptyText: '暂无用户操作审计记录' }}
+        {...tableEllipsisLayout}
         pagination={{
           current: page,
           pageSize,

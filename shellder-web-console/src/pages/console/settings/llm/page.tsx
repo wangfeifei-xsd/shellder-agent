@@ -10,6 +10,7 @@ import {
   Input,
   InputNumber,
   Spin,
+  Switch,
   Typography,
 } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
@@ -45,7 +46,8 @@ export default function LlmIntegrationPage() {
         timeout_ms: data.timeout_ms,
         max_tokens: data.max_tokens,
         chat_path: data.chat_path,
-        api_key: '',
+        api_key: data.api_key ?? '',
+        enable_thinking: data.enable_thinking,
       });
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载配置失败');
@@ -68,13 +70,14 @@ export default function LlmIntegrationPage() {
         timeout_ms: values.timeout_ms,
         max_tokens: values.max_tokens,
         chat_path: values.chat_path,
+        enable_thinking: values.enable_thinking,
       };
       if (values.api_key?.trim()) {
         payload.api_key = values.api_key.trim();
       }
       const updated = await updateLlmSettings(payload);
       setSettings(updated);
-      form.setFieldValue('api_key', '');
+      form.setFieldValue('api_key', updated.api_key ?? '');
       message.success('模型接入配置已保存');
     } catch (err) {
       message.error(err instanceof Error ? err.message : '保存失败');
@@ -92,6 +95,7 @@ export default function LlmIntegrationPage() {
         base_url: values.base_url,
         model: values.model,
         api_key: values.api_key?.trim() || undefined,
+        enable_thinking: values.enable_thinking,
       });
       setTestResult(result);
       if (result.ok) message.success(`连接成功（${result.elapsed_ms}ms）`);
@@ -156,8 +160,8 @@ export default function LlmIntegrationPage() {
             label="API Key"
             extra={
               settings?.api_key_configured
-                ? '已配置密钥；留空则保持不变，填写则覆盖'
-                : '必填；保存后不会在界面回显明文'
+                ? '已配置密钥；留空保存则保持不变，填写则覆盖'
+                : '必填'
             }
           >
             <Input.Password placeholder="sk-..." autoComplete="new-password" />
@@ -166,9 +170,9 @@ export default function LlmIntegrationPage() {
           <Form.Item
             name="chat_path"
             label="Chat Completions 路径"
-            extra="相对 Base URL，默认 v1/chat/completions"
+            extra="相对 Base URL；若 Base 已含 /v1（如 OpenAI），请填 chat/completions，勿重复 v1"
           >
-            <Input placeholder="v1/chat/completions" />
+            <Input placeholder="chat/completions" />
           </Form.Item>
 
           <Form.Item
@@ -185,6 +189,15 @@ export default function LlmIntegrationPage() {
             rules={[{ required: true, message: '请输入 max_tokens' }]}
           >
             <InputNumber min={1} max={200000} step={256} className="!w-full" />
+          </Form.Item>
+
+          <Form.Item
+            name="enable_thinking"
+            label="思考模式"
+            valuePropName="checked"
+            extra="开启后向上游 Chat 请求附带 enable_thinking=true（适用于通义千问等兼容网关）；OpenAI 官方模型请保持关闭"
+          >
+            <Switch checkedChildren="开" unCheckedChildren="关" />
           </Form.Item>
 
           <Form.Item>

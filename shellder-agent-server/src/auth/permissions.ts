@@ -28,6 +28,7 @@ export const MENU_CATALOG = [
   { key: 'tenant', label: '租户管理' },
   { key: 'openapi', label: 'OpenAPI 管理' },
   { key: 'settings', label: '系统设置' },
+  { key: 'prompt', label: 'Prompt 管理' },
 ] as const;
 
 export type MenuKey = (typeof MENU_CATALOG)[number]['key'];
@@ -49,6 +50,10 @@ export const MODULE_CATALOG = [
   { key: 'task.manage', label: '任务管理' },
   { key: 'approval.handle', label: '审批处理' },
   { key: 'settings.manage', label: '系统设置' },
+  { key: 'prompt:read', label: 'Prompt 查看' },
+  { key: 'prompt:write', label: 'Prompt 编辑' },
+  { key: 'prompt:publish', label: 'Prompt 发布/回滚' },
+  { key: 'prompt:debug', label: 'Prompt 试跑调 LLM' },
 ] as const;
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]['key'];

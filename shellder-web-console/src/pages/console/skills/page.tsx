@@ -22,6 +22,13 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ellipsisTextColumn,
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { Tool, listTools } from '@/lib/tool';
 import {
@@ -40,8 +47,10 @@ import {
   SkillDetail,
   SkillExecStatus,
   SkillExecution,
+  SkillTrigger,
   SkillRiskLevel,
   SkillStatus,
+  TriggerTestCandidate,
   TriggerTestResult,
   UpdateSkillInput,
   createSkill,
@@ -383,51 +392,58 @@ export default function SkillPage() {
   };
 
   const columns: ColumnsType<Skill> = [
-    {
+    withNowrap<Skill>({
       title: '技能名称',
       dataIndex: 'name',
-      render: (v: string, row) => <a onClick={() => openDetail(row)}>{v}</a>,
-    },
-    { title: '编码', dataIndex: 'code', width: 120 },
-    {
+      width: 180,
+      render: (v: string, row) => renderEllipsisLink(v, () => openDetail(row)),
+    }),
+    ellipsisTextColumn<Skill>('编码', 'code', 120),
+    withNowrap<Skill>({
       title: '能力类型',
       dataIndex: 'capabilityType',
       width: 100,
       render: (t: CapabilityType) => (
         <Tag color={CAPABILITY_TYPE_META[t].color}>{CAPABILITY_TYPE_META[t].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<Skill>({
       title: '风险',
       dataIndex: 'riskLevel',
       width: 70,
-      render: (r: SkillRiskLevel) => <Tag color={RISK_LEVEL_META[r].color}>{RISK_LEVEL_META[r].label}</Tag>,
-    },
-    {
+      render: (r: SkillRiskLevel) => (
+        <Tag color={RISK_LEVEL_META[r].color}>{RISK_LEVEL_META[r].label}</Tag>
+      ),
+    }),
+    withNowrap<Skill>({
       title: '需确认',
       dataIndex: 'needConfirmation',
       width: 70,
-      render: (b: boolean) => b ? <Tag color="orange">是</Tag> : <Typography.Text type="secondary">否</Typography.Text>,
-    },
-    {
+      render: (b: boolean) =>
+        b ? <Tag color="orange">是</Tag> : <Typography.Text type="secondary">否</Typography.Text>,
+    }),
+    withNowrap<Skill>({
       title: '入口',
       dataIndex: 'entryMode',
       width: 110,
-      render: (m: string, row) => m === 'workflow' ? <Tag color="purple">Workflow</Tag> : <Tag color="blue">Tool</Tag>,
-    },
-    {
+      render: (m: string) =>
+        m === 'workflow' ? <Tag color="purple">Workflow</Tag> : <Tag color="blue">Tool</Tag>,
+    }),
+    withNowrap<Skill>({
       title: '最近调用',
       dataIndex: 'lastCalledAt',
       width: 160,
       render: (v: string | null) => fmt(v),
-    },
-    {
+    }),
+    withNowrap<Skill>({
       title: '状态',
       dataIndex: 'status',
       width: 100,
-      render: (s: SkillStatus) => <Tag color={SKILL_STATUS_META[s].color}>{SKILL_STATUS_META[s].label}</Tag>,
-    },
-    {
+      render: (s: SkillStatus) => (
+        <Tag color={SKILL_STATUS_META[s].color}>{SKILL_STATUS_META[s].label}</Tag>
+      ),
+    }),
+    withNowrap<Skill>({
       title: '操作',
       key: 'actions',
       width: 240,
@@ -440,24 +456,45 @@ export default function SkillPage() {
           ) : (
             <a onClick={() => handleToggleStatus(row, 'enabled')}>启用</a>
           )}
-          <a className="text-red-500" onClick={() => handleDelete(row)}>删除</a>
+          <a className="text-red-500" onClick={() => handleDelete(row)}>
+            删除
+          </a>
         </Space>
       ),
-    },
+    }),
   ];
 
   const execColumns: ColumnsType<SkillExecution> = [
-    { title: '时间', dataIndex: 'startedAt', width: 160, render: (v: string) => fmt(v) },
-    {
+    withNowrap<SkillExecution>({ title: '时间', dataIndex: 'startedAt', width: 160, render: (v: string) => fmt(v) }),
+    withNowrap<SkillExecution>({
       title: '状态',
       dataIndex: 'status',
       width: 80,
-      render: (s: SkillExecStatus) => <Tag color={EXEC_STATUS_META[s].color}>{EXEC_STATUS_META[s].label}</Tag>,
-    },
-    { title: '会话', dataIndex: 'sessionId', width: 140, ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '任务', dataIndex: 'taskId', width: 140, ellipsis: true, render: (v: string | null) => v || '—' },
-    { title: '失败原因', dataIndex: 'errorSummary', ellipsis: true, render: (v: string | null) => v || '—' },
-    {
+      render: (s: SkillExecStatus) => (
+        <Tag color={EXEC_STATUS_META[s].color}>{EXEC_STATUS_META[s].label}</Tag>
+      ),
+    }),
+    withNowrap<SkillExecution>({
+      title: '会话',
+      dataIndex: 'sessionId',
+      width: 140,
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<SkillExecution>({
+      title: '任务',
+      dataIndex: 'taskId',
+      width: 140,
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<SkillExecution>({
+      title: '失败原因',
+      dataIndex: 'errorSummary',
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<SkillExecution>({
       title: '耗时',
       key: 'duration',
       width: 80,
@@ -466,7 +503,7 @@ export default function SkillPage() {
         const ms = new Date(row.finishedAt).getTime() - new Date(row.startedAt).getTime();
         return `${ms}ms`;
       },
-    },
+    }),
   ];
 
   return (
@@ -498,7 +535,13 @@ export default function SkillPage() {
             <Select allowClear placeholder="状态" style={{ width: 110 }} options={SKILL_STATUS_OPTIONS} value={statusFilter} onChange={setStatusFilter} />
             <Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button>
           </Space>
-          <Table<Skill> rowKey="id" loading={loading} columns={columns} dataSource={data} pagination={false}
+          <Table<Skill>
+            rowKey="id"
+            loading={loading}
+            columns={columns}
+            dataSource={data}
+            pagination={false}
+            {...tableEllipsisLayout}
             locale={{ emptyText: <Empty description="该租户暂无技能书" /> }}
           />
         </>
@@ -664,7 +707,13 @@ export default function SkillPage() {
 
       {/* ── 调用记录抽屉 ────────────────────────── */}
       <Drawer title={`调用记录 — ${execSkillName}`} width={800} open={!!execSkillId} onClose={() => setExecSkillId(undefined)} destroyOnClose>
-        <Table<SkillExecution> rowKey="id" loading={execLoading} columns={execColumns} dataSource={execData} pagination={false}
+        <Table<SkillExecution>
+          rowKey="id"
+          loading={execLoading}
+          columns={execColumns}
+          dataSource={execData}
+          pagination={false}
+          {...tableEllipsisLayout}
           locale={{ emptyText: <Empty description="暂无调用记录" /> }}
         />
       </Drawer>
@@ -706,13 +755,17 @@ function SkillDetailView({ detail }: { detail: SkillDetail }) {
       {detail.triggers.length > 0 && (
         <>
           <Typography.Title level={5} className="!mt-6">触发示例</Typography.Title>
-          <Table rowKey="id" size="small" pagination={false}
+          <Table
+            rowKey="id"
+            size="small"
+            pagination={false}
             columns={[
-              { title: '文本', dataIndex: 'triggerText' },
-              { title: '类型', dataIndex: 'triggerType', width: 80 },
-              { title: '优先级', dataIndex: 'priority', width: 80 },
+              ellipsisTextColumn<SkillTrigger>('文本', 'triggerText', 200),
+              withNowrap<SkillTrigger>({ title: '类型', dataIndex: 'triggerType', width: 80 }),
+              withNowrap<SkillTrigger>({ title: '优先级', dataIndex: 'priority', width: 80 }),
             ]}
             dataSource={detail.triggers}
+            {...tableEllipsisLayout}
           />
         </>
       )}
@@ -747,17 +800,36 @@ function SkillDetailView({ detail }: { detail: SkillDetail }) {
       {detail.recentExecutions.length > 0 && (
         <>
           <Typography.Title level={5} className="!mt-6">最近调用</Typography.Title>
-          <Table rowKey="id" size="small" pagination={false}
+          <Table
+            rowKey="id"
+            size="small"
+            pagination={false}
             columns={[
-              { title: '时间', dataIndex: 'startedAt', width: 160, render: (v: string) => fmt(v) },
-              {
-                title: '状态', dataIndex: 'status', width: 80,
-                render: (s: SkillExecStatus) => <Tag color={EXEC_STATUS_META[s].color}>{EXEC_STATUS_META[s].label}</Tag>,
-              },
-              { title: '会话', dataIndex: 'sessionId', width: 120, ellipsis: true, render: (v: string | null) => v || '—' },
-              { title: '失败原因', dataIndex: 'errorSummary', ellipsis: true, render: (v: string | null) => v || '—' },
+              withNowrap<SkillExecution>({ title: '时间', dataIndex: 'startedAt', width: 160, render: (v: string) => fmt(v) }),
+              withNowrap<SkillExecution>({
+                title: '状态',
+                dataIndex: 'status',
+                width: 80,
+                render: (s: SkillExecStatus) => (
+                  <Tag color={EXEC_STATUS_META[s].color}>{EXEC_STATUS_META[s].label}</Tag>
+                ),
+              }),
+              withNowrap<SkillExecution>({
+                title: '会话',
+                dataIndex: 'sessionId',
+                width: 120,
+                ellipsis: true,
+                render: (v: string | null) => renderOptionalText(v),
+              }),
+              withNowrap<SkillExecution>({
+                title: '失败原因',
+                dataIndex: 'errorSummary',
+                ellipsis: true,
+                render: (v: string | null) => renderOptionalText(v),
+              }),
             ]}
             dataSource={detail.recentExecutions}
+            {...tableEllipsisLayout}
           />
         </>
       )}
@@ -794,17 +866,30 @@ function TriggerTestResultView({ result }: { result: TriggerTestResult }) {
       {result.candidates.length > 0 && (
         <>
           <Typography.Title level={5} className="!mt-4">候选列表</Typography.Title>
-          <Table rowKey="skillId" size="small" pagination={false}
+          <Table
+            rowKey="skillId"
+            size="small"
+            pagination={false}
             columns={[
-              { title: '技能名称', dataIndex: 'skillName' },
-              { title: '编码', dataIndex: 'skillCode', width: 100 },
-              {
-                title: '能力类型', dataIndex: 'capabilityType', width: 80,
-                render: (t: CapabilityType) => <Tag color={CAPABILITY_TYPE_META[t].color}>{CAPABILITY_TYPE_META[t].label}</Tag>,
-              },
-              { title: '分数', dataIndex: 'score', width: 70, render: (v: number) => v.toFixed(2) },
-              { title: '原因', dataIndex: 'reason', ellipsis: true },
+              ellipsisTextColumn<TriggerTestCandidate>('技能名称', 'skillName', 160),
+              ellipsisTextColumn<TriggerTestCandidate>('编码', 'skillCode', 100),
+              withNowrap<TriggerTestCandidate>({
+                title: '能力类型',
+                dataIndex: 'capabilityType',
+                width: 80,
+                render: (t: CapabilityType) => (
+                  <Tag color={CAPABILITY_TYPE_META[t].color}>{CAPABILITY_TYPE_META[t].label}</Tag>
+                ),
+              }),
+              withNowrap<TriggerTestCandidate>({
+                title: '分数',
+                dataIndex: 'score',
+                width: 70,
+                render: (v: number) => v.toFixed(2),
+              }),
+              ellipsisTextColumn<TriggerTestCandidate>('原因', 'reason', 200),
             ]}
+            {...tableEllipsisLayout}
             dataSource={result.candidates}
           />
         </>

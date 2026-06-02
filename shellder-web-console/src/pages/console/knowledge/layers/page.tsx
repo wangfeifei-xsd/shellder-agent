@@ -25,6 +25,13 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import {
+  EllipsisCell,
+  ellipsisTextColumn,
+  renderEllipsisLink,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { KnowledgeProxyErrorAlert } from '@/components/console/KnowledgeProxyErrorAlert';
 import {
@@ -205,26 +212,30 @@ export default function KnowledgeLayersPage() {
   };
 
   const columns: ColumnsType<LayerEntry> = [
-    {
+    withNowrap<LayerEntry>({
       title: '名称',
       dataIndex: 'name',
+      width: 200,
       render: (name: string, row) =>
         row.is_dir ? (
-          <a onClick={() => navigateTo(row.path.endsWith('/') ? row.path : `${row.path}/`)}>
-            <FolderOpenOutlined className="mr-1" />{name}
-          </a>
+          <EllipsisCell tooltip={name}>
+            <a onClick={() => navigateTo(row.path.endsWith('/') ? row.path : `${row.path}/`)}>
+              <FolderOpenOutlined className="mr-1" />
+              {name}
+            </a>
+          </EllipsisCell>
         ) : (
-          <a onClick={() => openFile(row.path)}>{name}</a>
+          renderEllipsisLink(name, () => openFile(row.path))
         ),
-    },
-    { title: '路径', dataIndex: 'path', ellipsis: true },
-    {
+    }),
+    ellipsisTextColumn<LayerEntry>('路径', 'path', 240),
+    withNowrap<LayerEntry>({
       title: '大小',
       dataIndex: 'size',
       width: 100,
       render: (v: number | undefined, row) => (row.is_dir ? '—' : formatSize(v)),
-    },
-    {
+    }),
+    withNowrap<LayerEntry>({
       title: '嵌入状态',
       dataIndex: 'embedding_status',
       width: 100,
@@ -233,8 +244,8 @@ export default function KnowledgeLayersPage() {
         const m = EMBEDDING_META[s];
         return m ? <Tag color={m.color}>{m.label}</Tag> : s;
       },
-    },
-    {
+    }),
+    withNowrap<LayerEntry>({
       title: '操作',
       key: 'actions',
       width: 140,
@@ -242,8 +253,12 @@ export default function KnowledgeLayersPage() {
         <Space size="small">
           {!row.is_dir && (
             <>
-              <a onClick={() => openFile(row.path)}><EditOutlined /> 编辑</a>
-              <a className="text-red-500" onClick={() => handleDelete(row)}><DeleteOutlined /></a>
+              <a onClick={() => openFile(row.path)}>
+                <EditOutlined /> 编辑
+              </a>
+              <a className="text-red-500" onClick={() => handleDelete(row)}>
+                <DeleteOutlined />
+              </a>
             </>
           )}
           {row.is_dir && (
@@ -251,7 +266,7 @@ export default function KnowledgeLayersPage() {
           )}
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -299,8 +314,14 @@ export default function KnowledgeLayersPage() {
             })),
           ]} />
 
-          <Table<LayerEntry> rowKey="path" loading={loading} columns={columns} dataSource={entries}
-            pagination={false} size="middle"
+          <Table<LayerEntry>
+            rowKey="path"
+            loading={loading}
+            columns={columns}
+            dataSource={entries}
+            pagination={false}
+            size="middle"
+            {...tableEllipsisLayout}
           />
         </>
       )}

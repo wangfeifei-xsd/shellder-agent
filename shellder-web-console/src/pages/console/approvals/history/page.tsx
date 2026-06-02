@@ -15,6 +15,12 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  EllipsisCell,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   APPROVAL_STATUS_META,
@@ -83,64 +89,66 @@ export default function ApprovalHistoryPage() {
   }, [load]);
 
   const columns: ColumnsType<ApprovalItem> = [
-    {
+    withNowrap<ApprovalItem>({
       title: '动作类型',
       dataIndex: 'actionType',
       width: 160,
       render: (v: string, row) => (
-        <Link to={`/approvals/${row.id}`}>{v}</Link>
+        <EllipsisCell tooltip={v}>
+          <Link to={`/approvals/${row.id}`}>{v}</Link>
+        </EllipsisCell>
       ),
-    },
-    {
+    }),
+    withNowrap<ApprovalItem>({
       title: '动作摘要',
       dataIndex: 'actionSummary',
       ellipsis: true,
-      render: (v: string | null) => v ?? '—',
-    },
-    {
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<ApprovalItem>({
       title: '风险等级',
       dataIndex: 'riskLevel',
       width: 100,
       render: (v: ApprovalRiskLevel) => (
         <Tag color={RISK_LEVEL_META[v].color}>{RISK_LEVEL_META[v].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<ApprovalItem>({
       title: '状态',
       dataIndex: 'status',
       width: 100,
       render: (v: ApprovalStatus) => (
-        <Tag color={APPROVAL_STATUS_META[v].color}>
-          {APPROVAL_STATUS_META[v].label}
-        </Tag>
+        <Tag color={APPROVAL_STATUS_META[v].color}>{APPROVAL_STATUS_META[v].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<ApprovalItem>({
       title: '审批人',
       dataIndex: 'reviewerName',
       width: 120,
-      render: (v: string | null) => v ?? '—',
-    },
-    {
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<ApprovalItem>({
       title: '审批时间',
       dataIndex: 'reviewedAt',
       width: 170,
       render: fmt,
-    },
-    {
+    }),
+    withNowrap<ApprovalItem>({
       title: '审批意见',
       dataIndex: 'opinion',
       ellipsis: true,
-      render: (v: string | null) => v ?? '—',
-    },
-    {
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<ApprovalItem>({
       title: '操作',
       key: 'actions',
       width: 80,
       render: (_, row) => (
-        <Link to={`/approvals/${row.id}`}>详情</Link>
+        <EllipsisCell>
+          <Link to={`/approvals/${row.id}`}>详情</Link>
+        </EllipsisCell>
       ),
-    },
+    }),
   ];
 
   return (
@@ -185,6 +193,7 @@ export default function ApprovalHistoryPage() {
             loading={loading}
             columns={columns}
             dataSource={data}
+            {...tableEllipsisLayout}
             pagination={{
               current: page,
               pageSize,

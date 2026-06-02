@@ -4,6 +4,11 @@ import { ReloadOutlined } from '@ant-design/icons';
 import { App, Button, Checkbox, Space, Switch, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  EllipsisCell,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { CapabilityKey, CatalogItem, fetchCatalog } from '@/lib/auth';
 import {
   PermissionPolicyItem,
@@ -56,35 +61,39 @@ export default function PermissionPolicyPage() {
   };
 
   const columns: ColumnsType<PermissionPolicyItem> = [
-    {
+    withNowrap<PermissionPolicyItem>({
       title: '角色',
       dataIndex: 'roleName',
+      width: 200,
       render: (v: string, row) => (
-        <Space>
-          <Typography.Text strong>{v}</Typography.Text>
-          <Typography.Text type="secondary">{row.roleCode}</Typography.Text>
-          {row.isSystem ? <Tag color="gold">内置</Tag> : null}
-        </Space>
+        <EllipsisCell tooltip={`${v} (${row.roleCode})`}>
+          <Space size={4} className="flex-nowrap">
+            <Typography.Text strong>{v}</Typography.Text>
+            <Typography.Text type="secondary">{row.roleCode}</Typography.Text>
+            {row.isSystem ? <Tag color="gold" className="shrink-0">内置</Tag> : null}
+          </Space>
+        </EllipsisCell>
       ),
-    },
-    {
+    }),
+    withNowrap<PermissionPolicyItem>({
       title: '四类能力访问权限',
       dataIndex: 'capabilities',
       render: (caps: CapabilityKey[], row) => (
         <Checkbox.Group
+          className="flex flex-nowrap gap-2 overflow-x-auto"
           value={caps}
           disabled={savingId === row.roleId}
           onChange={(v) => persist(row.roleId, { capabilities: v as CapabilityKey[] })}
         >
           {capabilities.map((c) => (
-            <Checkbox key={c.key} value={c.key}>
+            <Checkbox key={c.key} value={c.key} className="!mr-0 shrink-0">
               {c.label}
             </Checkbox>
           ))}
         </Checkbox.Group>
       ),
-    },
-    {
+    }),
+    withNowrap<PermissionPolicyItem>({
       title: '高风险动作审批权限',
       dataIndex: 'canApproveHighRisk',
       width: 180,
@@ -95,7 +104,7 @@ export default function PermissionPolicyPage() {
           onChange={(checked) => persist(row.roleId, { canApproveHighRisk: checked })}
         />
       ),
-    },
+    }),
   ];
 
   return (
@@ -117,6 +126,7 @@ export default function PermissionPolicyPage() {
         columns={columns}
         dataSource={items}
         pagination={false}
+        {...tableEllipsisLayout}
       />
     </>
   );

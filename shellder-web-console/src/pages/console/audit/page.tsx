@@ -16,6 +16,12 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
+import {
   AuditStatus,
   ToolCallAudit,
   listToolCallAudits,
@@ -56,22 +62,28 @@ export default function ToolCallAuditPage() {
   }, [load]);
 
   const columns: ColumnsType<ToolCallAudit> = [
-    {
+    withNowrap<ToolCallAudit>({
       title: 'Tool 名称',
       dataIndex: 'toolName',
+      width: 200,
       render: (v: string, row) => (
-        <Space>
-          <a onClick={() => setDetail(row)}>{v}</a>
-          {row.highRisk ? <Tag color="volcano">高风险</Tag> : null}
+        <Space size={4} className="flex-nowrap">
+          {renderEllipsisLink(v, () => setDetail(row))}
+          {row.highRisk ? (
+            <Tag className="shrink-0" color="volcano">
+              高风险
+            </Tag>
+          ) : null}
         </Space>
       ),
-    },
-    {
+    }),
+    withNowrap<ToolCallAudit>({
       title: '调用人',
       dataIndex: 'callerName',
-      render: (v: string | null) => v || <Typography.Text type="secondary">系统</Typography.Text>,
-    },
-    {
+      width: 120,
+      render: (v: string | null) => (v ? renderOptionalText(v) : renderOptionalText('系统')),
+    }),
+    withNowrap<ToolCallAudit>({
       title: '状态',
       dataIndex: 'status',
       width: 100,
@@ -79,25 +91,25 @@ export default function ToolCallAuditPage() {
         const meta = statusMeta(s);
         return <Tag color={meta.color}>{meta.label}</Tag>;
       },
-    },
-    {
+    }),
+    withNowrap<ToolCallAudit>({
       title: '耗时',
       dataIndex: 'durationMs',
       width: 100,
       render: (v: number | null) => (v == null ? '—' : `${v} ms`),
-    },
-    {
+    }),
+    withNowrap<ToolCallAudit>({
       title: '入参摘要',
       dataIndex: 'requestSummary',
       ellipsis: true,
-      render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text>,
-    },
-    {
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<ToolCallAudit>({
       title: '时间',
       dataIndex: 'createdAt',
       width: 180,
       render: (v: string) => fmt(v),
-    },
+    }),
   ];
 
   return (
@@ -144,6 +156,7 @@ export default function ToolCallAuditPage() {
         columns={columns}
         dataSource={data}
         locale={{ emptyText: '暂无工具调用审计（07 工具模块起写入真实数据）' }}
+        {...tableEllipsisLayout}
         pagination={{
           current: page,
           pageSize,

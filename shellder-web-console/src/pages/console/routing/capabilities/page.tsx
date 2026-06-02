@@ -19,6 +19,13 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ellipsisTextColumn,
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   Capability,
@@ -190,30 +197,66 @@ export default function CapabilitiesPage() {
   };
 
   const columns: ColumnsType<Capability> = [
-    { title: '能力名称', dataIndex: 'name', render: (v: string, row) => <a onClick={() => openEdit(row)}>{v}</a> },
-    {
-      title: '类型', dataIndex: 'type', width: 100,
-      render: (t: CapabilityType) => <Tag color={CAPABILITY_TYPE_META[t].color}>{CAPABILITY_TYPE_META[t].label}</Tag>,
-    },
-    { title: '适用系统', dataIndex: 'applicableSystem', width: 140, render: (v: string | null) => v || '—' },
-    { title: '优先级', dataIndex: 'priority', width: 80 },
-    { title: '路由规则数', dataIndex: 'routingRules', width: 100, render: (r: { id: string }[] | undefined) => r?.length ?? 0 },
-    {
-      title: '状态', dataIndex: 'status', width: 90,
-      render: (s: CapabilityStatus, row) => (
-        <Switch checked={s === 'enabled'} checkedChildren="启用" unCheckedChildren="停用" onChange={(c) => handleToggleStatus(row, c)} />
+    withNowrap<Capability>({
+      title: '能力名称',
+      dataIndex: 'name',
+      width: 180,
+      render: (v: string, row) => renderEllipsisLink(v, () => openEdit(row)),
+    }),
+    withNowrap<Capability>({
+      title: '类型',
+      dataIndex: 'type',
+      width: 100,
+      render: (t: CapabilityType) => (
+        <Tag color={CAPABILITY_TYPE_META[t].color}>{CAPABILITY_TYPE_META[t].label}</Tag>
       ),
-    },
-    { title: '创建时间', dataIndex: 'createdAt', width: 170, render: fmt },
-    {
-      title: '操作', key: 'actions', width: 120,
+    }),
+    withNowrap<Capability>({
+      title: '适用系统',
+      dataIndex: 'applicableSystem',
+      width: 140,
+      ellipsis: true,
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    ellipsisTextColumn<Capability>('优先级', 'priority', 80),
+    withNowrap<Capability>({
+      title: '路由规则数',
+      dataIndex: 'routingRules',
+      width: 100,
+      render: (r: { id: string }[] | undefined) => r?.length ?? 0,
+    }),
+    withNowrap<Capability>({
+      title: '状态',
+      dataIndex: 'status',
+      width: 90,
+      render: (s: CapabilityStatus, row) => (
+        <Switch
+          checked={s === 'enabled'}
+          checkedChildren="启用"
+          unCheckedChildren="停用"
+          onChange={(c) => handleToggleStatus(row, c)}
+        />
+      ),
+    }),
+    withNowrap<Capability>({
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 170,
+      render: fmt,
+    }),
+    withNowrap<Capability>({
+      title: '操作',
+      key: 'actions',
+      width: 120,
       render: (_, row) => (
         <Space size="small">
           <a onClick={() => openEdit(row)}>编辑</a>
-          <a className="text-red-500" onClick={() => handleDelete(row)}>删除</a>
+          <a className="text-red-500" onClick={() => handleDelete(row)}>
+            删除
+          </a>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -234,7 +277,15 @@ export default function CapabilitiesPage() {
             <Select allowClear placeholder="状态" style={{ width: 120 }} options={[{ value: 'enabled', label: '启用' }, { value: 'disabled', label: '停用' }]} value={statusFilter} onChange={setStatusFilter} />
             <Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button>
           </Space>
-          <Table<Capability> rowKey="id" loading={loading} columns={columns} dataSource={data} pagination={false} locale={{ emptyText: <Empty description="该租户暂无能力配置" /> }} />
+          <Table<Capability>
+            rowKey="id"
+            loading={loading}
+            columns={columns}
+            dataSource={data}
+            pagination={false}
+            locale={{ emptyText: <Empty description="该租户暂无能力配置" /> }}
+            {...tableEllipsisLayout}
+          />
         </>
       )}
 

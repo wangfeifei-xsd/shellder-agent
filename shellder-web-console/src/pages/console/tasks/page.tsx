@@ -20,6 +20,13 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  EllipsisCell,
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   CAPABILITY_TYPE_META,
@@ -111,31 +118,32 @@ export default function TaskListPage() {
   };
 
   const columns: ColumnsType<TaskItem> = [
-    {
+    withNowrap<TaskItem>({
       title: '标题',
       dataIndex: 'title',
       ellipsis: true,
-      render: (v: string | null, row) => (
-        <a onClick={() => openDetail(row)}>{v || `任务 ${row.id.slice(0, 8)}`}</a>
-      ),
-    },
-    {
+      render: (v: string | null, row) => {
+        const text = v || `任务 ${row.id.slice(0, 8)}`;
+        return renderEllipsisLink(text, () => openDetail(row));
+      },
+    }),
+    withNowrap<TaskItem>({
       title: '类型',
       dataIndex: 'type',
       width: 80,
       render: (t: TaskType) => (
         <Tag color={TASK_TYPE_META[t].color}>{TASK_TYPE_META[t].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<TaskItem>({
       title: '状态',
       dataIndex: 'status',
       width: 90,
       render: (s: TaskStatus) => (
         <Tag color={TASK_STATUS_META[s].color}>{TASK_STATUS_META[s].label}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<TaskItem>({
       title: '能力类型',
       dataIndex: 'capabilityType',
       width: 100,
@@ -143,28 +151,28 @@ export default function TaskListPage() {
         c ? (
           <Tag color={CAPABILITY_TYPE_META[c].color}>{CAPABILITY_TYPE_META[c].label}</Tag>
         ) : (
-          <Typography.Text type="secondary">—</Typography.Text>
+          renderOptionalText(undefined)
         ),
-    },
-    {
+    }),
+    withNowrap<TaskItem>({
       title: '当前节点',
       dataIndex: 'currentNode',
       ellipsis: true,
       width: 150,
-      render: (v: string | null) => v || '—',
-    },
-    {
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<TaskItem>({
       title: '重试',
       width: 70,
       render: (_: unknown, row) => `${row.retryCount}/${row.maxRetries}`,
-    },
-    {
+    }),
+    withNowrap<TaskItem>({
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 170,
       render: (v: string) => fmt(v),
-    },
-    {
+    }),
+    withNowrap<TaskItem>({
       title: '操作',
       width: 160,
       render: (_: unknown, row) => (
@@ -174,7 +182,7 @@ export default function TaskListPage() {
           <Link to={`/tasks/logs?taskId=${row.id}`}>日志</Link>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -243,6 +251,7 @@ export default function TaskListPage() {
             loading={loading}
             columns={columns}
             dataSource={data}
+            {...tableEllipsisLayout}
             pagination={{
               current: page,
               pageSize,

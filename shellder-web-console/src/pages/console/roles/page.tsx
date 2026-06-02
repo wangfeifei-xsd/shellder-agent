@@ -18,6 +18,12 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
+import {
+  ellipsisTextColumn,
+  renderEllipsisLink,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { CapabilityKey, PermissionCatalog, fetchCatalog } from '@/lib/auth';
 import {
   CreateRoleInput,
@@ -157,38 +163,42 @@ export default function RoleListPage() {
   };
 
   const columns: ColumnsType<Role> = [
-    {
+    withNowrap<Role>({
       title: '角色名称',
       dataIndex: 'name',
+      width: 180,
       render: (v: string, row) => (
-        <Space>
-          <a onClick={() => openEdit(row)}>{v}</a>
-          {row.isSystem ? <Tag color="gold">内置</Tag> : null}
+        <Space size={4} className="flex-nowrap">
+          {renderEllipsisLink(v, () => openEdit(row))}
+          {row.isSystem ? <Tag color="gold" className="shrink-0">内置</Tag> : null}
         </Space>
       ),
-    },
-    { title: '编码', dataIndex: 'code' },
-    {
+    }),
+    ellipsisTextColumn<Role>('编码', 'code', 120),
+    withNowrap<Role>({
       title: '菜单权限',
       dataIndex: 'menus',
+      width: 100,
       render: (menus: string[]) =>
         menus.includes('*') ? (
           <Tag color="gold">全部</Tag>
         ) : (
           <Typography.Text>{menus.length} 项</Typography.Text>
         ),
-    },
-    {
+    }),
+    withNowrap<Role>({
       title: '能力权限',
       dataIndex: ['policy', 'capabilities'],
+      width: 100,
       render: (caps: string[]) => <Typography.Text>{caps?.length ?? 0} 项</Typography.Text>,
-    },
-    {
+    }),
+    withNowrap<Role>({
       title: '用户数',
       dataIndex: 'userCount',
+      width: 80,
       render: (v?: number) => v ?? 0,
-    },
-    {
+    }),
+    withNowrap<Role>({
       title: '操作',
       key: 'actions',
       width: 160,
@@ -202,7 +212,7 @@ export default function RoleListPage() {
           )}
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -234,6 +244,7 @@ export default function RoleListPage() {
         columns={columns}
         dataSource={data}
         pagination={false}
+        {...tableEllipsisLayout}
       />
 
       <Drawer

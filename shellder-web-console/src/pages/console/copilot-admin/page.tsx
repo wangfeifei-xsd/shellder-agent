@@ -16,6 +16,13 @@ import {
   message,
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import {
+  EllipsisCell,
+  ellipsisTextColumn,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { apiFetch } from '@/lib/api';
 
 const { Title } = Typography;
@@ -131,40 +138,50 @@ export default function CopilotAdminPage() {
   };
 
   const columns = [
-    { title: '配置名称', dataIndex: 'name', key: 'name' },
-    {
+    ellipsisTextColumn<CopilotConfigItem>('配置名称', 'name', 160),
+    withNowrap<CopilotConfigItem>({
       title: '关联应用',
       key: 'app',
-      render: (_: unknown, r: CopilotConfigItem) => r.app?.name ?? r.appId,
-    },
-    {
+      render: (_: unknown, r: CopilotConfigItem) => {
+        const text = r.app?.name ?? r.appId;
+        return <EllipsisCell tooltip={text}>{text}</EllipsisCell>;
+      },
+    }),
+    withNowrap<CopilotConfigItem>({
       title: '状态',
       dataIndex: 'status',
       key: 'status',
+      width: 90,
       render: (s: string) => (
         <Tag color={s === 'enabled' ? 'success' : 'default'}>{s === 'enabled' ? '启用' : '禁用'}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<CopilotConfigItem>({
       title: '域名白名单',
       key: 'domains',
-      render: (_: unknown, r: CopilotConfigItem) =>
-        (r.domainWhitelist ?? []).length > 0
-          ? (r.domainWhitelist as string[]).slice(0, 2).join(', ') +
-            ((r.domainWhitelist as string[]).length > 2 ? '…' : '')
-          : '—',
-    },
-    {
+      ellipsis: true,
+      render: (_: unknown, r: CopilotConfigItem) => {
+        const domains = (r.domainWhitelist ?? []) as string[];
+        const text =
+          domains.length > 0
+            ? domains.slice(0, 2).join(', ') + (domains.length > 2 ? '…' : '')
+            : '';
+        return renderOptionalText(text || undefined);
+      },
+    }),
+    withNowrap<CopilotConfigItem>({
       title: '创建时间',
       dataIndex: 'createdAt',
       key: 'createdAt',
+      width: 170,
       render: (v: string) => new Date(v).toLocaleString('zh-CN'),
-    },
-    {
+    }),
+    withNowrap<CopilotConfigItem>({
       title: '操作',
       key: 'action',
+      width: 160,
       render: (_: unknown, record: CopilotConfigItem) => (
-        <Space>
+        <Space size="small">
           <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
             编辑
           </Button>
@@ -173,7 +190,7 @@ export default function CopilotAdminPage() {
           </Button>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -194,6 +211,7 @@ export default function CopilotAdminPage() {
           dataSource={configs}
           columns={columns}
           pagination={false}
+          {...tableEllipsisLayout}
         />
       </Card>
 

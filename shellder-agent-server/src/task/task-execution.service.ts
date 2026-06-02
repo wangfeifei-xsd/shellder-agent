@@ -412,8 +412,8 @@ export class TaskExecutionService {
     }
 
     const sqlConfig: SqlToolConfig = (tool.config as any)?.sql ?? {
-      tableWhitelist: [],
-      fieldWhitelist: [],
+      tableBlacklist: [],
+      fieldBlacklist: [],
       maxRows: 100,
       maxExecutionMs: 3000,
       templates: [],

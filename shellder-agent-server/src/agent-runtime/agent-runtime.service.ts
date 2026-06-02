@@ -6,7 +6,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Approval, AuditStatus, MessageType, Prisma } from '@prisma/client';
+import { Approval, AuditStatus, CapabilityType, MessageType, Prisma, ToolType } from '@prisma/client';
+import { RoutingCandidate, RoutingTestResult } from '../capability/dto/routing-test.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { AuditService } from '../audit/audit.service';
@@ -27,6 +28,13 @@ import { ConfirmationActor } from '../approval/approval-runtime.types';
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 2;
 const CONTEXT_MESSAGE_LIMIT = 20;
+
+const CAPABILITY_TYPE_LABELS: Record<string, string> = {
+  qa: '问答型',
+  query: '查询型',
+  action: '操作型',
+  workflow: '流程型',
+};
 
 /**
  * Agent Runtime 编排骨架（架构 §4.5 / 执行计划 §4.1）。
@@ -132,7 +140,12 @@ export class AgentRuntimeService {
    */
   private async executeOrchestration(
     user: AuthUser,
-    session: { id: string; tenantId: string; userId: string },
+    session: {
+      id: string;
+      tenantId: string;
+      userId: string;
+      capabilityType?: CapabilityType | null;
+    },
     userMessage: string,
     userMessageId: string,
   ): Promise<{
@@ -146,19 +159,29 @@ export class AgentRuntimeService {
     const emitSse = (event: SseEvent) => this.sseEmitter.emit(sessionId, event);
 
     try {
-      // Step 2: 路由
-      const routingResult = await this.routingEngine.route(
+      // Step 2: 路由（会话已指定 capabilityType 时固定能力，供演示页/调试）
+      const pinnedType = session.capabilityType ?? null;
+      let routingResult = await this.routingEngine.route(
         tenantId,
         userMessage,
         user.id,
       );
 
+      if (pinnedType) {
+        routingResult = this.applyPinnedCapabilityType(routingResult, pinnedType);
+      }
+
       const capabilityType = routingResult.capabilityType;
+      const toolIds = await this.resolveToolIds(
+        tenantId,
+        capabilityType,
+        routingResult.candidates,
+      );
 
       // 更新 Session.capabilityType
       await this.prisma.session.update({
         where: { id: sessionId },
-        data: { capabilityType: capabilityType as any },
+        data: { capabilityType: capabilityType as CapabilityType },
       });
 
       // 路由结果写入消息元数据（验收标准 2）
@@ -169,6 +192,8 @@ export class AgentRuntimeService {
         reason: routingResult.reason,
         candidates: routingResult.candidates,
         needConfirmation: routingResult.needConfirmation,
+        pinnedCapability: !!pinnedType,
+        resolvedToolIds: toolIds,
       });
 
       // 构建运行时上下文
@@ -182,7 +207,7 @@ export class AgentRuntimeService {
         capabilityName: routingResult.capabilityName,
         routingReason: routingResult.reason,
         routingCandidates: routingResult.candidates,
-        toolIds: routingResult.candidates?.[0]?.toolIds ?? [],
+        toolIds,
         needConfirmation: routingResult.needConfirmation,
         timeoutMs: DEFAULT_TIMEOUT_MS,
         maxRetries: DEFAULT_MAX_RETRIES,
@@ -305,7 +330,8 @@ export class AgentRuntimeService {
             callerUserId: user.id,
             callerName: user.username,
             sessionId,
-            requestSummary: userMessage,
+            requestSummary:
+              handlerResult.auditRequestSummary ?? userMessage,
             status: handlerResult.success
               ? AuditStatus.success
               : AuditStatus.failed,
@@ -661,6 +687,58 @@ export class AgentRuntimeService {
   }
 
   // ── 辅助方法 ──────────────────────────────────────────────
+
+  /** 演示/调试：创建 Session 时已指定能力类型，不再被自动路由覆盖 */
+  private applyPinnedCapabilityType(
+    routingResult: RoutingTestResult,
+    pinnedType: CapabilityType,
+  ): RoutingTestResult {
+    const pinnedCandidate = routingResult.candidates.find((c) => c.type === pinnedType);
+    return {
+      ...routingResult,
+      capabilityType: pinnedType,
+      capabilityName: CAPABILITY_TYPE_LABELS[pinnedType] ?? pinnedType,
+      reason: `会话指定能力类型：${CAPABILITY_TYPE_LABELS[pinnedType] ?? pinnedType}（演示模式，不采用自动路由结果）`,
+      candidates: pinnedCandidate
+        ? [pinnedCandidate, ...routingResult.candidates.filter((c) => c.type !== pinnedType)]
+        : routingResult.candidates,
+    };
+  }
+
+  /** 从路由候选或租户默认工具解析 toolIds */
+  private async resolveToolIds(
+    tenantId: string,
+    capabilityType: string,
+    candidates: RoutingCandidate[],
+  ): Promise<string[]> {
+    const fromCandidate =
+      candidates.find((c) => c.type === capabilityType)?.toolIds ??
+      candidates[0]?.toolIds ??
+      [];
+    const valid = fromCandidate.filter((id) => typeof id === 'string' && id.length > 0);
+    if (valid.length > 0) return valid;
+
+    if (capabilityType === 'qa') return [];
+
+    const toolType = this.capabilityToToolType(capabilityType);
+    if (!toolType) return [];
+
+    const tool = await this.prisma.tool.findFirst({
+      where: { tenantId, type: toolType, status: 'enabled' },
+      orderBy: [{ updatedAt: 'desc' }],
+      select: { id: true },
+    });
+    return tool ? [tool.id] : [];
+  }
+
+  private capabilityToToolType(capabilityType: string): ToolType | null {
+    const map: Record<string, ToolType> = {
+      query: ToolType.query,
+      action: ToolType.action,
+      workflow: ToolType.workflow,
+    };
+    return map[capabilityType] ?? null;
+  }
 
   private normalizeToolIds(
     approvalToolIds: unknown,

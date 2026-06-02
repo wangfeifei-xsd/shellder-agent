@@ -20,7 +20,8 @@ VALUES (
     JSON_ARRAY(
         'tenant.manage', 'user.manage', 'role.manage', 'policy.manage', 'audit.view',
         'connector.manage', 'tool.manage', 'session.manage', 'task.manage',
-        'approval.handle', 'settings.manage'
+        'approval.handle', 'settings.manage',
+        'prompt:read', 'prompt:write', 'prompt:publish', 'prompt:debug'
     ),
     JSON_ARRAY('*'),
     JSON_OBJECT(

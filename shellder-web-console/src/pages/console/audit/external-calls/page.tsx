@@ -16,6 +16,12 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
 import {
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
+import {
   AuditStatus,
   ExternalCallAudit,
   listExternalCallAudits,
@@ -55,19 +61,20 @@ export default function ExternalCallAuditPage() {
   }, [load]);
 
   const columns: ColumnsType<ExternalCallAudit> = [
-    {
+    withNowrap<ExternalCallAudit>({
       title: '目标系统',
       dataIndex: 'target',
+      width: 200,
       ellipsis: true,
-      render: (v: string, row) => <a onClick={() => setDetail(row)}>{v}</a>,
-    },
-    {
+      render: (v: string, row) => renderEllipsisLink(v, () => setDetail(row)),
+    }),
+    withNowrap<ExternalCallAudit>({
       title: '方法',
       dataIndex: 'method',
       width: 100,
-      render: (v: string | null) => v || '—',
-    },
-    {
+      render: (v: string | null) => renderOptionalText(v ?? undefined),
+    }),
+    withNowrap<ExternalCallAudit>({
       title: '状态',
       dataIndex: 'status',
       width: 100,
@@ -75,31 +82,31 @@ export default function ExternalCallAuditPage() {
         const meta = statusMeta(s);
         return <Tag color={meta.color}>{meta.label}</Tag>;
       },
-    },
-    {
+    }),
+    withNowrap<ExternalCallAudit>({
       title: '状态码',
       dataIndex: 'statusCode',
       width: 90,
       render: (v: number | null) => (v == null ? '—' : v),
-    },
-    {
+    }),
+    withNowrap<ExternalCallAudit>({
       title: '耗时',
       dataIndex: 'durationMs',
       width: 100,
       render: (v: number | null) => (v == null ? '—' : `${v} ms`),
-    },
-    {
+    }),
+    withNowrap<ExternalCallAudit>({
       title: '失败原因',
       dataIndex: 'errorMessage',
       ellipsis: true,
-      render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text>,
-    },
-    {
+      render: (v: string | null) => renderOptionalText(v),
+    }),
+    withNowrap<ExternalCallAudit>({
       title: '时间',
       dataIndex: 'createdAt',
       width: 180,
       render: (v: string) => fmt(v),
-    },
+    }),
   ];
 
   return (
@@ -146,6 +153,7 @@ export default function ExternalCallAuditPage() {
         columns={columns}
         dataSource={data}
         locale={{ emptyText: '暂无外部接口审计（06 连接器 / 13 业务能力起写入）' }}
+        {...tableEllipsisLayout}
         pagination={{
           current: page,
           pageSize,

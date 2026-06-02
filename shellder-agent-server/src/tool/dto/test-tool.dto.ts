@@ -13,7 +13,7 @@ export class TestToolDto {
 
 /**
  * SQL 查询工具测试入参（执行计划 §4.5）。
- * 提供 SQL（或选用模板 sql）+ 参数；服务层做只读 / 白名单 / 行数 / 时长校验后执行。
+ * 提供 SQL（或选用模板 sql）+ 参数；服务层做只读 / 黑名单 / 行数 / 时长校验后执行。
  */
 export class TestSqlDto {
   /** 待测试 SQL（与 templateId 二选一；同时提供以 sql 为准） */

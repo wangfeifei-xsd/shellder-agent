@@ -26,9 +26,14 @@ import {
   SendOutlined,
   LoadingOutlined,
 } from '@ant-design/icons';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
+import {
+  ellipsisTextColumn,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
-import { apiFetch, resolveApiOrigin } from '@/lib/api';
+import { apiFetch } from '@/lib/api';
 
 const { TextArea } = Input;
 const { Title, Text, Paragraph } = Typography;
@@ -87,7 +92,6 @@ export default function CapabilitiesPage() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [session, setSession] = useState<DemoSession | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
 
   const handleSend = useCallback(async () => {
     if (!inputText.trim()) {
@@ -109,82 +113,49 @@ export default function CapabilitiesPage() {
       });
 
       const sessionId = sessionRes.id;
-      const newSession: DemoSession = {
-        sessionId,
-        streaming: true,
-        chunks: [],
-      };
-      setSession(newSession);
+      setSession({ sessionId, streaming: true, chunks: [] });
 
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-
-      const token = typeof window !== 'undefined'
-        ? window.localStorage.getItem('shellder.accessToken') ?? ''
-        : '';
-
-      const evtUrl = `${resolveApiOrigin()}/api/v1/sessions/${sessionId}/stream?token=${encodeURIComponent(token)}`;
-      const eventSource = new EventSource(evtUrl);
-      eventSourceRef.current = eventSource;
-
-      const chunks: string[] = [];
-
-      eventSource.addEventListener('delta', (e) => {
-        const data = JSON.parse(e.data);
-        chunks.push(data.text ?? '');
-        setSession((prev) => prev ? { ...prev, chunks: [...chunks] } : prev);
+      const sendRes = await apiFetch<{
+        messageId: string;
+        capabilityType?: string;
+        reply?: unknown;
+      }>(`/api/v1/sessions/${sessionId}/messages`, {
+        method: 'POST',
+        body: { content: inputText, mode: 'sync' },
       });
-
-      eventSource.addEventListener('done', (e) => {
-        const data = JSON.parse(e.data);
-        setSession((prev) => prev ? { ...prev, streaming: false, capabilityType: data.capabilityType } : prev);
-        eventSource.close();
-        setLoading(false);
-      });
-
-      eventSource.addEventListener('error', (e) => {
-        if (eventSource.readyState === EventSource.CLOSED) return;
-        try {
-          const data = JSON.parse((e as MessageEvent).data ?? '{}');
-          setSession((prev) => prev ? { ...prev, streaming: false, error: data.message } : prev);
-        } catch {
-          setSession((prev) => prev ? { ...prev, streaming: false, error: '连接异常' } : prev);
-        }
-        eventSource.close();
-        setLoading(false);
-      });
-
-      eventSource.onerror = () => {
-        eventSource.close();
-        setSession((prev) => prev ? { ...prev, streaming: false } : prev);
-        setLoading(false);
-      };
-
-      const sendRes = await apiFetch<{ messageId: string; capabilityType?: string; reply?: unknown }>(
-        `/api/v1/sessions/${sessionId}/messages`,
-        {
-          method: 'POST',
-          body: { content: inputText, mode: 'sync' },
-        },
-      );
 
       if (sendRes.reply && typeof sendRes.reply === 'object') {
         const reply = sendRes.reply as CapabilityResult;
-        setSession((prev) => prev ? {
-          ...prev,
+        const failed = reply.status === 'failed';
+        const errText =
+          reply.error ??
+          (typeof reply.data?.text === 'string' ? reply.data.text : undefined);
+        if (failed && errText) {
+          message.error(errText);
+        }
+        setSession({
+          sessionId,
           streaming: false,
-          capabilityType: sendRes.capabilityType,
+          chunks: [],
+          capabilityType: (sendRes.capabilityType as CapabilityType) ?? reply.capabilityType,
           result: reply,
-        } : prev);
+          error: failed ? errText ?? '执行失败' : undefined,
+        });
+      } else {
+        setSession({
+          sessionId,
+          streaming: false,
+          capabilityType: sendRes.capabilityType as CapabilityType | undefined,
+          chunks: [],
+        });
       }
-
-      eventSource.close();
-      setLoading(false);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       message.error(`执行失败：${errMsg}`);
-      setSession((prev) => prev ? { ...prev, streaming: false, error: errMsg } : prev);
+      setSession((prev) =>
+        prev ? { ...prev, streaming: false, error: errMsg } : { sessionId: '', streaming: false, chunks: [], error: errMsg },
+      );
+    } finally {
       setLoading(false);
     }
   }, [inputText, activeTenantId, selectedType, message]);
@@ -305,10 +276,24 @@ export default function CapabilitiesPage() {
                     rowKey={(_, i) => String(i)}
                     size="small"
                     pagination={false}
+                    {...tableEllipsisLayout}
                     columns={[
-                      { title: '文档', dataIndex: 'documentTitle', width: 160 },
-                      { title: '内容', dataIndex: 'content', ellipsis: true },
-                      { title: '相关度', dataIndex: 'score', width: 80, render: (v) => v?.toFixed(2) ?? '—' },
+                      ellipsisTextColumn<{ documentTitle?: string; content: string; score?: number }>(
+                        '文档',
+                        'documentTitle',
+                        160,
+                      ),
+                      ellipsisTextColumn<{ documentTitle?: string; content: string; score?: number }>(
+                        '内容',
+                        'content',
+                        240,
+                      ),
+                      withNowrap<{ documentTitle?: string; content: string; score?: number }>({
+                        title: '相关度',
+                        dataIndex: 'score',
+                        width: 80,
+                        render: (v: number | undefined) => v?.toFixed(2) ?? '—',
+                      }),
                     ]}
                   />
                 </Card>
@@ -342,15 +327,18 @@ export default function CapabilitiesPage() {
                     dataSource={(session.result.data as any).rows?.slice(0, 20)}
                     rowKey={(_, i) => String(i)}
                     size="small"
-                    scroll={{ x: true }}
                     pagination={false}
+                    {...tableEllipsisLayout}
                     columns={
                       (session.result.data as any).rows?.[0]
-                        ? Object.keys((session.result.data as any).rows[0]).map((col) => ({
-                            title: col,
-                            dataIndex: col,
-                            ellipsis: true,
-                          }))
+                        ? Object.keys((session.result.data as any).rows[0]).map((col) =>
+                            withNowrap<Record<string, unknown>>({
+                              title: col,
+                              dataIndex: col,
+                              ellipsis: true,
+                              width: 140,
+                            }),
+                          )
                         : []
                     }
                   />
