@@ -126,7 +126,7 @@ export class ToolService {
 
   /** 详情：定义 / 约束 / 权限 / 关联连接器 + 最近调用与成功率/失败率/耗时（04 tool_call_audit）。 */
   async findOne(user: AuthUser, id: string) {
-    const tool = await this.getOrThrow(id);
+    const tool = await this.getOrThrow(id, { withConnector: true });
     await this.assertTenantAccess(user, tool.tenantId);
 
     const [recentCalls, sample] = await this.prisma.$transaction([
@@ -470,8 +470,16 @@ export class ToolService {
     return tool;
   }
 
-  private async getOrThrow(id: string): Promise<Tool> {
-    const tool = await this.prisma.tool.findUnique({ where: { id } });
+  private async getOrThrow(
+    id: string,
+    opts?: { withConnector?: boolean },
+  ): Promise<
+    Tool & { connector?: { id: string; name: string; type: string; status: string } | null }
+  > {
+    const tool = await this.prisma.tool.findUnique({
+      where: { id },
+      ...(opts?.withConnector ? { include: { connector: CONNECTOR_SELECT } } : {}),
+    });
     if (!tool) {
       throw new NotFoundException({
         code: 'TOOL_NOT_FOUND',
