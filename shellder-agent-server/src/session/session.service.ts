@@ -201,6 +201,36 @@ export class SessionService {
     return this.toView(updated);
   }
 
+  /** 删除会话及其消息；关联任务与待办审批一并清理 */
+  async remove(user: AuthUser, id: string) {
+    const session = await this.getOrThrow(id);
+    await this.assertTenantAccess(user, session.tenantId);
+
+    const messageIds = (
+      await this.prisma.message.findMany({
+        where: { sessionId: id },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.task.deleteMany({ where: { sessionId: id } });
+      await tx.approval.deleteMany({
+        where: {
+          OR: [
+            { sessionId: id },
+            ...(messageIds.length > 0
+              ? [{ messageId: { in: messageIds } }]
+              : []),
+          ],
+        },
+      });
+      await tx.session.delete({ where: { id } });
+    });
+
+    return { id };
+  }
+
   // ── 上下文装配（供 12 Agent Runtime 调用，验收标准 3） ──────
 
   async getContext(user: AuthUser, id: string, limit: number) {

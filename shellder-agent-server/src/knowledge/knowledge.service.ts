@@ -17,8 +17,8 @@ import { QueryEmbeddingTaskDto } from './dto/query-embedding-task.dto';
 import { throwSelfHostedDeprecated } from './knowledge-deprecation.util';
 
 /**
- * 知识库租户绑定元数据（pathy 代理模式）。
- * 内容存储、召回、向量化由 pathy-knowledge-server 承担；本服务仅维护租户绑定与权限。
+ * 知识库租户绑定元数据（wiki 代理模式）。
+ * 内容存储、召回、向量化由 wiki 知识库服务 承担；本服务仅维护租户绑定与权限。
  */
 @Injectable()
 export class KnowledgeService {
@@ -36,7 +36,7 @@ export class KnowledgeService {
           tenantId: dto.tenantId,
           name: dto.name,
           description: dto.description ?? null,
-          pathyWikiPrefix: dto.pathyWikiPrefix ?? null,
+          wikiPrefix: dto.wikiPrefix ?? null,
           embeddingModel: dto.embeddingModel ?? 'text-embedding-3-small',
           similarityMetric: dto.similarityMetric ?? 'cosine',
           chunkStrategy: dto.chunkStrategy ?? 'fixed_size',
@@ -101,8 +101,8 @@ export class KnowledgeService {
     const data: Prisma.KnowledgeBaseUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.description !== undefined) data.description = dto.description || null;
-    if (dto.pathyWikiPrefix !== undefined) {
-      data.pathyWikiPrefix = dto.pathyWikiPrefix || null;
+    if (dto.wikiPrefix !== undefined) {
+      data.wikiPrefix = dto.wikiPrefix || null;
     }
     if (dto.embeddingModel !== undefined) data.embeddingModel = dto.embeddingModel;
     if (dto.similarityMetric !== undefined) data.similarityMetric = dto.similarityMetric;

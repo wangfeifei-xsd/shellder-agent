@@ -898,11 +898,11 @@ USE `agent_platform`;
 -- ================================================================
 -- 阶段 11A — 知识库代理与知识库管理（功能清单 §1.7 / 架构 Knowledge）
 -- 依赖：01-bootstrap, 02-tenant-management
--- V1 仅保留 knowledge_base 租户绑定元数据；内容/召回由 pathy-knowledge-server 承担。
+-- V1 仅保留 knowledge_base 租户绑定元数据；内容/召回由 wiki 知识库服务 承担。
 -- 自建子表 kb_data_source / kb_document / kb_chunk / kb_embedding_task 已废弃，不在本 SQL 交付。
 -- ================================================================
 
--- 知识库主表（租户 pathy wiki 路径绑定）
+-- 知识库主表（租户 wiki wiki 路径绑定）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`knowledge_base` (
   `id`                CHAR(36)     NOT NULL,
   `tenant_id`         CHAR(36)     NOT NULL,
@@ -927,7 +927,7 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`knowledge_base` (
   INDEX `idx_kb_tenant_status` (`tenant_id`, `status`),
   INDEX `idx_kb_created_at` (`created_at`),
   CONSTRAINT `fk_kb_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库租户绑定（pathy 代理）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库租户绑定（wiki 代理）';
 
 -- -----------------------------------------------------------------------------
 -- 来源: 12-knowledge-base/schema-pathy-binding.sql
@@ -935,12 +935,12 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`knowledge_base` (
 -- 目标库: agent_platform
 USE `agent_platform`;
 
--- 增量：pathy 代理模式 — knowledge_base 增加 wiki 路径绑定
+-- 增量：wiki 代理模式 — knowledge_base 增加 wiki 路径绑定
 -- 依赖：project-sql/12-knowledge-base/schema.sql 已执行
 
 ALTER TABLE `agent_platform`.`knowledge_base`
-  ADD COLUMN `pathy_wiki_prefix` VARCHAR(256) NULL
-    COMMENT 'pathy wiki 子路径前缀，如 tenants/{tenantId}/；空则运行时使用默认'
+  ADD COLUMN `wiki_prefix` VARCHAR(256) NULL
+    COMMENT 'wiki wiki 子路径前缀，如 tenants/{tenantId}/；空则运行时使用默认'
     AFTER `description`;
 
 -- -----------------------------------------------------------------------------
@@ -1007,7 +1007,7 @@ USE `agent_platform`;
 --   - tool（07）：四类 Tool 定义及 config（sql/http/workflow）
 --   - capability / routing_rule（10）：能力目录与路由规则
 --   - skill（11）：技能书与 Tool 绑定
---   - knowledge_base（12）+ pathy 代理 recall（12）：问答型知识库检索
+--   - knowledge_base（12）+ wiki 代理 recall（12）：问答型知识库检索
 --
 -- 增量变更：
 -- 1. 为 message.content 新增统一结果结构约定（仅应用层约束，数据库 JSON 列不变）。

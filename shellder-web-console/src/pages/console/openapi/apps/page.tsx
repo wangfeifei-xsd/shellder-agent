@@ -21,7 +21,8 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   EllipsisCell,
   renderCompactTags,
@@ -41,19 +42,16 @@ import {
   deleteOpenApiApp,
   listOpenApiApps,
 } from '@/lib/openapi-management';
-import { apiFetch } from '@/lib/api';
-
 const fmt = (s: string | null) =>
   s ? new Date(s).toLocaleString('zh-CN') : '—';
 
-interface TenantOption {
-  id: string;
-  code: string;
-  name: string;
-}
-
 export default function OpenApiAppsPage() {
   const { message, modal } = App.useApp();
+  const { activeTenantId, tenants: boundTenants } = useActiveTenant();
+  const activeTenantLabel = useMemo(() => {
+    const t = boundTenants.find((x) => x.id === activeTenantId);
+    return t ? `${t.name}（${t.code}）` : activeTenantId ?? '—';
+  }, [boundTenants, activeTenantId]);
 
   const [data, setData] = useState<OpenApiAppItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -65,7 +63,6 @@ export default function OpenApiAppsPage() {
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [form] = Form.useForm();
 
   const load = useCallback(async () => {
@@ -90,21 +87,30 @@ export default function OpenApiAppsPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    apiFetch<{ items: TenantOption[] }>('/api/v1/tenants', {
-      query: { pageSize: 200 },
-    }).then((res) => setTenants(res.items)).catch(() => {});
-  }, []);
+  const openCreateModal = () => {
+    if (!activeTenantId) {
+      message.warning('请先在顶栏选择「当前操作租户」');
+      return;
+    }
+    form.resetFields();
+    setCreateOpen(true);
+  };
 
   const handleCreate = async (values: {
     name: string;
     description?: string;
-    allowedTenantIds: string[];
     allowedCapabilities: CapabilityType[];
   }) => {
+    if (!activeTenantId) {
+      message.warning('请先在顶栏选择「当前操作租户」');
+      return;
+    }
     setCreating(true);
     try {
-      const result: OpenApiAppCreated = await createOpenApiApp(values);
+      const result: OpenApiAppCreated = await createOpenApiApp({
+        ...values,
+        allowedTenantIds: [activeTenantId],
+      });
       setCreateOpen(false);
       form.resetFields();
       void load();
@@ -185,10 +191,10 @@ export default function OpenApiAppsPage() {
       ),
     }),
     withNowrap<OpenApiAppItem>({
-      title: '允许租户',
+      title: '归属租户',
       dataIndex: 'allowedTenantIds',
       width: 100,
-      render: (v: string[]) => `${v.length} 个`,
+      render: (v: string[]) => (v.length === 1 ? '1 个' : `${v.length} 个`),
     }),
     withNowrap<OpenApiAppItem>({
       title: '能力范围',
@@ -229,11 +235,7 @@ export default function OpenApiAppsPage() {
         <Typography.Title level={3} className="!mb-0">
           应用接入
         </Typography.Title>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setCreateOpen(true)}
-        >
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
           创建应用
         </Button>
       </div>
@@ -296,19 +298,11 @@ export default function OpenApiAppsPage() {
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={2} placeholder="可选" maxLength={512} />
           </Form.Item>
-          <Form.Item
-            name="allowedTenantIds"
-            label="允许访问的租户"
-            rules={[{ required: true, message: '请选择至少一个租户' }]}
-          >
-            <Select
-              mode="multiple"
-              placeholder="选择租户"
-              options={tenants.map((t) => ({
-                value: t.id,
-                label: `${t.name}（${t.code}）`,
-              }))}
-            />
+          <Form.Item label="归属租户">
+            <Typography.Text>{activeTenantLabel}</Typography.Text>
+            <div className="mt-1 text-xs text-gray-500">
+              与顶栏「当前操作租户」一致；平台无子租户，应用仅归属该租户
+            </div>
           </Form.Item>
           <Form.Item
             name="allowedCapabilities"

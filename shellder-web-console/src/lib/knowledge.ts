@@ -9,7 +9,7 @@ export interface KnowledgeBase {
   tenantId: string;
   name: string;
   description: string | null;
-  pathyWikiPrefix: string | null;
+  wikiPrefix: string | null;
   embeddingModel: string;
   similarityMetric: string;
   chunkStrategy: string;
@@ -35,7 +35,7 @@ export interface CreateKbInput {
   tenantId: string;
   name: string;
   description?: string;
-  pathyWikiPrefix?: string;
+  wikiPrefix?: string;
 }
 
 export type UpdateKbInput = Partial<Omit<CreateKbInput, 'tenantId'>> & {

@@ -72,19 +72,25 @@ export class QaPreviewController {
       promptKey: promptKey ?? PROMPT_KEYS.QA_DIALOGUE_SYSTEM,
     });
 
+    const recall = result.recall;
     return {
       user_query: body.query,
-      recall_method: result.recall.recall_method,
-      recall_hits: result.recall.recall_hits,
-      injected_context: result.recall.injected_context,
+      recall_method: recall.recall_method,
+      query_terms: recall.query_terms,
+      files_scanned: recall.files_scanned,
+      recall_hits: recall.recall_hits,
+      merged_media: recall.merged_media,
+      bm25: recall.bm25,
+      vector: recall.vector,
+      injected_context: recall.injected_context,
+      context_truncated: recall.context_truncated,
       assistant_reply: result.replyText,
       model: result.model,
       elapsed_ms: result.elapsedMs,
       prompt_version: result.promptVersion,
       prompt_key: promptKey ?? PROMPT_KEYS.QA_DIALOGUE_SYSTEM,
       prompt_channel: resolvedChannel,
-      message: result.recall.message,
-      files_scanned: (result.recall as { files_scanned?: number }).files_scanned,
+      message: recall.message,
     };
   }
 }

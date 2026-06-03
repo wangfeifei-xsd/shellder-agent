@@ -48,6 +48,14 @@ VALUES
   (UUID(), 'notification', 'notification.connectorId', '', '消息通知连接器 ID（connector.type=notification）')
 ON DUPLICATE KEY UPDATE `agent_platform`.`config_value` = VALUES(`config_value`);
 
+-- ── 知识库 wiki 连接（原 WIKI_KNOWLEDGE_SERVER_* 环境变量，现落库）──
+
+INSERT INTO `agent_platform`.`system_config` (`id`, `config_group`, `config_key`, `config_value`, `description`)
+VALUES
+  (UUID(), 'knowledge', 'knowledge.wikiBaseUrl',   '',      'wiki 知识库服务 根 URL（知识库管理页配置，无尾斜杠）'),
+  (UUID(), 'knowledge', 'knowledge.wikiTimeoutMs', '30000', 'wiki 代理 HTTP 超时（毫秒）')
+ON DUPLICATE KEY UPDATE `agent_platform`.`config_value` = VALUES(`config_value`);
+
 -- ── 默认通知模板 ──────────────────────────────────────────
 
 INSERT INTO `agent_platform`.`notification_template` (`id`, `type`, `name`, `subject`, `body`, `enabled`)

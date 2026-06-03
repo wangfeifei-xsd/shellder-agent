@@ -1,4 +1,4 @@
-/** 仅当值为合法整数时才写入 pathy 查询参数（避免 NaN / UUID 等导致 422） */
+/** 仅当值为合法整数时才写入 wiki 查询参数（避免 NaN / UUID 等导致 422） */
 export function coerceQueryInt(value: unknown): number | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   if (typeof value === 'number') {

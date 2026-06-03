@@ -53,6 +53,7 @@ export class AgentRuntimeController {
    * GET /api/v1/sessions/:id/stream
    *
    * SSE 流式事件推送（架构 §4.1）。
+   * EventSource 无法携带 Authorization，客户端使用 ?token= 平台 JWT（见 JwtAuthGuard）。
    * 事件类型：delta | tool_start | tool_end | confirm_required | done | error
    */
   @Get(':id/stream')

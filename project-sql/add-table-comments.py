@@ -31,14 +31,14 @@ TABLE_COMMENTS: dict[str, str] = {
     "skill_trigger": "技能书触发示例",
     "skill_binding": "技能书绑定关系",
     "skill_execution_log": "技能书执行记录",
-    "knowledge_base": "知识库租户绑定（pathy 代理）",
+    "knowledge_base": "知识库租户绑定（wiki 代理）",
     "approval": "高风险动作审批",
     "openapi_app": "OpenAPI 接入应用",
     "openapi_call_log": "OpenAPI 调用日志",
     "system_config": "系统配置 KV",
     "notification_template": "通知模板",
     "copilot_config": "嵌入式 Copilot 配置",
-    "kb_layer_processing_job": "pathy 层文件异步处理任务",
+    "kb_layer_processing_job": "wiki 层文件异步处理任务",
 }
 
 CREATE_HEAD = re.compile(

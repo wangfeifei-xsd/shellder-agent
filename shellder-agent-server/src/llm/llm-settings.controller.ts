@@ -7,7 +7,7 @@ import { LlmConnectionTestDto, UpsertLlmSettingsDto } from './dto/upsert-llm-set
 
 /**
  * 平台 LLM 接入配置（实施规格 §4 / 执行计划 19 §3.2）。
- * 存储于 system_config，不代理 pathy settings/llm。
+ * 存储于 system_config，不代理 wiki settings/llm。
  */
 @Controller('api/v1/settings')
 @RequireMenu('settings')

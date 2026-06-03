@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -16,6 +16,7 @@ import {
   message,
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 import {
   EllipsisCell,
   ellipsisTextColumn,
@@ -24,6 +25,8 @@ import {
   withNowrap,
 } from '@/components/console/tableEllipsis';
 import { apiFetch } from '@/lib/api';
+import { listOpenApiApps, type OpenApiAppItem } from '@/lib/openapi-management';
+import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 
 const { Title } = Typography;
 
@@ -44,11 +47,34 @@ interface CopilotConfigItem {
 }
 
 export default function CopilotAdminPage() {
+  const { activeTenantId, tenants: boundTenants } = useActiveTenant();
+  const activeTenantLabel = useMemo(() => {
+    const t = boundTenants.find((x) => x.id === activeTenantId);
+    return t ? `${t.name}（${t.code}）` : activeTenantId ?? '—';
+  }, [boundTenants, activeTenantId]);
   const [configs, setConfigs] = useState<CopilotConfigItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [openapiApps, setOpenapiApps] = useState<OpenApiAppItem[]>([]);
   const [form] = Form.useForm();
+
+  const usedAppIds = useMemo(() => new Set(configs.map((c) => c.appId)), [configs]);
+
+  const appOptions = useMemo(() => {
+    if (!activeTenantId) return [];
+    return openapiApps
+      .filter(
+        (a) =>
+          a.status === 'enabled' &&
+          a.allowedTenantIds.includes(activeTenantId) &&
+          !usedAppIds.has(a.id),
+      )
+      .map((a) => ({
+        value: a.id,
+        label: `${a.name}（${a.clientId}）`,
+      }));
+  }, [activeTenantId, openapiApps, usedAppIds]);
 
   const load = async () => {
     setLoading(true);
@@ -66,7 +92,17 @@ export default function CopilotAdminPage() {
     load();
   }, []);
 
+  useEffect(() => {
+    listOpenApiApps({ pageSize: 200, status: 'enabled' })
+      .then((res) => setOpenapiApps(res.items))
+      .catch(() => {});
+  }, []);
+
   const handleCreate = () => {
+    if (!activeTenantId) {
+      message.warning('请先在顶栏选择「当前操作租户」');
+      return;
+    }
     setEditingId(null);
     form.resetFields();
     form.setFieldsValue({
@@ -104,10 +140,12 @@ export default function CopilotAdminPage() {
 
   const handleSubmit = async () => {
     const values = await form.validateFields();
-    const body: any = {
+    if (!editingId && !activeTenantId) {
+      message.warning('请先在顶栏选择「当前操作租户」');
+      return;
+    }
+    const shared = {
       name: values.name,
-      tenantId: values.tenantId,
-      appId: values.appId,
       domainWhitelist: values.domainWhitelist
         ? values.domainWhitelist.split('\n').map((s: string) => s.trim()).filter(Boolean)
         : [],
@@ -124,10 +162,20 @@ export default function CopilotAdminPage() {
 
     try {
       if (editingId) {
-        await apiFetch(`/api/v1/copilot/configs/${editingId}`, { method: 'PATCH', body });
+        await apiFetch(`/api/v1/copilot/configs/${editingId}`, {
+          method: 'PATCH',
+          body: shared,
+        });
         message.success('已更新');
       } else {
-        await apiFetch('/api/v1/copilot/configs', { method: 'POST', body });
+        await apiFetch('/api/v1/copilot/configs', {
+          method: 'POST',
+          body: {
+            ...shared,
+            tenantId: activeTenantId,
+            appId: values.appId,
+          },
+        });
         message.success('已创建');
       }
       setModalOpen(false);
@@ -229,11 +277,34 @@ export default function CopilotAdminPage() {
           </Form.Item>
           {!editingId && (
             <>
-              <Form.Item name="tenantId" label="租户 ID" rules={[{ required: true }]}>
-                <Input placeholder="租户 ID" />
+              <Form.Item label="归属租户">
+                <Typography.Text>{activeTenantLabel}</Typography.Text>
+                <div className="mt-1 text-xs text-gray-500">
+                  与顶栏「当前操作租户」一致
+                </div>
               </Form.Item>
-              <Form.Item name="appId" label="OpenAPI 应用 ID" rules={[{ required: true }]}>
-                <Input placeholder="关联的 OpenAPI 应用 ID" />
+              <Form.Item
+                name="appId"
+                label="OpenAPI 应用"
+                rules={[{ required: true, message: '请选择 OpenAPI 应用' }]}
+                extra={
+                  appOptions.length === 0 ? (
+                    <span>
+                      请先在{' '}
+                      <Link to="/openapi/apps">OpenAPI 应用接入</Link> 为当前租户创建应用
+                    </span>
+                  ) : (
+                    '每个 OpenAPI 应用仅可绑定一份 Copilot 配置'
+                  )
+                }
+              >
+                <Select
+                  showSearch
+                  placeholder="选择本租户的 OpenAPI 应用"
+                  disabled={!activeTenantId}
+                  optionFilterProp="label"
+                  options={appOptions}
+                />
               </Form.Item>
             </>
           )}

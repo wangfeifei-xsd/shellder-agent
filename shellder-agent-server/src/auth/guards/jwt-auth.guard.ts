@@ -54,10 +54,21 @@ export class JwtAuthGuard implements CanActivate {
     }
   }
 
+  /**
+   * 优先 Authorization: Bearer；SSE（EventSource）无法带 Header，回退 ?token=。
+   */
   private extractToken(request: Request): string | undefined {
     const header = request.headers.authorization;
-    if (!header) return undefined;
-    const [type, value] = header.split(' ');
-    return type === 'Bearer' ? value : undefined;
+    if (header) {
+      const [type, value] = header.split(' ');
+      if (type === 'Bearer' && value) return value;
+    }
+
+    const queryToken = request.query.token;
+    if (typeof queryToken === 'string' && queryToken.length > 0) {
+      return queryToken;
+    }
+
+    return undefined;
   }
 }

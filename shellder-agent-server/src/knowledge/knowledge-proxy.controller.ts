@@ -11,6 +11,7 @@ import {
   Put,
   Query,
   Res,
+  Logger,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -21,6 +22,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
 import { DocumentProcessingQueueService } from '../job-queue/document-processing-queue.service';
+import { KnowledgeConnectionService } from './knowledge-connection.service';
+import { UpsertKnowledgeConnectionDto } from './dto/upsert-knowledge-connection.dto';
 import { KnowledgeProxyService } from './knowledge-proxy.service';
 import { KnowledgeTenantScopeService } from './knowledge-tenant-scope.service';
 
@@ -31,18 +34,36 @@ interface UploadedBinary {
 }
 
 /**
- * 管理后台知识库代理 API（对齐 pathy-knowledge-server / API.md）。
- * 平台路径前缀：`/api/v1/knowledge/*` → 转发至 pathy `/api/v1/*`。
+ * 管理后台知识库代理 API（对齐 wiki 知识库服务 / API.md）。
+ * 平台路径前缀：`/api/v1/knowledge/*` → 转发至 wiki 服务 `/api/v1/*`。
  * 租户隔离见 KnowledgeTenantScopeService。
  */
 @Controller('api/v1/knowledge')
 @RequireMenu('knowledge')
 export class KnowledgeProxyController {
+  private readonly logger = new Logger(KnowledgeProxyController.name);
+
   constructor(
     private readonly proxy: KnowledgeProxyService,
+    private readonly connectionSettings: KnowledgeConnectionService,
     private readonly tenantScope: KnowledgeTenantScopeService,
     private readonly documentQueue: DocumentProcessingQueueService,
   ) {}
+
+  @Get('connection')
+  getConnection() {
+    return this.connectionSettings.getSettingsForAdmin();
+  }
+
+  @Put('connection')
+  @Audit({
+    action: 'knowledge.connection.upsert',
+    module: 'knowledge.manage',
+    targetType: 'knowledge_connection',
+  })
+  upsertConnection(@Body() dto: UpsertKnowledgeConnectionDto) {
+    return this.connectionSettings.upsertSettings(dto);
+  }
 
   @Get('health')
   health() {
@@ -145,13 +166,32 @@ export class KnowledgeProxyController {
         ? (result as { path: string }).path
         : null;
     if (scopedPath) {
-      await this.documentQueue.scheduleAfterUpload({
-        tenantId,
-        layer,
-        inputPath: scopedPath,
-      });
+      try {
+        await this.documentQueue.scheduleAfterUpload({
+          tenantId,
+          layer,
+          inputPath: scopedPath,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `上传后异步编译/嵌入入队失败（可用手动「嵌入」或执行 Prisma 迁移 kb_layer_processing_job）: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
     }
     return result;
+  }
+
+  @Post('layers/:layer/embed')
+  @Audit({ action: 'knowledge.embedFile', module: 'knowledge.manage', targetType: 'kb_layer_file' })
+  async embedFile(
+    @CurrentUser() user: AuthUser,
+    @Query('tenantId') tenantId: string,
+    @Param('layer') layer: string,
+    @Query('path') path: string,
+  ) {
+    return this.proxy.embedLayerFile(user, tenantId, layer, path);
   }
 
   @Get('layers/:layer/archive.zip')
@@ -346,5 +386,68 @@ export class KnowledgeProxyController {
     @Param('code') code: string,
   ) {
     return this.proxy.deleteMedia(user, tenantId, code);
+  }
+
+  @Post('media/export-zip')
+  @Audit({ action: 'knowledge.exportMedia', module: 'knowledge.manage', targetType: 'kb_media' })
+  async exportMediaZip(
+    @CurrentUser() user: AuthUser,
+    @Query('tenantId') tenantId: string,
+    @Body() body: { codes: string[] },
+    @Res() res: Response,
+  ) {
+    const result = await this.proxy.exportMediaZip(user, tenantId, body.codes ?? []);
+    res.setHeader('Content-Type', result.contentType);
+    if (result.contentDisposition) {
+      res.setHeader('Content-Disposition', result.contentDisposition);
+    }
+    res.send(result.buffer);
+  }
+
+  @Post('media/import-zip')
+  @UseInterceptors(FileInterceptor('file'))
+  @Audit({ action: 'knowledge.importMedia', module: 'knowledge.manage', targetType: 'kb_media' })
+  importMediaZip(
+    @CurrentUser() user: AuthUser,
+    @Query('tenantId') tenantId: string,
+    @UploadedFile() file: UploadedBinary,
+    @Body('target_folder') targetFolder?: string,
+  ) {
+    const form = new FormData();
+    const blob = new Blob([new Uint8Array(file.buffer)], {
+      type: file.mimetype || 'application/zip',
+    });
+    form.append('file', blob, file.originalname);
+    if (targetFolder) form.append('target_folder', targetFolder);
+    return this.proxy.importMediaZip(user, tenantId, form);
+  }
+
+  @Post('media/batch-delete')
+  @Audit({ action: 'knowledge.batchDeleteMedia', module: 'knowledge.manage', targetType: 'kb_media' })
+  batchDeleteMedia(
+    @CurrentUser() user: AuthUser,
+    @Query('tenantId') tenantId: string,
+    @Body() body: { codes: string[] },
+  ) {
+    return this.proxy.batchDeleteMedia(user, tenantId, body.codes ?? []);
+  }
+
+  @Post('tasks/polish-text')
+  @Audit({ action: 'knowledge.polishText', module: 'knowledge.manage', targetType: 'kb_task' })
+  polishText(
+    @CurrentUser() user: AuthUser,
+    @Query('tenantId') tenantId: string,
+    @Body() body: { content: string; instruction?: string },
+  ) {
+    return this.proxy.polishText(user, tenantId, body);
+  }
+
+  @Post('media/resolve-from-text')
+  resolveMediaFromText(
+    @CurrentUser() user: AuthUser,
+    @Query('tenantId') tenantId: string,
+    @Body() body: { text?: string; codes?: string[] },
+  ) {
+    return this.proxy.resolveMediaFromText(user, tenantId, body);
   }
 }

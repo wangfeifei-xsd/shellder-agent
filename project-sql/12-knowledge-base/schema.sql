@@ -4,11 +4,11 @@ USE `agent_platform`;
 -- ================================================================
 -- 阶段 11A — 知识库代理与知识库管理（功能清单 §1.7 / 架构 Knowledge）
 -- 依赖：01-bootstrap, 02-tenant-management
--- V1 仅保留 knowledge_base 租户绑定元数据；内容/召回由 pathy-knowledge-server 承担。
+-- V1 仅保留 knowledge_base 租户绑定元数据；内容/召回由 wiki 知识库服务 承担。
 -- 自建子表 kb_data_source / kb_document / kb_chunk / kb_embedding_task 已废弃，不在本 SQL 交付。
 -- ================================================================
 
--- 知识库主表（租户 pathy wiki 路径绑定）
+-- 知识库主表（租户 wiki wiki 路径绑定）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`knowledge_base` (
   `id`                CHAR(36)     NOT NULL,
   `tenant_id`         CHAR(36)     NOT NULL,
@@ -33,4 +33,4 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`knowledge_base` (
   INDEX `idx_kb_tenant_status` (`tenant_id`, `status`),
   INDEX `idx_kb_created_at` (`created_at`),
   CONSTRAINT `fk_kb_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库租户绑定（pathy 代理）';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库租户绑定（wiki 代理）';

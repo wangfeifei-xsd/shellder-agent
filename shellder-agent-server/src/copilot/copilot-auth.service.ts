@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -95,6 +96,83 @@ export class CopilotAuthService {
       tokenType: 'Bearer',
       expiresIn: tokenTtl,
       tenantId,
+      config: {
+        theme: copilotConfig.theme,
+        features: copilotConfig.features,
+        welcomeMessage: copilotConfig.welcomeMessage,
+        placeholder: copilotConfig.placeholder,
+        maxHistoryMessages: copilotConfig.maxHistoryMessages,
+      },
+    };
+  }
+
+  /**
+   * 管理端能力演示代换票：无需 clientSecret，签发与 exchangeToken 相同结构的 Copilot JWT。
+   */
+  async issueDemoToken(params: {
+    tenantId: string;
+    copilotConfigId: string;
+    adminUserId: string;
+    externalUserId?: string;
+  }) {
+    const copilotConfig = await this.prisma.copilotConfig.findUnique({
+      where: { id: params.copilotConfigId },
+      include: { app: true },
+    });
+
+    if (!copilotConfig || copilotConfig.tenantId !== params.tenantId) {
+      throw new NotFoundException({
+        code: 'COPILOT_CONFIG_NOT_FOUND',
+        message: 'Copilot 配置不存在或不属于该租户',
+      });
+    }
+
+    if (copilotConfig.status === 'disabled') {
+      throw new ForbiddenException({
+        code: 'COPILOT_DISABLED',
+        message: 'Copilot 配置已禁用',
+      });
+    }
+
+    const app = copilotConfig.app;
+    if (!app || app.status === 'disabled') {
+      throw new ForbiddenException({
+        code: 'COPILOT_APP_DISABLED',
+        message: '关联 OpenAPI 应用已禁用',
+      });
+    }
+
+    const allowed = (app.allowedTenantIds as string[]) ?? [];
+    if (!allowed.includes(params.tenantId)) {
+      throw new ForbiddenException({
+        code: 'TENANT_NOT_ALLOWED',
+        message: '该应用未授权访问此租户',
+      });
+    }
+
+    const tokenTtl = copilotConfig.tokenTtlSeconds ?? 3600;
+    const externalUserId =
+      params.externalUserId ?? `demo-${params.adminUserId}`;
+
+    const payload: CopilotJwtPayload = {
+      sub: `copilot:${app.id}:demo-${params.adminUserId}`,
+      appId: app.id,
+      appName: app.name,
+      tenantId: params.tenantId,
+      externalUserId,
+      iss: COPILOT_JWT_ISSUER,
+    };
+
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: tokenTtl,
+      issuer: COPILOT_JWT_ISSUER,
+    });
+
+    return {
+      accessToken,
+      tokenType: 'Bearer',
+      expiresIn: tokenTtl,
+      tenantId: params.tenantId,
       config: {
         theme: copilotConfig.theme,
         features: copilotConfig.features,

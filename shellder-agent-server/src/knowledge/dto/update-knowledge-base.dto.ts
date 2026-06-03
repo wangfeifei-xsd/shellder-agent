@@ -48,5 +48,5 @@ export class UpdateKnowledgeBaseDto {
   @IsString()
   @IsOptional()
   @MaxLength(256)
-  pathyWikiPrefix?: string;
+  wikiPrefix?: string;
 }

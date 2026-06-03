@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
@@ -15,11 +16,31 @@ export interface DialogueRecallHit {
   heading_path?: string;
 }
 
+export interface DialogueRecallLaneStatus {
+  status: string;
+  candidate_count: number;
+  detail?: string | null;
+  embedding_model?: string | null;
+}
+
+export interface RecallMediaRef {
+  code: string;
+  mime: string;
+  title?: string | null;
+  size: number;
+}
+
 export interface DialogueRecallResponse {
   user_query: string;
   recall_method: string;
+  query_terms?: string[];
+  files_scanned?: number;
   recall_hits: DialogueRecallHit[];
+  merged_media?: RecallMediaRef[];
+  bm25?: DialogueRecallLaneStatus;
+  vector?: DialogueRecallLaneStatus;
   injected_context?: string;
+  context_truncated?: boolean;
   assistant_reply?: string;
   message?: string;
 }
@@ -169,6 +190,56 @@ export class KnowledgeProxyService {
     });
   }
 
+  /**
+   * 同步调用 wiki 服务：wiki 嵌入；raw 先 compile 再嵌入（与 wiki 知识库控制台一致）。
+   * 不经过平台 kb_layer_processing_job / job-worker 队列表。
+   */
+  async embedLayerFile(
+    user: AuthUser,
+    tenantId: string,
+    layer: string,
+    relativePath: string,
+  ) {
+    const wikiPrefix = await this.tenantScope.resolveWikiPrefix(tenantId);
+    await this.assertTenantAccess(user, tenantId);
+    const scopedPath = this.tenantScope.scopeLayerPath(wikiPrefix, relativePath);
+    if (!scopedPath.toLowerCase().endsWith('.md')) {
+      throw new BadRequestException({
+        code: 'UNSUPPORTED_FILE',
+        message: '仅支持 .md 文件嵌入',
+      });
+    }
+
+    if (layer === 'wiki') {
+      return this.client.request({
+        method: 'POST',
+        path: '/api/v1/wiki/embed',
+        body: { path: scopedPath },
+      });
+    }
+
+    if (layer === 'raw') {
+      const outputPath = scopedPath.replace(/^\/?raw\//, '').replace(/^\//, '');
+      const compileRes = await this.client.request<{ output_path?: string }>({
+        method: 'POST',
+        path: '/api/v1/tasks/compile',
+        body: { input_paths: [scopedPath], output_path: outputPath },
+      });
+      const wikiPath = compileRes.output_path ?? outputPath;
+      const embedRes = await this.client.request({
+        method: 'POST',
+        path: '/api/v1/wiki/embed',
+        body: { path: wikiPath },
+      });
+      return { compile: compileRes, embed: embedRes };
+    }
+
+    throw new BadRequestException({
+      code: 'UNSUPPORTED_LAYER',
+      message: '仅 raw / wiki 层支持嵌入',
+    });
+  }
+
   async downloadLayerArchive(
     user: AuthUser,
     tenantId: string,
@@ -213,7 +284,7 @@ export class KnowledgeProxyService {
     body: { layer: string; name: string },
   ) {
     await this.assertTenantAccess(user, tenantId);
-    // pathy 仅支持层根下单段目录名；租户根目录请预先创建或使用 pathy_wiki_prefix 单段名
+    // wiki 服务仅支持层根下单段目录名；租户根目录请预先创建或使用 wiki_prefix 单段名
     return this.client.request({
       method: 'POST',
       path: '/api/v1/data-structure/folders',
@@ -378,6 +449,75 @@ export class KnowledgeProxyService {
     return this.client.request({
       method: 'GET',
       path: '/api/v1/media/meta/summary',
+    });
+  }
+
+  async exportMediaZip(user: AuthUser, tenantId: string, codes: string[]) {
+    await this.assertTenantAccess(user, tenantId);
+    return this.client.request<{
+      buffer: Buffer;
+      contentType: string;
+      contentDisposition: string | null;
+    }>({
+      method: 'POST',
+      path: '/api/v1/media/export-zip',
+      body: { codes },
+      responseType: 'buffer',
+      timeoutMs: 120_000,
+    });
+  }
+
+  async importMediaZip(user: AuthUser, tenantId: string, form: FormData) {
+    await this.assertTenantAccess(user, tenantId);
+    const wikiPrefix = await this.tenantScope.resolveWikiPrefix(tenantId);
+    const folder = form.get('target_folder');
+    if (typeof folder === 'string' && folder && wikiPrefix) {
+      form.set(
+        'target_folder',
+        this.tenantScope.scopeLayerPath(wikiPrefix, folder),
+      );
+    }
+    return this.client.request({
+      method: 'POST',
+      path: '/api/v1/media/import-zip',
+      body: form,
+      timeoutMs: 120_000,
+    });
+  }
+
+  async batchDeleteMedia(user: AuthUser, tenantId: string, codes: string[]) {
+    await this.assertTenantAccess(user, tenantId);
+    return this.client.request({
+      method: 'POST',
+      path: '/api/v1/media/batch-delete',
+      body: { codes },
+    });
+  }
+
+  async polishText(
+    user: AuthUser,
+    tenantId: string,
+    body: { content: string; instruction?: string },
+  ) {
+    await this.assertTenantAccess(user, tenantId);
+    return this.client.request({
+      method: 'POST',
+      path: '/api/v1/tasks/polish-text',
+      body,
+      timeoutMs: 120_000,
+    });
+  }
+
+  async resolveMediaFromText(
+    user: AuthUser,
+    tenantId: string,
+    body: { text?: string; codes?: string[] },
+  ) {
+    await this.assertTenantAccess(user, tenantId);
+    return this.client.request({
+      method: 'POST',
+      path: '/api/v1/media/resolve-from-text',
+      body,
     });
   }
 

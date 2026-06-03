@@ -134,6 +134,10 @@ export function getSession(id: string) {
   return apiFetch<SessionDetail>(`${BASE}/${id}`);
 }
 
+export function deleteSession(id: string) {
+  return apiFetch<{ id: string }>(`${BASE}/${id}`, { method: 'DELETE' });
+}
+
 export function getSessionContext(id: string, limit?: number) {
   return apiFetch<SessionContext>(`${BASE}/${id}/context`, {
     query: limit ? { limit } : undefined,
@@ -186,6 +190,10 @@ export function sendMessage(sessionId: string, input: SendMessageInput) {
   });
 }
 
-export function buildSseUrl(sessionId: string): string {
-  return `${resolveApiOrigin()}/api/v1/sessions/${sessionId}/stream`;
+/** EventSource 无法携带 Authorization，通过 query token 鉴权 */
+export function buildSseUrl(sessionId: string, token?: string | null): string {
+  const base = `${resolveApiOrigin()}/api/v1/sessions/${sessionId}/stream`;
+  if (!token) return base;
+  const qs = new URLSearchParams({ token });
+  return `${base}?${qs.toString()}`;
 }

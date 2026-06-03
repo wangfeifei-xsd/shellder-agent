@@ -8,7 +8,6 @@ import {
   Breadcrumb,
   Button,
   Card,
-  Descriptions,
   Empty,
   Input,
   Space,
@@ -129,11 +128,7 @@ export default function DebugConsolePage() {
     const token = typeof window !== 'undefined'
       ? window.localStorage.getItem('shellder.accessToken')
       : null;
-    const sseUrl = buildSseUrl(debugSession.id);
-
-    const eventSource = new EventSource(
-      `${sseUrl}${sseUrl.includes('?') ? '&' : '?'}token=${token ?? ''}`,
-    );
+    const eventSource = new EventSource(buildSseUrl(debugSession.id, token));
     sseRef.current = eventSource;
 
     eventSource.onopen = () => {
@@ -259,18 +254,21 @@ export default function DebugConsolePage() {
               <>
                 {/* 会话信息 */}
                 <Card size="small" className="mb-3">
-                  <Descriptions column={4} size="small">
-                    <Descriptions.Item label="会话">
+                  <div className="flex flex-nowrap items-center gap-x-6 overflow-x-auto text-sm">
+                    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                      <span className="text-black/45">会话</span>
                       <Link to={`/sessions/${debugSession.id}`}>
                         {debugSession.title ?? debugSession.id.slice(0, 8)}
                       </Link>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="状态">
+                    </span>
+                    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                      <span className="text-black/45">状态</span>
                       <Tag color={SESSION_STATUS_META[debugSession.status].color}>
                         {SESSION_STATUS_META[debugSession.status].label}
                       </Tag>
-                    </Descriptions.Item>
-                    <Descriptions.Item label="能力类型">
+                    </span>
+                    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                      <span className="text-black/45">能力类型</span>
                       {debugSession.capabilityType ? (
                         <Tag
                           color={
@@ -282,9 +280,12 @@ export default function DebugConsolePage() {
                       ) : (
                         '—'
                       )}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="租户">{activeTenantName ?? activeTenantId}</Descriptions.Item>
-                  </Descriptions>
+                    </span>
+                    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap">
+                      <span className="text-black/45">租户</span>
+                      <span>{activeTenantName ?? activeTenantId}</span>
+                    </span>
+                  </div>
                 </Card>
 
                 {/* 消息区域 */}

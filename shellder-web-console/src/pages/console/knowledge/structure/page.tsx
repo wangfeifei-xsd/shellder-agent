@@ -1,228 +1,310 @@
 'use client';
 
-import {
-  DeleteOutlined,
-  EditOutlined,
-  FolderAddOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons';
-import {
-  Alert,
-  App,
-  Button,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Tree,
-  Typography,
-} from 'antd';
+import { App, Alert, Button, Card, Input, Modal, Popconfirm, Space, Spin, Tabs, Tree, Typography } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { KnowledgeProxyErrorAlert } from '@/components/console/KnowledgeProxyErrorAlert';
 import {
-  ALL_LAYERS,
   DataFolderTreeNode,
-  LAYER_LABELS,
   KnowledgeLayer,
   createFolder,
   deleteFolder,
   getDataTree,
   isKnowledgeProxyError,
+  knowledgeProxyErrorMessage,
   renameFolder,
 } from '@/lib/knowledge-proxy';
 
-function toTreeData(node: DataFolderTreeNode): DataNode {
+const { Text, Paragraph } = Typography;
+
+const LAYER_TAB: { key: KnowledgeLayer; label: string }[] = [
+  { key: 'raw', label: 'raw' },
+  { key: 'wiki', label: 'wiki' },
+  { key: 'schema', label: 'schema' },
+  { key: 'media', label: 'media' },
+];
+
+const ROOT_TREE_KEY = '__root__';
+
+function toTreeData(n: DataFolderTreeNode): DataNode {
+  const key = n.path === '' ? ROOT_TREE_KEY : n.path;
   return {
-    key: node.path || '/',
-    title: node.title || node.path || '(根)',
-    children: (node.children ?? []).map(toTreeData),
-    isLeaf: !(node.children?.length),
+    key,
+    title: n.title,
+    children: n.children.map(toTreeData),
   };
 }
 
+function treeKeyToPath(key: string): string {
+  return key === ROOT_TREE_KEY ? '' : key;
+}
+
 export default function KnowledgeStructurePage() {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const { activeTenantId, tenants } = useActiveTenant();
-  const [layer, setLayer] = useState<KnowledgeLayer>('raw');
-  const [tree, setTree] = useState<DataFolderTreeNode | null>(null);
+  const [tab, setTab] = useState<KnowledgeLayer>('raw');
+  const [treeRoot, setTreeRoot] = useState<DataFolderTreeNode | null>(null);
   const [loading, setLoading] = useState(false);
   const [proxyError, setProxyError] = useState<unknown>();
-  const [selectedPath, setSelectedPath] = useState<string>('');
+  const [selectedKey, setSelectedKey] = useState<string | undefined>(undefined);
 
-  const [createOpen, setCreateOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [creating, setCreating] = useState(false);
-
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renameValue, setRenameValue] = useState('');
-  const [renaming, setRenaming] = useState(false);
+  const selectedPath = useMemo(
+    () => (selectedKey == null ? undefined : treeKeyToPath(selectedKey)),
+    [selectedKey],
+  );
 
   const activeTenantName = useMemo(
     () => tenants.find((t) => t.id === activeTenantId)?.name,
     [tenants, activeTenantId],
   );
 
-  const load = useCallback(async () => {
-    if (!activeTenantId) { setTree(null); return; }
+  const loadTree = useCallback(async () => {
+    if (!activeTenantId) {
+      setTreeRoot(null);
+      return;
+    }
     setLoading(true);
     setProxyError(undefined);
     try {
-      setTree(await getDataTree(activeTenantId, layer));
+      setTreeRoot(await getDataTree(activeTenantId, tab));
+      setSelectedKey(undefined);
     } catch (err) {
       if (isKnowledgeProxyError(err)) setProxyError(err);
-      else message.error(err instanceof Error ? err.message : '加载目录树失败');
-      setTree(null);
+      else message.error(knowledgeProxyErrorMessage(err));
+      setTreeRoot(null);
     } finally {
       setLoading(false);
     }
-  }, [activeTenantId, layer, message]);
+  }, [activeTenantId, message, tab]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void loadTree();
+  }, [loadTree]);
 
-  const treeData = useMemo(() => (tree ? [toTreeData(tree)] : []), [tree]);
+  const treeData = useMemo(() => (treeRoot ? [toTreeData(treeRoot)] : []), [treeRoot]);
 
-  const handleCreate = async () => {
-    if (!activeTenantId || !newFolderName.trim()) {
+  const [addOpen, setAddOpen] = useState(false);
+  const [addName, setAddName] = useState('');
+  const [addSubmitting, setAddSubmitting] = useState(false);
+
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameTo, setRenameTo] = useState('');
+  const [renameSubmitting, setRenameSubmitting] = useState(false);
+
+  const submitAdd = useCallback(async () => {
+    if (!activeTenantId) return;
+    const name = addName.trim();
+    if (!name) {
       message.warning('请输入目录名');
       return;
     }
-    setCreating(true);
+    setAddSubmitting(true);
     try {
-      await createFolder(activeTenantId, layer, newFolderName.trim());
-      message.success('目录已创建');
-      setCreateOpen(false);
-      setNewFolderName('');
-      void load();
+      await createFolder(activeTenantId, tab, name);
+      message.success(`已创建：${tab}/${name}/`);
+      setAddOpen(false);
+      setAddName('');
+      void loadTree();
     } catch (err) {
-      message.error(err instanceof Error ? err.message : '创建失败');
+      message.error(knowledgeProxyErrorMessage(err));
     } finally {
-      setCreating(false);
+      setAddSubmitting(false);
     }
-  };
+  }, [activeTenantId, addName, loadTree, message, tab]);
 
-  const handleRename = async () => {
-    if (!activeTenantId || !selectedPath || !renameValue.trim()) return;
-    setRenaming(true);
-    try {
-      await renameFolder(activeTenantId, layer, selectedPath, renameValue.trim());
-      message.success('已重命名');
-      setRenameOpen(false);
-      setSelectedPath('');
-      void load();
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : '重命名失败（目录须为空）');
-    } finally {
-      setRenaming(false);
-    }
-  };
-
-  const handleDelete = () => {
-    if (!activeTenantId || !selectedPath) {
-      message.warning('请先在树中选择要删除的目录');
+  const submitRename = useCallback(async () => {
+    if (!activeTenantId || selectedPath == null || selectedPath === '') {
+      message.warning('请选择要重命名的子目录（不能选层根）');
       return;
     }
-    modal.confirm({
-      title: `确认删除空目录「${selectedPath}」？`,
-      okButtonProps: { danger: true },
-      onOk: async () => {
-        try {
-          await deleteFolder(activeTenantId, layer, selectedPath);
-          message.success('已删除');
-          setSelectedPath('');
-          void load();
-        } catch (err) {
-          message.error(err instanceof Error ? err.message : '删除失败（目录须为空）');
-        }
-      },
-    });
-  };
+    const newName = renameTo.trim();
+    if (!newName) {
+      message.warning('请输入新名称');
+      return;
+    }
+    setRenameSubmitting(true);
+    try {
+      await renameFolder(activeTenantId, tab, selectedPath, newName);
+      message.success('已重命名');
+      setRenameOpen(false);
+      setRenameTo('');
+      void loadTree();
+    } catch (err) {
+      message.error(knowledgeProxyErrorMessage(err));
+    } finally {
+      setRenameSubmitting(false);
+    }
+  }, [activeTenantId, loadTree, message, renameTo, selectedPath, tab]);
+
+  const submitDelete = useCallback(async () => {
+    if (!activeTenantId || selectedPath == null || selectedPath === '') {
+      message.warning('不能删除层根');
+      return;
+    }
+    try {
+      await deleteFolder(activeTenantId, tab, selectedPath);
+      message.success('已删除');
+      void loadTree();
+    } catch (err) {
+      message.error(knowledgeProxyErrorMessage(err));
+    }
+  }, [activeTenantId, loadTree, message, selectedPath, tab]);
+
+  const openRename = useCallback(() => {
+    if (!selectedPath) {
+      message.warning('请先选择目录');
+      return;
+    }
+    if (selectedPath === '') {
+      message.warning('层根不可重命名');
+      return;
+    }
+    const seg = selectedPath.replace(/\/$/, '').split('/').pop() ?? '';
+    setRenameTo(seg);
+    setRenameOpen(true);
+  }, [message, selectedPath]);
+
+  if (!activeTenantId) {
+    return (
+      <>
+        <Typography.Title level={3} className="!mb-4">
+          存储结构
+        </Typography.Title>
+        <Alert
+          type="warning"
+          showIcon
+          message="请先在顶栏选择「当前操作租户」"
+          description="存储结构按租户隔离，展示 raw / wiki / schema / media 四层目录树。"
+        />
+      </>
+    );
+  }
 
   return (
-    <>
-      <div className="mb-4 flex items-center justify-between">
-        <Typography.Title level={3} className="!mb-0">存储结构</Typography.Title>
-        <Space>
-          <Button icon={<FolderAddOutlined />} onClick={() => setCreateOpen(true)} disabled={!activeTenantId}>
-            新建目录
-          </Button>
-          <Button icon={<EditOutlined />} onClick={() => {
-            if (!selectedPath) { message.warning('请先选择目录'); return; }
-            setRenameValue(selectedPath.replace(/\/$/, '').split('/').pop() ?? '');
-            setRenameOpen(true);
-          }} disabled={!activeTenantId || !selectedPath}>
-            重命名
-          </Button>
-          <Button icon={<DeleteOutlined />} danger onClick={handleDelete} disabled={!activeTenantId || !selectedPath}>
-            删除空目录
-          </Button>
-          <Button icon={<ReloadOutlined />} onClick={() => void load()} disabled={!activeTenantId}>刷新</Button>
-        </Space>
-      </div>
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Typography.Title level={3} className="!mb-0">
+        存储结构
+      </Typography.Title>
+      <Alert type="info" showIcon message={`当前租户：${activeTenantName ?? activeTenantId}`} />
+      {proxyError != null ? <KnowledgeProxyErrorAlert error={proxyError} /> : null}
+      <Alert
+        type="info"
+        showIcon
+        message="存储结构"
+        description={
+          <Paragraph style={{ marginBottom: 0 }}>
+            与服务器 <Text code>data/</Text> 下 <Text code>raw</Text>、<Text code>wiki</Text>、
+            <Text code>schema</Text>、<Text code>media</Text> 目录对应。<strong>新增</strong>仅允许在
+            <strong>各层根下再挂一层</strong>子目录（例如 <Text code>raw/reef</Text>、
+            <Text code>wiki/reef</Text>、<Text code>media/albums</Text>）。<strong>重命名</strong>与
+            <strong>删除</strong>仅当该目录<strong>为空</strong>时允许。
+            <Text code>media</Text> 层内文件与 manifest 请用「媒体库」维护；本页勿删{' '}
+            <Text code>objects/</Text> 或 <Text code>manifest.json</Text>。
+          </Paragraph>
+        }
+      />
+      <Card>
+        <Tabs
+          activeKey={tab}
+          onChange={(k) => setTab(k as KnowledgeLayer)}
+          items={LAYER_TAB.map((t) => ({
+            key: t.key,
+            label: t.label,
+            children: (
+              <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                <Space wrap>
+                  <Button onClick={() => void loadTree()} loading={loading}>
+                    刷新
+                  </Button>
+                  <Button type="primary" onClick={() => setAddOpen(true)}>
+                    新增子目录
+                  </Button>
+                  <Button onClick={openRename} disabled={!selectedPath || selectedPath === ''}>
+                    重命名所选
+                  </Button>
+                  <Popconfirm
+                    title="删除该空目录？"
+                    description={selectedPath || '未选择'}
+                    okText="删除"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true }}
+                    disabled={!selectedPath || selectedPath === ''}
+                    onConfirm={() => void submitDelete()}
+                  >
+                    <Button danger disabled={!selectedPath || selectedPath === ''}>
+                      删除所选
+                    </Button>
+                  </Popconfirm>
+                </Space>
+                <div
+                  style={{
+                    minHeight: 360,
+                    overflow: 'auto',
+                    border: '1px solid #f0f0f0',
+                    borderRadius: 8,
+                    padding: 12,
+                  }}
+                >
+                  <Spin spinning={loading}>
+                    <Tree
+                      showLine
+                      blockNode
+                      selectable
+                      selectedKeys={selectedKey != null ? [selectedKey] : []}
+                      onSelect={(keys) => {
+                        const k = keys[0];
+                        setSelectedKey(k == null ? undefined : String(k));
+                      }}
+                      treeData={treeData}
+                    />
+                  </Spin>
+                </div>
+              </Space>
+            ),
+          }))}
+        />
+      </Card>
 
-      {!activeTenantId ? (
-        <Alert type="warning" showIcon message="请先在顶栏选择「当前操作租户」"
-          description="存储结构按租户隔离，展示 raw / wiki / schema / media 四层目录树。" />
-      ) : (
-        <>
-          <Alert className="mb-4" type="info" showIcon
-            message={`当前租户：${activeTenantName ?? activeTenantId}`}
-            description="展示四层存储目录结构。可在层根下新建单层子目录；重命名与删除仅支持空目录。"
-          />
-          {proxyError && <KnowledgeProxyErrorAlert error={proxyError} className="mb-4" />}
-
-          <Space className="mb-4">
-            <Typography.Text type="secondary">选择层：</Typography.Text>
-            <Select
-              style={{ width: 220 }}
-              value={layer}
-              onChange={(v) => { setLayer(v); setSelectedPath(''); }}
-              options={ALL_LAYERS.map((l) => ({ value: l, label: LAYER_LABELS[l] }))}
-            />
-            {selectedPath && (
-              <Typography.Text type="secondary">已选：{selectedPath}</Typography.Text>
-            )}
-          </Space>
-
-          <div className="rounded border border-gray-200 bg-white p-4 min-h-[400px]">
-            {loading ? (
-              <Typography.Text type="secondary">加载中…</Typography.Text>
-            ) : treeData.length > 0 ? (
-              <Tree
-                key={`${activeTenantId}-${layer}`}
-                showLine
-                treeData={treeData}
-                defaultExpandedKeys={[]}
-                selectedKeys={selectedPath ? [selectedPath] : []}
-                onSelect={(keys) => setSelectedPath(keys[0] === '/' ? '' : String(keys[0] ?? ''))}
-              />
-            ) : (
-              <Typography.Text type="secondary">该层暂无目录</Typography.Text>
-            )}
-          </div>
-        </>
-      )}
-
-      <Modal title="新建子目录" open={createOpen} onCancel={() => setCreateOpen(false)}
-        footer={[
-          <Button key="cancel" onClick={() => setCreateOpen(false)}>取消</Button>,
-          <Button key="ok" type="primary" loading={creating} onClick={handleCreate}>创建</Button>,
-        ]}
+      <Modal
+        title={`在 ${tab} 层根下新增子目录`}
+        open={addOpen}
+        onCancel={() => setAddOpen(false)}
+        okText="创建"
+        cancelText="取消"
+        confirmLoading={addSubmitting}
+        onOk={() => void submitAdd()}
       >
-        <Alert className="mb-3" type="info" showIcon message={`在 ${LAYER_LABELS[layer]} 层根下新建单层子目录`} />
-        <Input value={newFolderName} onChange={(e) => setNewFolderName(e.target.value)} placeholder="如：reef" />
+        <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+          仅单段名称，建议不要中文
+        </Text>
+        <Input
+          placeholder="目录名"
+          value={addName}
+          onChange={(e) => setAddName(e.target.value)}
+          onPressEnter={() => void submitAdd()}
+        />
       </Modal>
 
-      <Modal title="重命名目录" open={renameOpen} onCancel={() => setRenameOpen(false)}
-        footer={[
-          <Button key="cancel" onClick={() => setRenameOpen(false)}>取消</Button>,
-          <Button key="ok" type="primary" loading={renaming} onClick={handleRename}>确定</Button>,
-        ]}
+      <Modal
+        title="重命名目录"
+        open={renameOpen}
+        onCancel={() => setRenameOpen(false)}
+        okText="保存"
+        cancelText="取消"
+        confirmLoading={renameSubmitting}
+        onOk={() => void submitRename()}
       >
-        <Alert className="mb-3" type="warning" showIcon message="仅支持重命名空目录" />
-        <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} placeholder="新目录名" />
+        <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+          当前：{selectedPath ?? '—'}（须为空目录）
+        </Text>
+        <Input
+          placeholder="新目录名（单段）"
+          value={renameTo}
+          onChange={(e) => setRenameTo(e.target.value)}
+          onPressEnter={() => void submitRename()}
+        />
       </Modal>
-    </>
+    </Space>
   );
 }

@@ -18,7 +18,7 @@ export function knowledgeProxyUnavailable(message: string): ServiceUnavailableEx
 export function knowledgeProxyTimeout(timeoutMs: number): ServiceUnavailableException {
   return new ServiceUnavailableException({
     code: KNOWLEDGE_PROXY_TIMEOUT,
-    message: `pathy-knowledge-server 请求超时（>${timeoutMs}ms）`,
+    message: `wiki 知识库服务 请求超时（>${timeoutMs}ms）`,
   });
 }
 
@@ -29,9 +29,12 @@ export function knowledgeProxyUpstream(
 ): HttpException {
   const body = {
     code: KNOWLEDGE_PROXY_UPSTREAM,
-    message: `pathy-knowledge-server 返回 ${status}：${detail}`,
+    message: `wiki 知识库服务 返回 ${status}：${detail}`,
     ...(upstream !== undefined ? { details: upstream } : {}),
   };
+  if (status === 503) {
+    return new ServiceUnavailableException(body);
+  }
   if (status >= 500) {
     return new BadGatewayException(body);
   }

@@ -123,7 +123,7 @@ export default function LlmIntegrationPage() {
       </Typography.Title>
       <Typography.Paragraph type="secondary" className="max-w-3xl">
         配置平台主 LLM（OpenAI 兼容 Chat Completions）。问答型 Runtime 与「问答测试」均使用此配置生成最终回答；
-        pathy 仅负责知识召回，不在此配置 pathy 内 LLM。
+        wiki 服务仅负责知识召回，不在此配置 wiki 内 LLM。
       </Typography.Paragraph>
 
       {!settings?.api_key_configured && (

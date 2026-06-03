@@ -24,6 +24,10 @@ export const CONFIG_KEYS = {
   CAPABILITY_RESPONSE_TEMPLATE: 'model.capabilityResponseTemplate',
 
   NOTIFICATION_CONNECTOR_ID: 'notification.connectorId',
+
+  /** wiki 知识库服务根 URL（无尾斜杠） */
+  KNOWLEDGE_WIKI_BASE_URL: 'knowledge.wikiBaseUrl',
+  KNOWLEDGE_WIKI_TIMEOUT_MS: 'knowledge.wikiTimeoutMs',
 } as const;
 
 /** 默认配置值 */
@@ -38,6 +42,8 @@ const DEFAULT_VALUES: Record<string, string> = {
   [CONFIG_KEYS.MODEL_RETRY_DELAY_MS]: '1000',
   [CONFIG_KEYS.CAPABILITY_RESPONSE_TEMPLATE]: '{}',
   [CONFIG_KEYS.NOTIFICATION_CONNECTOR_ID]: '',
+  [CONFIG_KEYS.KNOWLEDGE_WIKI_BASE_URL]: '',
+  [CONFIG_KEYS.KNOWLEDGE_WIKI_TIMEOUT_MS]: '30000',
 };
 
 @Injectable()

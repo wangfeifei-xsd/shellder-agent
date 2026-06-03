@@ -21,6 +21,7 @@ import type { ColumnsType } from 'antd/es/table';
 import {
   ArrowLeftOutlined,
   BugOutlined,
+  DeleteOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
@@ -39,6 +40,7 @@ import {
   SESSION_STATUS_META,
   SessionDetail,
   SessionTaskItem,
+  deleteSession,
   getSession,
 } from '@/lib/session';
 
@@ -61,7 +63,7 @@ const TASK_STATUS_META: Record<string, { label: string; color: string }> = {
 export default function SessionDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const sessionId = params.id as string;
 
   const [detail, setDetail] = useState<SessionDetail | null>(null);
@@ -82,6 +84,26 @@ export default function SessionDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const handleDelete = () => {
+    if (!detail) return;
+    const title = detail.title || `会话 ${detail.id.slice(0, 8)}`;
+    modal.confirm({
+      title: `确认删除「${title}」？`,
+      content: '将永久删除该会话下的消息；关联任务与待确认审批一并移除，不可恢复。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await deleteSession(detail.id);
+          message.success('已删除');
+          navigate('/sessions');
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : '删除失败');
+        }
+      },
+    });
+  };
 
   if (loading) {
     return (
@@ -169,6 +191,9 @@ export default function SessionDetailPage() {
           </Button>
           <Button icon={<ReloadOutlined />} onClick={() => void load()}>
             刷新
+          </Button>
+          <Button danger icon={<DeleteOutlined />} onClick={handleDelete}>
+            删除
           </Button>
         </Space>
       </div>

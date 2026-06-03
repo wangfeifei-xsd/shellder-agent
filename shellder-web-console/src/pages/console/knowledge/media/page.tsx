@@ -1,282 +1,920 @@
 'use client';
 
 import {
+  CopyOutlined,
   DeleteOutlined,
   DownloadOutlined,
+  ImportOutlined,
+  LinkOutlined,
   ReloadOutlined,
-  SyncOutlined,
+  SearchOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import {
-  Alert,
   App,
+  Alert,
   Button,
   Card,
+  Col,
+  Descriptions,
+  Drawer,
   Form,
   Input,
   Modal,
+  Popconfirm,
+  Row,
+  Select,
   Space,
-  Statistic,
   Table,
+  TreeSelect,
   Typography,
   Upload,
 } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import type { ColumnsType, TableProps } from 'antd/es/table';
+import type { UploadProps } from 'antd/es/upload/interface';
+import type { Key } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ellipsisTextColumn,
-  renderOptionalText,
-  tableEllipsisLayout,
-  withNowrap,
-} from '@/components/console/tableEllipsis';
+import { AuthenticatedMediaThumb } from '@/components/console/AuthenticatedMediaThumb';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { KnowledgeProxyErrorAlert } from '@/components/console/KnowledgeProxyErrorAlert';
 import {
+  MEDIA_ROOT_FOLDER_VALUE,
+  mapMediaFolderToTreeSelect,
+  mediaFolderValueToTargetFolder,
+} from '@/components/console/knowledgeFolderTree';
+import {
   MediaItem,
+  batchDeleteMedia,
   deleteMedia,
-  getMediaDownloadUrl,
-  getMediaSummary,
+  exportMediaZip,
+  getDataTree,
+  getMediaBackrefs,
+  fetchMediaObjectUrl,
+  importMediaZip,
+  openMediaInNewTab,
   isKnowledgeProxyError,
+  knowledgeProxyErrorMessage,
   listMediaItems,
   reindexMediaBackrefs,
   uploadMedia,
 } from '@/lib/knowledge-proxy';
+import { ApiError } from '@/lib/api';
 
-const TOKEN_KEY = 'shellder.accessToken';
+const { Paragraph, Text } = Typography;
 
-function formatSize(n?: number) {
-  if (n == null) return '—';
+const FOLDER_FILTER_ALL = '__all__';
+const FOLDER_FILTER_EMPTY = '__empty__';
+
+function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function parseDispositionFilename(cd: string | undefined): string | undefined {
+  if (!cd) return undefined;
+  const m = /filename\*=UTF-8''([^;\n]+)|filename="([^"]+)"/i.exec(cd);
+  if (m?.[1]) return decodeURIComponent(m[1].replace(/^"+|"+$/g, ''));
+  if (m?.[2]) return m[2];
+  return undefined;
+}
+
+function triggerDownloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.rel = 'noopener';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function isImageMime(m: string): boolean {
+  return /^image\//i.test(m);
+}
+
+function isVideoMime(m: string): boolean {
+  return /^video\//i.test(m);
+}
+
+function mediaFolder(item: MediaItem): string {
+  return item.folder ?? item.target_folder ?? '';
 }
 
 export default function KnowledgeMediaPage() {
-  const { message, modal } = App.useApp();
+  const { message } = App.useApp();
   const { activeTenantId, tenants } = useActiveTenant();
-  const [items, setItems] = useState<MediaItem[]>([]);
-  const [bytesTotal, setBytesTotal] = useState(0);
-  const [summary, setSummary] = useState<{ count: number; bytes_registered: number } | null>(null);
+
+  const [list, setList] = useState<{ items: MediaItem[]; count: number; bytes_total: number } | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [proxyError, setProxyError] = useState<unknown>();
-  const [reindexing, setReindexing] = useState(false);
-
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const [reindexBusy, setReindexBusy] = useState(false);
   const [uploadTitle, setUploadTitle] = useState('');
-  const [uploadFolder, setUploadFolder] = useState('');
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [uploadTargetFolder, setUploadTargetFolder] = useState<string>(MEDIA_ROOT_FOLDER_VALUE);
+  const [backrefOpen, setBackrefOpen] = useState(false);
+  const [backrefCode, setBackrefCode] = useState<string | null>(null);
+  const [backrefData, setBackrefData] = useState<Awaited<ReturnType<typeof getMediaBackrefs>> | null>(
+    null,
+  );
+  const [backrefLoading, setBackrefLoading] = useState(false);
+  const [preview, setPreview] = useState<{ code: string; mime: string } | null>(null);
+  const [previewSrc, setPreviewSrc] = useState<string | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Key[]>([]);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importTargetFolder, setImportTargetFolder] = useState<string>(MEDIA_ROOT_FOLDER_VALUE);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [batchDeleteBusy, setBatchDeleteBusy] = useState(false);
+  const [folderTree, setFolderTree] = useState<Awaited<ReturnType<typeof getDataTree>> | null>(null);
+  const [folderFilter, setFolderFilter] = useState<string>(FOLDER_FILTER_ALL);
+  const [mediaTablePage, setMediaTablePage] = useState({ current: 1, pageSize: 20 });
 
   const activeTenantName = useMemo(
     () => tenants.find((t) => t.id === activeTenantId)?.name,
     [tenants, activeTenantId],
   );
 
-  const load = useCallback(async () => {
-    if (!activeTenantId) { setItems([]); return; }
+  const loadList = useCallback(async () => {
+    if (!activeTenantId) {
+      setList(null);
+      return;
+    }
     setLoading(true);
     setProxyError(undefined);
     try {
-      const [listRes, summaryRes] = await Promise.all([
-        listMediaItems(activeTenantId),
-        getMediaSummary(activeTenantId).catch(() => null),
-      ]);
-      setItems(listRes.items ?? []);
-      setBytesTotal(listRes.bytes_total ?? 0);
-      setSummary(summaryRes);
+      const data = await listMediaItems(activeTenantId);
+      setList(data);
     } catch (err) {
       if (isKnowledgeProxyError(err)) setProxyError(err);
-      else message.error(err instanceof Error ? err.message : '加载媒体列表失败');
-      setItems([]);
+      else message.error(knowledgeProxyErrorMessage(err));
+      setList(null);
     } finally {
       setLoading(false);
     }
   }, [activeTenantId, message]);
 
-  useEffect(() => { void load(); }, [load]);
-
-  const handleUpload = async () => {
-    if (!activeTenantId || !uploadFile) {
-      message.warning('请选择文件');
+  const loadFolderTree = useCallback(async () => {
+    if (!activeTenantId) {
+      setFolderTree(null);
       return;
     }
-    setUploading(true);
     try {
-      const res = await uploadMedia(
-        activeTenantId,
-        uploadFile,
-        uploadTitle.trim() || undefined,
-        uploadFolder.trim() || undefined,
+      setFolderTree(
+        await getDataTree(activeTenantId, 'media', { max_depth: 32, max_nodes: 2000 }),
       );
-      message.success(res.deduplicated ? `已上传（去重，code: ${res.code}）` : `上传成功，code: ${res.code}`);
-      setUploadOpen(false);
-      setUploadTitle('');
-      setUploadFolder('');
-      setUploadFile(null);
-      void load();
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : '上传失败');
-    } finally {
-      setUploading(false);
+    } catch {
+      setFolderTree(null);
     }
-  };
+  }, [activeTenantId]);
 
-  const handleDownload = async (code: string) => {
-    if (!activeTenantId) return;
-    const url = getMediaDownloadUrl(activeTenantId, code);
-    const token = typeof window !== 'undefined' ? window.localStorage.getItem(TOKEN_KEY) : null;
-    try {
-      const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+  useEffect(() => {
+    void loadList();
+  }, [loadList]);
+
+  useEffect(() => {
+    void loadFolderTree();
+  }, [loadFolderTree]);
+
+  useEffect(() => {
+    if (!activeTenantId || !preview) {
+      setPreviewSrc(null);
+      return;
+    }
+    let revoked: string | null = null;
+    let cancelled = false;
+    void fetchMediaObjectUrl(activeTenantId, preview.code)
+      .then((url) => {
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        revoked = url;
+        setPreviewSrc(url);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewSrc(null);
       });
-      if (!res.ok) throw new Error(`下载失败（HTTP ${res.status}）`);
-      const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = code;
-      a.click();
-      URL.revokeObjectURL(a.href);
+    return () => {
+      cancelled = true;
+      if (revoked) URL.revokeObjectURL(revoked);
+    };
+  }, [activeTenantId, preview]);
+
+  const folderTreeData = useMemo(
+    () => (folderTree ? [mapMediaFolderToTreeSelect(folderTree)] : []),
+    [folderTree],
+  );
+
+  const folderFilterOptions = useMemo(() => {
+    const items = list?.items ?? [];
+    const counts = new Map<string, number>();
+    for (const it of items) {
+      const key = mediaFolder(it);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    const opts: { value: string; label: string }[] = [
+      { value: FOLDER_FILTER_ALL, label: `全部（${items.length}）` },
+    ];
+    Array.from(counts.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .forEach(([k, n]) => {
+        opts.push({ value: k || FOLDER_FILTER_EMPTY, label: `${k || '(未归类)'}（${n}）` });
+      });
+    return opts;
+  }, [list]);
+
+  const filteredItems = useMemo<MediaItem[]>(() => {
+    const items = list?.items ?? [];
+    if (folderFilter === FOLDER_FILTER_ALL) return items;
+    if (folderFilter === FOLDER_FILTER_EMPTY) return items.filter((it) => !mediaFolder(it));
+    return items.filter((it) => mediaFolder(it) === folderFilter);
+  }, [folderFilter, list]);
+
+  const mediaTotalRows = filteredItems.length;
+  const mediaMaxPage = Math.max(1, Math.ceil(mediaTotalRows / mediaTablePage.pageSize) || 1);
+
+  useEffect(() => {
+    if (mediaTablePage.current > mediaMaxPage) {
+      setMediaTablePage((p) => ({ ...p, current: mediaMaxPage }));
+    }
+  }, [mediaMaxPage, mediaTablePage.current]);
+
+  const onMediaTableChange: TableProps<MediaItem>['onChange'] = (pag) => {
+    const nextSize = pag.pageSize ?? mediaTablePage.pageSize;
+    const sizeChanged = nextSize !== mediaTablePage.pageSize;
+    setMediaTablePage({
+      current: sizeChanged ? 1 : (pag.current ?? 1),
+      pageSize: nextSize,
+    });
+  };
+
+  useEffect(() => {
+    if (!list) return;
+    if (list.items.length === 0) {
+      setSelectedRowKeys([]);
+      return;
+    }
+    const valid = new Set(list.items.map((i) => i.code));
+    setSelectedRowKeys((prev) => prev.filter((k) => valid.has(String(k))));
+  }, [list]);
+
+  const onReindex = async () => {
+    if (!activeTenantId) return;
+    setReindexBusy(true);
+    try {
+      const data = await reindexMediaBackrefs(activeTenantId);
+      message.success(
+        `反向索引完成：${data.codes_with_refs} 个 code，共 ${data.total_ref_rows} 条引用`,
+      );
     } catch (err) {
-      message.error(err instanceof Error ? err.message : '下载失败');
+      message.error(knowledgeProxyErrorMessage(err));
+    } finally {
+      setReindexBusy(false);
     }
   };
 
-  const handleDelete = (item: MediaItem) => {
+  const openBackrefs = async (code: string) => {
     if (!activeTenantId) return;
-    modal.confirm({
-      title: `确认删除媒体「${item.code}」？`,
-      okButtonProps: { danger: true },
+    setBackrefCode(code);
+    setBackrefOpen(true);
+    setBackrefLoading(true);
+    setBackrefData(null);
+    try {
+      setBackrefData(await getMediaBackrefs(activeTenantId, code));
+    } catch (err) {
+      message.error(knowledgeProxyErrorMessage(err));
+    } finally {
+      setBackrefLoading(false);
+    }
+  };
+
+  const copy = async (text: string, okMsg: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      message.success(okMsg);
+    } catch {
+      message.warning('复制失败，请手动选择文本');
+    }
+  };
+
+  const copySelectedCodes = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先勾选要复制的行');
+      return;
+    }
+    void copy(selectedRowKeys.map(String).join('  '), `已复制 ${selectedRowKeys.length} 个 code`);
+  };
+
+  const copySelectedPlaceholders = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先勾选要复制的行');
+      return;
+    }
+    void copy(
+      selectedRowKeys.map((k) => `![[MEDIA:${k}]]`).join('  '),
+      `已复制 ${selectedRowKeys.length} 个 wiki 占位符`,
+    );
+  };
+
+  const exportSelectedZip = async () => {
+    if (!activeTenantId || selectedRowKeys.length === 0) {
+      message.warning('请先勾选要导出的资源');
+      return;
+    }
+    setExportBusy(true);
+    try {
+      const { blob, contentDisposition } = await exportMediaZip(
+        activeTenantId,
+        selectedRowKeys.map(String),
+      );
+      const name =
+        parseDispositionFilename(contentDisposition) ?? 'wiki-media-export.zip';
+      triggerDownloadBlob(blob, name);
+      message.success(`已开始下载：${name}`);
+    } catch (err) {
+      if (err instanceof ApiError && err.status >= 400) {
+        message.error(err.message);
+      } else {
+        message.error(knowledgeProxyErrorMessage(err));
+      }
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const submitImportZip = async () => {
+    if (!activeTenantId || !importFile) {
+      message.warning('请选择 zip 文件');
+      return;
+    }
+    setImportBusy(true);
+    try {
+      const folderVal = mediaFolderValueToTargetFolder(importTargetFolder);
+      const data = await importMediaZip(activeTenantId, importFile, folderVal);
+      message.success(data.message);
+      if (data.warning) message.warning(data.warning);
+      const errs = data.results.filter((r) => r.status === 'error');
+      if (errs.length > 0) {
+        Modal.warning({
+          title: '部分条目失败',
+          width: 640,
+          content: (
+            <Table
+              size="small"
+              pagination={{ pageSize: 8 }}
+              rowKey={(_, i) => String(i)}
+              dataSource={errs}
+              columns={[
+                { title: 'source', dataIndex: 'source_code', key: 's', ellipsis: true },
+                { title: '说明', dataIndex: 'detail', key: 'd', ellipsis: true },
+              ]}
+            />
+          ),
+        });
+      }
+      setImportOpen(false);
+      setImportFile(null);
+      setImportTargetFolder(MEDIA_ROOT_FOLDER_VALUE);
+      void loadList();
+      void loadFolderTree();
+    } catch (err) {
+      message.error(knowledgeProxyErrorMessage(err));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const deleteOneMedia = async (code: string) => {
+    if (!activeTenantId) return;
+    try {
+      const data = await deleteMedia(activeTenantId, code);
+      message.success(data.message ?? '已删除');
+      setSelectedRowKeys((prev) => prev.filter((k) => String(k) !== code));
+      void loadList();
+    } catch (err) {
+      message.error(knowledgeProxyErrorMessage(err));
+    }
+  };
+
+  const confirmBatchDelete = () => {
+    if (!activeTenantId || selectedRowKeys.length === 0) {
+      message.warning('请先勾选要删除的资源');
+      return;
+    }
+    const n = selectedRowKeys.length;
+    Modal.confirm({
+      title: `确定删除选中的 ${n} 条媒体？`,
+      content:
+        '将移除 manifest 登记；若无其他条目共用磁盘路径则删除对象文件。wiki 正文中的占位符不会自动删除，请自行清理。',
+      okText: '删除',
+      okType: 'danger',
+      cancelText: '取消',
       onOk: async () => {
+        setBatchDeleteBusy(true);
         try {
-          await deleteMedia(activeTenantId, item.code);
-          message.success('已删除');
-          void load();
+          const data = await batchDeleteMedia(activeTenantId, selectedRowKeys.map(String));
+          message.success(data.message);
+          const deleted = new Set(
+            data.results.filter((r) => r.status === 'deleted').map((r) => r.code),
+          );
+          setSelectedRowKeys((prev) => prev.filter((k) => !deleted.has(String(k))));
+          const others = data.results.filter((r) => r.status !== 'deleted');
+          if (others.length > 0) {
+            Modal.warning({
+              title: '部分条目未删除',
+              width: 560,
+              content: (
+                <Table
+                  size="small"
+                  pagination={{ pageSize: 8 }}
+                  rowKey={(_, i) => String(i)}
+                  dataSource={others}
+                  columns={[
+                    { title: 'code', dataIndex: 'code', key: 'c', ellipsis: true },
+                    { title: '状态', dataIndex: 'status', key: 's', width: 120 },
+                    { title: '说明', dataIndex: 'detail', key: 'd', ellipsis: true },
+                  ]}
+                />
+              ),
+            });
+          }
+          void loadList();
         } catch (err) {
-          message.error(err instanceof Error ? err.message : '删除失败');
+          message.error(knowledgeProxyErrorMessage(err));
+        } finally {
+          setBatchDeleteBusy(false);
         }
       },
     });
   };
 
-  const handleReindex = async () => {
-    if (!activeTenantId) return;
-    setReindexing(true);
-    try {
-      const res = await reindexMediaBackrefs(activeTenantId);
-      message.success(`反向索引已重建：${res.codes_with_refs} 个 code，${res.total_ref_rows} 条引用`);
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : '重建失败');
-    } finally {
-      setReindexing(false);
-    }
+  const uploadProps: UploadProps = {
+    name: 'file',
+    multiple: true,
+    showUploadList: true,
+    customRequest: async (options) => {
+      if (!activeTenantId) return;
+      const { file, onError, onSuccess } = options;
+      const f = file as File;
+      try {
+        const data = await uploadMedia(
+          activeTenantId,
+          f,
+          uploadTitle.trim() || undefined,
+          mediaFolderValueToTargetFolder(uploadTargetFolder),
+        );
+        onSuccess?.(data);
+        message.success(
+          data.deduplicated ? `已存在相同文件，code：${data.code}` : `上传成功：${data.code}`,
+        );
+        void loadList();
+      } catch (err) {
+        onError?.(err as Error);
+        message.error(knowledgeProxyErrorMessage(err));
+      }
+    },
   };
 
+  const rowActionsLocked = selectedRowKeys.length > 0;
+
   const columns: ColumnsType<MediaItem> = [
-    ellipsisTextColumn<MediaItem>('Code', 'code', 120),
-    withNowrap<MediaItem>({
-      title: '标题',
-      dataIndex: 'title',
+    {
+      title: '预览',
+      key: 'thumb',
+      width: 88,
+      render: (_, row) => {
+        if (!activeTenantId) return null;
+        const mime = row.mime ?? '';
+        if (!isImageMime(mime) && !isVideoMime(mime)) {
+          return <Text type="secondary">—</Text>;
+        }
+        return (
+          <AuthenticatedMediaThumb
+            tenantId={activeTenantId}
+            code={row.code}
+            mime={mime}
+            onPreview={() => setPreview({ code: row.code, mime })}
+          />
+        );
+      },
+    },
+    {
+      title: 'code',
+      dataIndex: 'code',
+      key: 'code',
       ellipsis: true,
-      render: (v: string | undefined) => renderOptionalText(v),
-    }),
-    withNowrap<MediaItem>({
-      title: 'MIME',
-      dataIndex: 'mime',
-      width: 140,
-      render: (v: string | undefined) => renderOptionalText(v),
-    }),
-    withNowrap<MediaItem>({
+      render: (c: string) => (
+        <Text code copyable={{ text: c }}>
+          {c}
+        </Text>
+      ),
+    },
+    { title: 'MIME', dataIndex: 'mime', key: 'mime', width: 140, ellipsis: true },
+    {
       title: '大小',
       dataIndex: 'size',
-      width: 100,
-      render: (v: number | undefined) => formatSize(v),
-    }),
-    ellipsisTextColumn<MediaItem>('目录', 'target_folder', 180),
-    withNowrap<MediaItem>({
+      key: 'size',
+      width: 96,
+      render: (s: number | undefined) => formatBytes(s ?? 0),
+    },
+    {
+      title: '菜单',
+      key: 'folder',
+      width: 160,
+      ellipsis: true,
+      render: (_, row) => {
+        const f = mediaFolder(row);
+        return f ? <Text code>{f}</Text> : <Text type="secondary">—</Text>;
+      },
+    },
+    { title: '标题', dataIndex: 'title', key: 'title', ellipsis: true, render: (t) => t || '—' },
+    {
+      title: '原始文件名',
+      dataIndex: 'original_name',
+      key: 'original_name',
+      ellipsis: true,
+      render: (v) => v || '—',
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      width: 200,
+      ellipsis: true,
+    },
+    {
       title: '操作',
       key: 'actions',
-      width: 140,
-      render: (_, row) => (
-        <Space size="small">
-          <a onClick={() => void handleDownload(row.code)}>
-            <DownloadOutlined /> 下载
-          </a>
-          <a className="text-red-500" onClick={() => handleDelete(row)}>
-            <DeleteOutlined />
-          </a>
-        </Space>
-      ),
-    }),
+      width: 200,
+      fixed: 'right',
+      render: (_, row) =>
+        activeTenantId ? (
+          <Space
+            direction="vertical"
+            size={4}
+            title={
+              rowActionsLocked
+                ? '已勾选行时请使用上方批量操作；取消勾选后可使用行内操作'
+                : undefined
+            }
+          >
+            <Space size={[4, 4]} wrap>
+              <Button
+                size="small"
+                icon={<CopyOutlined />}
+                disabled={rowActionsLocked}
+                onClick={() => void copy(row.code, '已复制 code')}
+              >
+                code
+              </Button>
+              <Button
+                size="small"
+                disabled={rowActionsLocked}
+                onClick={() => void copy(`![[MEDIA:${row.code}]]`, '已复制 wiki 占位符')}
+              >
+                占位符
+              </Button>
+              <Button
+                size="small"
+                icon={<LinkOutlined />}
+                disabled={rowActionsLocked}
+                onClick={() => void openMediaInNewTab(activeTenantId, row.code)}
+              >
+                打开
+              </Button>
+            </Space>
+            <Space size={[4, 4]} wrap>
+              <Button
+                size="small"
+                icon={<SearchOutlined />}
+                disabled={rowActionsLocked}
+                onClick={() => void openBackrefs(row.code)}
+              >
+                反向引用
+              </Button>
+              <Popconfirm
+                title="确定删除该媒体？"
+                description="移除登记；无其他条目共用文件时删除对象。wiki 占位符需自行清理。"
+                okText="删除"
+                okButtonProps={{ danger: true }}
+                cancelText="取消"
+                onConfirm={() => void deleteOneMedia(row.code)}
+              >
+                <Button
+                  size="small"
+                  danger
+                  type="primary"
+                  ghost
+                  icon={<DeleteOutlined />}
+                  disabled={rowActionsLocked}
+                >
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
+          </Space>
+        ) : null,
+    },
   ];
 
+  if (!activeTenantId) {
+    return (
+      <>
+        <Typography.Title level={3} className="!mb-4">
+          媒体库
+        </Typography.Title>
+        <Alert
+          type="warning"
+          showIcon
+          message="请先在顶栏选择「当前操作租户」"
+          description="媒体库按租户隔离，支持图片/视频/APK 等资源的上传、列表、导入导出与删除。"
+        />
+      </>
+    );
+  }
+
   return (
-    <>
-      <div className="mb-4 flex items-center justify-between">
-        <Typography.Title level={3} className="!mb-0">媒体库</Typography.Title>
-        <Space>
-          <Button icon={<SyncOutlined />} loading={reindexing} onClick={handleReindex} disabled={!activeTenantId}>
-            重建反向索引
+    <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Typography.Title level={3} className="!mb-0">
+        媒体库
+      </Typography.Title>
+      <Alert type="info" showIcon message={`当前租户：${activeTenantName ?? activeTenantId}`} />
+      {proxyError != null ? <KnowledgeProxyErrorAlert error={proxyError} /> : null}
+
+      <Card title="多媒体存储">
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="说明"
+          description={
+            <span>
+              对应服务端 <code>data/media/</code>（manifest + <code>objects/</code>）。wiki 中写 Obsidian 风格{' '}
+              <code>![[MEDIA:…]]</code> 绑定资源。请先执行「重建 wiki 反向索引」再使用「反向引用」。支持勾选后导出 ZIP、从 ZIP
+              导入及批量删除。
+            </span>
+          }
+        />
+        <Space wrap style={{ marginBottom: 16 }}>
+          <Button icon={<ReloadOutlined />} onClick={() => void loadList()} loading={loading}>
+            刷新列表
           </Button>
-          <Button type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)} disabled={!activeTenantId}>
-            上传媒体
+          <Button type="primary" ghost onClick={() => void onReindex()} loading={reindexBusy}>
+            重建 wiki 反向索引
           </Button>
-          <Button icon={<ReloadOutlined />} onClick={() => void load()} disabled={!activeTenantId}>刷新</Button>
+          <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>
+            从 ZIP 导入
+          </Button>
         </Space>
-      </div>
-
-      {!activeTenantId ? (
-        <Alert type="warning" showIcon message="请先在顶栏选择「当前操作租户」"
-          description="媒体库按租户隔离，支持图片/视频/APK 等资源的上传、列表、下载与删除。" />
-      ) : (
-        <>
-          <Alert className="mb-4" type="info" showIcon
-            message={`当前租户：${activeTenantName ?? activeTenantId}`}
-            description="管理 wiki 引用的多媒体资源。Wiki 中使用 ![[MEDIA:code]] 或 <!-- media:code --> 占位符引用。"
+        {list && (
+          <Descriptions size="small" bordered column={2} style={{ marginBottom: 16 }}>
+            <Descriptions.Item label="登记条数">{list.count}</Descriptions.Item>
+            <Descriptions.Item label="登记总大小">{formatBytes(list.bytes_total)}</Descriptions.Item>
+          </Descriptions>
+        )}
+        <Card type="inner" title="上传" size="small" style={{ marginBottom: 16 }}>
+          <Form layout="vertical" style={{ marginBottom: 0 }}>
+            <Row gutter={[16, 0]} align="bottom">
+              <Col xs={24} sm={14}>
+                <Form.Item
+                  label="目标目录"
+                  tooltip="从 media/ 子目录选择；层根目录走默认 objects/aa/bb/… 分层落盘"
+                  style={{ marginBottom: 12 }}
+                >
+                  <TreeSelect
+                    value={uploadTargetFolder}
+                    onChange={(v) => setUploadTargetFolder(v ?? MEDIA_ROOT_FOLDER_VALUE)}
+                    treeData={folderTreeData}
+                    treeDefaultExpandAll
+                    showSearch
+                    treeNodeFilterProp="title"
+                    style={{ width: '100%' }}
+                    placeholder="选择目标目录"
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={10}>
+                <Form.Item label="标题（可选）" style={{ marginBottom: 12 }}>
+                  <Input
+                    placeholder="写入 manifest，便于识别"
+                    value={uploadTitle}
+                    onChange={(e) => setUploadTitle(e.target.value)}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={[16, 0]} align="middle">
+              <Col xs={24} sm={14}>
+                <Upload
+                  {...uploadProps}
+                  accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mov,application/vnd.android.package-archive,.apk"
+                >
+                  <Button icon={<UploadOutlined />}>选择文件并上传</Button>
+                </Upload>
+              </Col>
+              <Col xs={24} sm={10}>
+                <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                  允许 png / jpg / webp / gif / mp4 / webm / mov / apk；大小与配额由服务端配置。
+                </Text>
+              </Col>
+            </Row>
+          </Form>
+        </Card>
+        <Space wrap style={{ marginBottom: 8 }}>
+          <Text type="secondary">菜单筛选</Text>
+          <Select
+            size="small"
+            style={{ minWidth: 220 }}
+            value={folderFilter}
+            onChange={(v) => {
+              setFolderFilter(v);
+              setMediaTablePage((p) => ({ ...p, current: 1 }));
+            }}
+            options={folderFilterOptions}
+            showSearch
+            optionFilterProp="label"
           />
-          {proxyError && <KnowledgeProxyErrorAlert error={proxyError} className="mb-4" />}
+          <Text type="secondary">已选 {selectedRowKeys.length} 条</Text>
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            disabled={selectedRowKeys.length === 0}
+            onClick={copySelectedCodes}
+          >
+            复制所选 code
+          </Button>
+          <Button size="small" disabled={selectedRowKeys.length === 0} onClick={copySelectedPlaceholders}>
+            复制所选占位符
+          </Button>
+          <Button
+            type="primary"
+            size="small"
+            icon={<DownloadOutlined />}
+            disabled={selectedRowKeys.length === 0}
+            loading={exportBusy}
+            onClick={() => void exportSelectedZip()}
+          >
+            导出所选为 ZIP
+          </Button>
+          <Button
+            danger
+            size="small"
+            icon={<DeleteOutlined />}
+            disabled={selectedRowKeys.length === 0}
+            loading={batchDeleteBusy}
+            onClick={() => confirmBatchDelete()}
+          >
+            批量删除
+          </Button>
+        </Space>
+        <Table<MediaItem>
+          rowKey="code"
+          loading={loading}
+          size="small"
+          scroll={{ x: 1260 }}
+          dataSource={filteredItems}
+          columns={columns}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys) => setSelectedRowKeys(keys),
+            preserveSelectedRowKeys: true,
+          }}
+          pagination={{
+            current: mediaTablePage.current,
+            pageSize: mediaTablePage.pageSize,
+            total: mediaTotalRows,
+            showSizeChanger: true,
+            pageSizeOptions: ['20', '50', '100', '200'],
+            showTotal: (t) => `共 ${t} 条`,
+          }}
+          onChange={onMediaTableChange}
+        />
+      </Card>
 
-          <div className="mb-4 grid grid-cols-3 gap-4">
-            <Card><Statistic title="媒体数量" value={items.length} /></Card>
-            <Card><Statistic title="总大小（列表）" value={formatSize(bytesTotal)} valueStyle={{ fontSize: 20 }} /></Card>
-            <Card>
-              <Statistic title="已登记（摘要）" value={summary?.count ?? '—'}
-                suffix={summary ? ` / ${formatSize(summary.bytes_registered)}` : undefined}
-                valueStyle={{ fontSize: 20 }} />
-            </Card>
-          </div>
-
-          <Table<MediaItem>
-            rowKey="code"
-            loading={loading}
-            columns={columns}
-            dataSource={items}
-            pagination={{ pageSize: 20 }}
-            {...tableEllipsisLayout}
-          />
-        </>
-      )}
-
-      <Modal title="上传媒体" open={uploadOpen} onCancel={() => setUploadOpen(false)}
-        footer={[
-          <Button key="cancel" onClick={() => setUploadOpen(false)}>取消</Button>,
-          <Button key="ok" type="primary" loading={uploading} onClick={handleUpload} disabled={!uploadFile}>上传</Button>,
-        ]}
+      <Drawer
+        title={backrefCode ? `反向引用：${backrefCode}` : '反向引用'}
+        placement="right"
+        width={480}
+        open={backrefOpen}
+        onClose={() => {
+          setBackrefOpen(false);
+          setBackrefCode(null);
+          setBackrefData(null);
+        }}
       >
-        <Form layout="vertical">
-          <Form.Item label="文件" required>
-            <Upload maxCount={1} beforeUpload={(f) => { setUploadFile(f); return false; }}
-              onRemove={() => setUploadFile(null)}>
-              <Button icon={<UploadOutlined />}>选择文件</Button>
-            </Upload>
-          </Form.Item>
-          <Form.Item label="标题（可选）">
-            <Input value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="媒体标题" />
-          </Form.Item>
-          <Form.Item label="目标目录（可选）">
-            <Input value={uploadFolder} onChange={(e) => setUploadFolder(e.target.value)} placeholder="media/ 下子目录" />
-          </Form.Item>
-        </Form>
+        {backrefLoading ? (
+          <Text type="secondary">加载中…</Text>
+        ) : backrefData ? (
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+            {backrefData.message ? (
+              <Alert type="warning" message={backrefData.message} showIcon />
+            ) : null}
+            <Table
+              size="small"
+              rowKey={(_, i) => String(i)}
+              pagination={false}
+              dataSource={backrefData.entries}
+              columns={[
+                { title: 'wiki 路径', dataIndex: 'wiki_path', key: 'wiki_path', ellipsis: true },
+                { title: '标题路径', dataIndex: 'heading_path', key: 'heading_path', ellipsis: true },
+              ]}
+            />
+          </Space>
+        ) : null}
+      </Drawer>
+
+      <Modal
+        open={importOpen}
+        title="从导出 ZIP 导入"
+        okText="开始导入"
+        cancelText="取消"
+        confirmLoading={importBusy}
+        onCancel={() => {
+          if (importBusy) return;
+          setImportOpen(false);
+          setImportFile(null);
+          setImportTargetFolder(MEDIA_ROOT_FOLDER_VALUE);
+        }}
+        onOk={() => void submitImportZip()}
+        destroyOnClose
+        width={560}
+      >
+        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="仅支持本页「导出所选为 ZIP」生成的包（根目录含 wiki_media_export.json 或兼容 pathy_media_export.json）。"
+          />
+          <Form layout="vertical">
+            <Form.Item label="ZIP 文件" required>
+              <Upload
+                maxCount={1}
+                accept=".zip,application/zip"
+                beforeUpload={(f) => {
+                  setImportFile(f);
+                  return false;
+                }}
+                onRemove={() => setImportFile(null)}
+              >
+                <Button>选择 zip</Button>
+              </Upload>
+              {importFile ? <Text type="secondary">{importFile.name}</Text> : null}
+            </Form.Item>
+            <Form.Item
+              label="目标菜单（media/ 下子目录）"
+              extra={
+                <span>
+                  选择「层根目录」走默认 <Text code>objects/aa/bb/…</Text> 分层落盘。新建菜单请先在「存储结构」页在
+                  media 层根下新增子目录。
+                </span>
+              }
+            >
+              <TreeSelect
+                value={importTargetFolder}
+                onChange={(v) => setImportTargetFolder(v ?? MEDIA_ROOT_FOLDER_VALUE)}
+                treeData={folderTreeData}
+                treeDefaultExpandAll
+                showSearch
+                treeNodeFilterProp="title"
+                style={{ width: '100%' }}
+                placeholder="选择目标菜单"
+              />
+            </Form.Item>
+          </Form>
+        </Space>
       </Modal>
-    </>
+
+      <Modal
+        open={preview != null}
+        footer={null}
+        width={720}
+        onCancel={() => setPreview(null)}
+        title={preview ? `预览 · ${preview.code}` : '预览'}
+        destroyOnClose
+      >
+        {preview && activeTenantId ? (
+          previewSrc && isImageMime(preview.mime) ? (
+            <img
+              alt=""
+              src={previewSrc}
+              style={{ width: '100%', maxHeight: '70vh', objectFit: 'contain' }}
+            />
+          ) : previewSrc && isVideoMime(preview.mime) ? (
+            <video controls style={{ width: '100%', maxHeight: '70vh' }} src={previewSrc}>
+              <track kind="captions" />
+            </video>
+          ) : (
+            <Paragraph>
+              {previewSrc
+                ? `不支持内联预览的 MIME：${preview.mime}，请使用「打开」查看。`
+                : '加载预览中…'}
+            </Paragraph>
+          )
+        ) : null}
+      </Modal>
+    </Space>
   );
 }

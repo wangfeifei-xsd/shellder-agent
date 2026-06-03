@@ -112,6 +112,25 @@ export interface CopilotSendMessageResult {
   reply?: Record<string, unknown>;
 }
 
+/** 与 server capability-result.ts / 嵌入消息 content 对齐 */
+export type CapabilityTypeKey = 'qa' | 'query' | 'action' | 'workflow';
+
+export interface CapabilityResult {
+  capabilityType: CapabilityTypeKey;
+  data: Record<string, unknown>;
+  citations?: CopilotCitation[];
+  steps?: {
+    seq: number;
+    name: string;
+    status: string;
+    durationMs?: number;
+    error?: string;
+    toolName?: string;
+  }[];
+  status: 'success' | 'failed' | 'partial' | 'pending_confirm';
+  error?: string;
+}
+
 function copilotHeaders(token: string): Record<string, string> {
   return {
     'Content-Type': 'application/json',
@@ -256,4 +275,55 @@ export function extractCitations(content: Record<string, unknown>): CopilotCitat
     return citations as CopilotCitation[];
   }
   return [];
+}
+
+const CAPABILITY_TYPES: CapabilityTypeKey[] = ['qa', 'query', 'action', 'workflow'];
+const CAPABILITY_STATUSES = ['success', 'failed', 'partial', 'pending_confirm'] as const;
+
+/** 从助手消息 content 解析完整 CapabilityResult（与嵌入金标准一致） */
+export function parseCapabilityResult(
+  content: Record<string, unknown>,
+): CapabilityResult | null {
+  const capabilityType = content.capabilityType;
+  const status = content.status;
+  if (
+    typeof capabilityType !== 'string' ||
+    !CAPABILITY_TYPES.includes(capabilityType as CapabilityTypeKey) ||
+    typeof status !== 'string' ||
+    !CAPABILITY_STATUSES.includes(status as (typeof CAPABILITY_STATUSES)[number])
+  ) {
+    return null;
+  }
+
+  const data = content.data;
+  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
+    return null;
+  }
+
+  return {
+    capabilityType: capabilityType as CapabilityTypeKey,
+    data: data as Record<string, unknown>,
+    citations: Array.isArray(content.citations)
+      ? (content.citations as CopilotCitation[])
+      : undefined,
+    steps: Array.isArray(content.steps)
+      ? (content.steps as CapabilityResult['steps'])
+      : undefined,
+    status: status as CapabilityResult['status'],
+    error: typeof content.error === 'string' ? content.error : undefined,
+  };
+}
+
+/** 从会话消息列表取最后一条可解析的 CapabilityResult */
+export function findLastAssistantCapabilityResult(
+  messages: CopilotMessage[],
+): CapabilityResult | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'user' || msg.type === 'confirmation') continue;
+    if (msg.content.type === 'routing_result') continue;
+    const parsed = parseCapabilityResult(msg.content);
+    if (parsed) return parsed;
+  }
+  return null;
 }

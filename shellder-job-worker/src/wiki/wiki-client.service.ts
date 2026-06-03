@@ -1,21 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { resolveWikiBaseUrl, resolveWikiTimeoutMs } from './knowledge-connection.util';
 
 @Injectable()
-export class PathyClientService {
-  private readonly logger = new Logger(PathyClientService.name);
+export class WikiClientService {
+  private readonly logger = new Logger(WikiClientService.name);
 
-  private get baseUrl(): string {
-    const raw = process.env.PATHY_KNOWLEDGE_SERVER_BASE_URL?.trim();
-    if (!raw) {
-      throw new Error('未配置 PATHY_KNOWLEDGE_SERVER_BASE_URL');
-    }
-    return raw.replace(/\/+$/, '');
-  }
-
-  private get timeoutMs(): number {
-    const n = Number(process.env.PATHY_KNOWLEDGE_SERVER_TIMEOUT_MS ?? 120_000);
-    return Number.isFinite(n) && n > 0 ? n : 120_000;
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async compile(inputPaths: string[], outputPath: string): Promise<Record<string, unknown>> {
     return this.postJson('/api/v1/tasks/compile', {
@@ -29,16 +20,18 @@ export class PathyClientService {
   }
 
   private async postJson(path: string, body: unknown): Promise<Record<string, unknown>> {
-    const url = `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
+    const baseUrl = await resolveWikiBaseUrl(this.prisma);
+    const timeoutMs = await resolveWikiTimeoutMs(this.prisma);
+    const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(this.timeoutMs),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const text = await res.text();
     if (!res.ok) {
-      throw new Error(`pathy ${path} HTTP ${res.status}: ${text.slice(0, 300)}`);
+      throw new Error(`wiki ${path} HTTP ${res.status}: ${text.slice(0, 300)}`);
     }
     if (!text) return {};
     try {

@@ -45,17 +45,16 @@ import {
   resetOpenApiAppSecret,
   updateOpenApiApp,
 } from '@/lib/openapi-management';
-import { apiFetch } from '@/lib/api';
+import { useTenantSelectOptions } from '@/lib/tenant-select';
 
 const fmt = (s: string | null) =>
   s ? new Date(s).toLocaleString('zh-CN') : '—';
-
-interface TenantOption { id: string; code: string; name: string; }
 
 export default function OpenApiAppDetailPage() {
   const id = useParams().id!;
   const navigate = useNavigate();
   const { message, modal } = App.useApp();
+  const { items: tenantItems } = useTenantSelectOptions();
 
   const [app, setApp] = useState<OpenApiAppItem | null>(null);
   const [stats, setStats] = useState<CallStats | null>(null);
@@ -65,7 +64,6 @@ export default function OpenApiAppDetailPage() {
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [tenants, setTenants] = useState<TenantOption[]>([]);
   const [form] = Form.useForm();
 
   const load = useCallback(async () => {
@@ -90,12 +88,6 @@ export default function OpenApiAppDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  useEffect(() => {
-    apiFetch<{ items: TenantOption[] }>('/api/v1/tenants', {
-      query: { pageSize: 200 },
-    }).then((r) => setTenants(r.items)).catch(() => {});
-  }, []);
 
   const handleEdit = async (values: any) => {
     setSaving(true);
@@ -226,9 +218,9 @@ export default function OpenApiAppDetailPage() {
           <Descriptions.Item label="描述" span={2}>
             {app.description ?? '—'}
           </Descriptions.Item>
-          <Descriptions.Item label="允许租户" span={2}>
+          <Descriptions.Item label="归属租户" span={2}>
             {app.allowedTenantIds.map((tid) => {
-              const t = tenants.find((x) => x.id === tid);
+              const t = tenantItems.find((x) => x.id === tid);
               return <Tag key={tid}>{t ? `${t.name}（${t.code}）` : tid}</Tag>;
             })}
           </Descriptions.Item>
@@ -315,14 +307,16 @@ export default function OpenApiAppDetailPage() {
           <Form.Item name="status" label="状态" rules={[{ required: true }]}>
             <Select options={APP_STATUS_OPTIONS} />
           </Form.Item>
-          <Form.Item name="allowedTenantIds" label="允许租户" rules={[{ required: true }]}>
-            <Select
-              mode="multiple"
-              options={tenants.map((t) => ({
-                value: t.id,
-                label: `${t.name}（${t.code}）`,
-              }))}
-            />
+          <Form.Item label="归属租户">
+            <div>
+              {app.allowedTenantIds.map((tid) => {
+                const t = tenantItems.find((x) => x.id === tid);
+                return (
+                  <Tag key={tid}>{t ? `${t.name}（${t.code}）` : tid}</Tag>
+                );
+              })}
+            </div>
+            <div className="mt-1 text-xs text-gray-500">创建后不可变更归属租户</div>
           </Form.Item>
           <Form.Item name="allowedCapabilities" label="能力范围" rules={[{ required: true }]}>
             <Select mode="multiple" options={CAPABILITY_OPTIONS} />

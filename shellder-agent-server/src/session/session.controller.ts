@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -61,6 +62,12 @@ export class SessionController {
     @Body() dto: UpdateSessionDto,
   ) {
     return this.sessionService.update(user, id, dto);
+  }
+
+  @Delete(':id')
+  @Audit({ action: 'session.delete', module: 'session', targetType: 'session' })
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.sessionService.remove(user, id);
   }
 
   /**

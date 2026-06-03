@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { KnowledgeConnectionService } from './knowledge-connection.service';
 import {
   knowledgeProxyTimeout,
   knowledgeProxyUnavailable,
@@ -22,24 +23,13 @@ export interface ProxyRequestOptions {
 export class KnowledgeProxyClient {
   private readonly logger = new Logger(KnowledgeProxyClient.name);
 
-  private get baseUrl(): string {
-    const raw = process.env.PATHY_KNOWLEDGE_SERVER_BASE_URL?.trim();
-    if (!raw) {
-      throw knowledgeProxyUnavailable(
-        '未配置 PATHY_KNOWLEDGE_SERVER_BASE_URL，无法连接 pathy-knowledge-server',
-      );
-    }
-    return raw.replace(/\/+$/, '');
-  }
-
-  private get defaultTimeoutMs(): number {
-    const n = Number(process.env.PATHY_KNOWLEDGE_SERVER_TIMEOUT_MS ?? 30_000);
-    return Number.isFinite(n) && n > 0 ? n : 30_000;
-  }
+  constructor(private readonly connection: KnowledgeConnectionService) {}
 
   async request<T = unknown>(options: ProxyRequestOptions): Promise<T> {
-    const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
-    const url = this.buildUrl(options.path, options.query);
+    const baseUrl = await this.connection.resolveBaseUrl();
+    const timeoutMs =
+      options.timeoutMs ?? (await this.connection.resolveTimeoutMs());
+    const url = this.buildUrl(baseUrl, options.path, options.query);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -115,9 +105,9 @@ export class KnowledgeProxyClient {
         throw err;
       }
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`pathy 请求失败 ${options.method} ${url}: ${msg}`);
+      this.logger.warn(`wiki 请求失败 ${options.method} ${url}: ${msg}`);
       throw knowledgeProxyUnavailable(
-        `无法连接 pathy-knowledge-server（${this.baseUrl}）：${msg}`,
+        `无法连接 wiki 知识库服务（${baseUrl}）：${msg}`,
       );
     } finally {
       clearTimeout(timer);
@@ -125,11 +115,12 @@ export class KnowledgeProxyClient {
   }
 
   private buildUrl(
+    baseUrl: string,
     path: string,
     query?: Record<string, string | number | boolean | undefined | null>,
   ): string {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
-    const url = new URL(`${this.baseUrl}${normalizedPath}`);
+    const url = new URL(`${baseUrl}${normalizedPath}`);
     if (query) {
       for (const [key, value] of Object.entries(query)) {
         if (value === undefined || value === null || value === '') continue;

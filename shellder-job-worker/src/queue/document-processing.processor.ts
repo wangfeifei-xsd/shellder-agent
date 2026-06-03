@@ -2,8 +2,8 @@ import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import type { InputJsonValue } from '@prisma/client/runtime/library';
 import { Job } from 'bullmq';
-import { PathyClientService } from '../pathy/pathy-client.service';
-import { TenantScopeService } from '../pathy/tenant-scope.service';
+import { WikiClientService } from '../wiki/wiki-client.service';
+import { TenantScopeService } from '../wiki/tenant-scope.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DOCUMENT_PROCESSING_QUEUE,
@@ -11,7 +11,7 @@ import {
 } from './queue.constants';
 
 /**
- * pathy 文档异步处理：raw 层 compile → wiki，再 wiki/embed 建索引。
+ * wiki 文档异步处理：raw 层 compile → wiki，再 wiki/embed 建索引。
  * 幂等：kb_layer_processing_job.status=done 时跳过；running 且 30 分钟内跳过。
  */
 @Processor(DOCUMENT_PROCESSING_QUEUE, { concurrency: 2 })
@@ -20,7 +20,7 @@ export class DocumentProcessingProcessor extends WorkerHost {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly pathy: PathyClientService,
+    private readonly wiki: WikiClientService,
     private readonly tenantScope: TenantScopeService,
   ) {
     super();
@@ -66,10 +66,10 @@ export class DocumentProcessingProcessor extends WorkerHost {
       if (operation === 'compile_and_embed') {
         const out = outputPath ?? inputPath;
         const scopedOutput = this.tenantScope.scopeLayerPath(wikiPrefix, out);
-        results.compile = await this.pathy.compile([scopedInput], scopedOutput);
-        results.embed = await this.pathy.embedWiki(scopedOutput);
+        results.compile = await this.wiki.compile([scopedInput], scopedOutput);
+        results.embed = await this.wiki.embedWiki(scopedOutput);
       } else {
-        results.embed = await this.pathy.embedWiki(scopedInput);
+        results.embed = await this.wiki.embedWiki(scopedInput);
       }
 
       await this.prisma.kbLayerProcessingJob.update({

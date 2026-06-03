@@ -11,8 +11,8 @@ import {
 import { DocumentProcessingProcessor } from './document-processing.processor';
 import { NotificationProcessor } from './notification.processor';
 import { NotificationSenderService } from '../notification/notification-sender.service';
-import { PathyClientService } from '../pathy/pathy-client.service';
-import { TenantScopeService } from '../pathy/tenant-scope.service';
+import { WikiClientService } from '../wiki/wiki-client.service';
+import { TenantScopeService } from '../wiki/tenant-scope.service';
 import { PlaceholderProcessor } from './placeholder.processor';
 import { TaskProcessor } from './task.processor';
 import { TaskTimeoutProcessor } from './task-timeout.processor';
@@ -36,7 +36,7 @@ import { TaskTimeoutScheduler } from './task-timeout.scheduler';
     NotificationProcessor,
     DocumentProcessingProcessor,
     NotificationSenderService,
-    PathyClientService,
+    WikiClientService,
     TenantScopeService,
     TaskExecutionClient,
   ],

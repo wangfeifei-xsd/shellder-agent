@@ -46,9 +46,9 @@ export class CreateKnowledgeBaseDto {
   @Min(0)
   chunkOverlap?: number;
 
-  /** pathy wiki 子路径前缀，如 `tenants/{tenantId}/`；空则运行时使用默认租户前缀 */
+  /** wiki wiki 子路径前缀，如 `tenants/{tenantId}/`；空则运行时使用默认租户前缀 */
   @IsString()
   @IsOptional()
   @MaxLength(256)
-  pathyWikiPrefix?: string;
+  wikiPrefix?: string;
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { BugOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
+import { BugOutlined, DeleteOutlined, EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import {
   Alert,
   App,
@@ -32,6 +32,7 @@ import {
   SESSION_STATUS_OPTIONS,
   SessionItem,
   SessionStatus,
+  deleteSession,
   listSessions,
 } from '@/lib/session';
 
@@ -39,7 +40,7 @@ const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '�
 
 export default function SessionListPage() {
   const navigate = useNavigate();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const { activeTenantId, tenants } = useActiveTenant();
 
   const [data, setData] = useState<SessionItem[]>([]);
@@ -84,6 +85,25 @@ export default function SessionListPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const handleDelete = (row: SessionItem) => {
+    const title = row.title || `会话 ${row.id.slice(0, 8)}`;
+    modal.confirm({
+      title: `确认删除「${title}」？`,
+      content: '将永久删除该会话下的消息；关联任务与待确认审批一并移除，不可恢复。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await deleteSession(row.id);
+          message.success('已删除');
+          void load();
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : '删除失败');
+        }
+      },
+    });
+  };
 
   const columns: ColumnsType<SessionItem> = [
     withNowrap<SessionItem>({
@@ -149,7 +169,7 @@ export default function SessionListPage() {
     withNowrap<SessionItem>({
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 200,
       render: (_, row) => (
         <Space size="small">
           <Button
@@ -167,6 +187,15 @@ export default function SessionListPage() {
             onClick={() => navigate(`/sessions/debug?sessionId=${row.id}`)}
           >
             调试
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(row)}
+          >
+            删除
           </Button>
         </Space>
       ),

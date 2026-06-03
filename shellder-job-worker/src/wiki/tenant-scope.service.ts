@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
-/** 与 server KnowledgeTenantScopeService 对齐的租户 pathy 路径前缀 */
+/** 与 server KnowledgeTenantScopeService 对齐的租户 wiki 路径前缀 */
 @Injectable()
 export class TenantScopeService {
   constructor(private readonly prisma: PrismaService) {}
@@ -10,10 +10,10 @@ export class TenantScopeService {
     const kb = await this.prisma.knowledgeBase.findFirst({
       where: { tenantId, status: 'active', deletedAt: null },
       orderBy: { createdAt: 'asc' },
-      select: { pathyWikiPrefix: true },
+      select: { wikiPrefix: true },
     });
-    if (kb?.pathyWikiPrefix != null && kb.pathyWikiPrefix !== '') {
-      return this.normalizePrefix(kb.pathyWikiPrefix);
+    if (kb?.wikiPrefix != null && kb.wikiPrefix !== '') {
+      return this.normalizePrefix(kb.wikiPrefix);
     }
     return `tenants/${tenantId}/`;
   }

@@ -19,7 +19,7 @@ USE `agent_platform`;
 --   - tool（07）：四类 Tool 定义及 config（sql/http/workflow）
 --   - capability / routing_rule（10）：能力目录与路由规则
 --   - skill（11）：技能书与 Tool 绑定
---   - knowledge_base（12）+ pathy 代理 recall（12）：问答型知识库检索
+--   - knowledge_base（12）+ wiki 代理 recall（12）：问答型知识库检索
 --
 -- 增量变更：
 -- 1. 为 message.content 新增统一结果结构约定（仅应用层约束，数据库 JSON 列不变）。

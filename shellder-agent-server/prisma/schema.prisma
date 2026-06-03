@@ -980,8 +980,8 @@ model KnowledgeBase {
   tenantId        String              @map("tenant_id") @db.Char(36)
   name            String              @db.VarChar(128)
   description     String?             @db.VarChar(512)
-  /// pathy wiki 子路径前缀（租户隔离）；空则默认 tenants/{tenantId}/
-  pathyWikiPrefix   String?             @map("pathy_wiki_prefix") @db.VarChar(256)
+  /// wiki 子路径前缀（租户隔离）；空则默认 tenants/{tenantId}/
+  wikiPrefix        String?             @map("wiki_prefix") @db.VarChar(256)
   embeddingModel  String              @default("text-embedding-3-small") @map("embedding_model") @db.VarChar(128)
   similarityMetric String             @default("cosine") @map("similarity_metric") @db.VarChar(32)
   chunkStrategy   String              @default("fixed_size") @map("chunk_strategy") @db.VarChar(32)
@@ -1149,7 +1149,7 @@ model KbEmbeddingTask {
   @@map("kb_embedding_task")
 }
 
-/// pathy 层文件异步处理任务（编译 raw→wiki、wiki 嵌入索引）
+/// wiki 层文件异步处理任务（编译 raw→wiki、wiki 嵌入索引）
 enum KbLayerProcessingStatus {
   queued
   running

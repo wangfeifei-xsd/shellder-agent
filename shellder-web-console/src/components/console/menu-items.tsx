@@ -85,6 +85,16 @@ export const consoleMenuItems: MenuProps['items'] = [
     children: [{ key: '/prompts', label: <Link to="/prompts">模板列表</Link> }],
   },
   {
+    key: 'session',
+    icon: <MessageOutlined />,
+    label: '会话管理',
+    children: [
+      { key: '/sessions', label: <Link to="/sessions">会话列表</Link> },
+      { key: '/sessions/messages', label: <Link to="/sessions/messages">消息记录</Link> },
+      { key: '/sessions/debug', label: <Link to="/sessions/debug">调试台</Link> },
+    ],
+  },
+  {
     key: 'user',
     icon: <TeamOutlined />,
     label: '用户与权限',
@@ -112,16 +122,6 @@ export const consoleMenuItems: MenuProps['items'] = [
       { key: '/settings/llm', label: <Link to="/settings/llm">模型接入</Link> },
       { key: '/settings/model', label: <Link to="/settings/model">模型与响应配置</Link> },
       { key: '/settings/notification', label: <Link to="/settings/notification">通知配置</Link> },
-    ],
-  },
-  {
-    key: 'session',
-    icon: <MessageOutlined />,
-    label: '会话管理（实验中）',
-    children: [
-      { key: '/sessions', label: <Link to="/sessions">会话列表</Link> },
-      { key: '/sessions/messages', label: <Link to="/sessions/messages">消息记录</Link> },
-      { key: '/sessions/debug', label: <Link to="/sessions/debug">调试台</Link> },
     ],
   },
   {

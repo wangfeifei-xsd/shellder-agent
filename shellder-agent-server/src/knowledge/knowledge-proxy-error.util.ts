@@ -1,5 +1,5 @@
 /**
- * 将 pathy / FastAPI 上游错误体格式化为可读字符串。
+ * 将 wiki / FastAPI 上游错误体格式化为可读字符串。
  * FastAPI 422 的 detail 常为 { loc, msg, type }[]，不可直接 String()。
  */
 export function formatUpstreamErrorDetail(json: unknown): string {

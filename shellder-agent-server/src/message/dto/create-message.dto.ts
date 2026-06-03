@@ -1,13 +1,16 @@
 import { MessageRole, MessageType } from '@prisma/client';
 import {
   IsEnum,
+  IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
 } from 'class-validator';
 
 export class CreateMessageDto {
-  @IsString()
+  @IsUUID()
+  @IsNotEmpty()
   sessionId!: string;
 
   @IsEnum(MessageType)

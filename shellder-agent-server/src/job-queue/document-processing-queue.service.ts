@@ -14,6 +14,8 @@ export interface ScheduleLayerProcessingInput {
   inputPath: string;
   outputPath?: string;
   operation?: DocumentProcessingOperation;
+  /** 为 true 时允许对已完成的作业重新入队（手动「嵌入」） */
+  force?: boolean;
 }
 
 @Injectable()
@@ -27,7 +29,7 @@ export class DocumentProcessingQueueService {
   ) {}
 
   /**
-   * 层文件上传后调度 pathy 编译/嵌入（幂等：同 idempotencyKey 不重复入队）。
+   * 层文件上传后调度 wiki 编译/嵌入（幂等：同 idempotencyKey 不重复入队）。
    */
   async scheduleAfterUpload(input: ScheduleLayerProcessingInput): Promise<{
     scheduled: boolean;
@@ -45,13 +47,13 @@ export class DocumentProcessingQueueService {
       where: { idempotencyKey },
     });
     if (existing) {
-      if (existing.status === 'done') {
+      if (existing.status === 'done' && !input.force) {
         return { scheduled: false, jobRecordId: existing.id, reason: 'already_done' };
       }
-      if (existing.status === 'running') {
+      if (!input.force && existing.status === 'running') {
         return { scheduled: false, jobRecordId: existing.id, reason: 'already_running' };
       }
-      if (existing.status === 'queued' && existing.bullJobId) {
+      if (!input.force && existing.status === 'queued' && existing.bullJobId) {
         return { scheduled: false, jobRecordId: existing.id, reason: 'already_queued' };
       }
     }
@@ -85,6 +87,9 @@ export class DocumentProcessingQueueService {
           },
         });
 
+    const bullJobId =
+      input.force && existing ? `${idempotencyKey}:${Date.now()}` : idempotencyKey;
+
     const job = await this.queue.add(
       'process-document',
       {
@@ -97,7 +102,7 @@ export class DocumentProcessingQueueService {
         idempotencyKey,
       },
       {
-        jobId: idempotencyKey,
+        jobId: bullJobId,
         attempts: 2,
         backoff: { type: 'fixed', delay: 10_000 },
         removeOnComplete: { count: 2000 },

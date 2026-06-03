@@ -184,9 +184,14 @@ export default function DashboardPage() {
             </Col>
             <Col xs={12} sm={8} md={4}>
               <Statistic
-                title="平均响应"
-                value={toolStats.avgDurationMs ?? '-'}
-                suffix={toolStats.avgDurationMs !== null ? 'ms' : ''}
+                title="平均响应时长"
+                value={
+                  toolStats.avgDurationMs !== null
+                    ? Math.round((toolStats.avgDurationMs / 1000) * 100) / 100
+                    : '-'
+                }
+                precision={toolStats.avgDurationMs !== null ? 2 : undefined}
+                suffix={toolStats.avgDurationMs !== null ? '秒' : ''}
               />
             </Col>
           </Row>

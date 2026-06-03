@@ -1,6 +1,6 @@
 # shellder-job-worker
 
-BullMQ 异步 Worker：长任务、超时检查、异步通知、pathy 文档处理。
+BullMQ 异步 Worker：长任务、超时检查、异步通知、wiki 文档处理。
 
 ## 与 agent-server 的职责边界（方案 B）
 
@@ -35,7 +35,7 @@ WORKER_INTERNAL_TOKEN=change-me-worker-token      # 与 server 保持一致
 | `shellder.task` | `TaskProcessor` | 长任务状态机 |
 | `shellder.task-timeout` | `TaskTimeoutProcessor` | 审批/任务超时 |
 | `shellder.notification` | `NotificationProcessor` | 异步通知（模板 + 连接器/Mock） |
-| `shellder.document-processing` | `DocumentProcessingProcessor` | pathy 编译 raw→wiki + wiki/embed |
+| `shellder.document-processing` | `DocumentProcessingProcessor` | wiki 编译 raw→wiki + wiki/embed |
 
 ### `shellder.notification` payload
 
@@ -70,21 +70,20 @@ WORKER_INTERNAL_TOKEN=change-me-worker-token      # 与 server 保持一致
 
 - 入队：`POST /api/v1/knowledge/layers/:layer/upload` 成功后（`.md` 的 raw/wiki 层）
 - 状态表：`kb_layer_processing_job`（queued → running → done/failed）
-- 依赖：`PATHY_KNOWLEDGE_SERVER_BASE_URL`、pathy `POST /api/v1/tasks/compile` 与 `POST /api/v1/wiki/embed`
+- 依赖：MySQL `system_config` 中 `knowledge.wikiBaseUrl`（知识库管理页配置）、wiki `POST /api/v1/tasks/compile` 与 `POST /api/v1/wiki/embed`
 
 ### 环境变量（补充）
 
 ```bash
-PATHY_KNOWLEDGE_SERVER_BASE_URL=http://127.0.0.1:8765
-PATHY_KNOWLEDGE_SERVER_TIMEOUT_MS=120000
+DATABASE_URL=mysql://...             # 读取 knowledge.wikiBaseUrl 等 system_config
 NOTIFICATION_SEND_MOCK=true          # 默认 Mock 日志发送
-CONNECTOR_SECRET_KEY=...           # 真实通知连接器解密
+CONNECTOR_SECRET_KEY=...             # 真实通知连接器解密
 ```
 
 ### 本地验证
 
 ```bash
-# 终端 1：server + worker + Redis + MySQL + pathy（文档处理可选）
+# 终端 1：server + worker + Redis + MySQL + wiki 服务（文档处理可选）
 npm run dev:server -w shellder-agent
 npm run dev:worker -w shellder-job-worker
 

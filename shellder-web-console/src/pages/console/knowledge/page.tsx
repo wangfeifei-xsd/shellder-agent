@@ -1,17 +1,27 @@
 'use client';
 
-import { DatabaseOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  ApiOutlined,
+  DatabaseOutlined,
+  DownOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  UpOutlined,
+} from '@ant-design/icons';
 import {
   Alert,
   App,
   Button,
+  Card,
   Descriptions,
   Drawer,
   Empty,
   Form,
   Input,
+  InputNumber,
   Select,
   Space,
+  Spin,
   Table,
   Tag,
   Typography,
@@ -40,10 +50,15 @@ import {
   listKnowledgeBases,
   updateKnowledgeBase,
 } from '@/lib/knowledge';
+import {
+  checkKnowledgeProxyHealth,
+  getKnowledgeConnection,
+  upsertKnowledgeConnection,
+} from '@/lib/knowledge-proxy';
 
 const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '—');
 
-const PATHY_GUIDE_LINKS = [
+const WIKI_GUIDE_LINKS = [
   { href: '/knowledge/layers', label: '知识层管理' },
   { href: '/knowledge/structure', label: '存储结构' },
   { href: '/knowledge/media', label: '媒体库' },
@@ -53,14 +68,20 @@ const PATHY_GUIDE_LINKS = [
 interface KbFormValues {
   name: string;
   description?: string;
-  pathyWikiPrefix?: string;
+  wikiPrefix?: string;
   status?: string;
+}
+
+interface ConnectionFormValues {
+  wikiBaseUrl: string;
+  wikiTimeoutMs: number;
 }
 
 export default function KnowledgePage() {
   const { message, modal } = App.useApp();
   const { activeTenantId, tenants } = useActiveTenant();
   const [form] = Form.useForm<KbFormValues>();
+  const [connForm] = Form.useForm<ConnectionFormValues>();
 
   const [data, setData] = useState<KnowledgeBase[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,6 +94,14 @@ export default function KnowledgePage() {
 
   const [detail, setDetail] = useState<KnowledgeBase | undefined>();
   const [detailLoading, setDetailLoading] = useState(false);
+
+  const [connExpanded, setConnExpanded] = useState(false);
+  const [connLoading, setConnLoading] = useState(true);
+  const [connSaving, setConnSaving] = useState(false);
+  const [connTesting, setConnTesting] = useState(false);
+  const [wikiConfigured, setWikiConfigured] = useState(false);
+  /** 收起时也拉取配置；展开时用于 Form 回显 */
+  const [connValues, setConnValues] = useState<Partial<ConnectionFormValues>>({});
 
   const activeTenantName = useMemo(
     () => tenants.find((t) => t.id === activeTenantId)?.name,
@@ -101,10 +130,73 @@ export default function KnowledgePage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const loadConnection = useCallback(async () => {
+    setConnLoading(true);
+    try {
+      const res = await getKnowledgeConnection();
+      const values: ConnectionFormValues = {
+        wikiBaseUrl: res.wikiBaseUrl,
+        wikiTimeoutMs: res.wikiTimeoutMs,
+      };
+      setConnValues(values);
+      connForm.setFieldsValue(values);
+      setWikiConfigured(res.configured);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '加载 wiki 连接配置失败');
+    } finally {
+      setConnLoading(false);
+    }
+  }, [connForm, message]);
+
+  useEffect(() => {
+    void loadConnection();
+  }, [loadConnection]);
+
+  useEffect(() => {
+    if (connExpanded && connValues.wikiTimeoutMs !== undefined) {
+      connForm.setFieldsValue(connValues);
+    }
+  }, [connExpanded, connValues, connForm]);
+
+  const saveConnection = async () => {
+    const v = await connForm.validateFields();
+    setConnSaving(true);
+    try {
+      const res = await upsertKnowledgeConnection({
+        wikiBaseUrl: v.wikiBaseUrl.trim(),
+        wikiTimeoutMs: v.wikiTimeoutMs,
+      });
+      const values: ConnectionFormValues = {
+        wikiBaseUrl: v.wikiBaseUrl.trim(),
+        wikiTimeoutMs: v.wikiTimeoutMs,
+      };
+      setConnValues(values);
+      connForm.setFieldsValue(values);
+      setWikiConfigured(res.configured);
+      message.success('wiki 连接配置已保存');
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '保存失败');
+    } finally {
+      setConnSaving(false);
+    }
+  };
+
+  const testConnection = async () => {
+    setConnTesting(true);
+    try {
+      const h = await checkKnowledgeProxyHealth();
+      message.success(`连接正常：${h.service ?? h.status}`);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '连接检测失败');
+    } finally {
+      setConnTesting(false);
+    }
+  };
+
   const openCreate = () => {
     setEditing(undefined);
     form.resetFields();
-    form.setFieldsValue({ pathyWikiPrefix: defaultWikiPrefix });
+    form.setFieldsValue({ wikiPrefix: defaultWikiPrefix });
     setDrawerOpen(true);
   };
 
@@ -114,7 +206,7 @@ export default function KnowledgePage() {
     form.setFieldsValue({
       name: kb.name,
       description: kb.description ?? undefined,
-      pathyWikiPrefix: kb.pathyWikiPrefix ?? undefined,
+      wikiPrefix: kb.wikiPrefix ?? undefined,
       status: kb.status,
     });
     setDrawerOpen(true);
@@ -130,14 +222,14 @@ export default function KnowledgePage() {
   const handleSubmit = async () => {
     if (!activeTenantId) { message.warning('请先在顶栏选择当前操作租户'); return; }
     const v = await form.validateFields();
-    const pathyWikiPrefix = v.pathyWikiPrefix?.trim() || undefined;
+    const wikiPrefix = v.wikiPrefix?.trim() || undefined;
     setSubmitting(true);
     try {
       if (editing) {
         const payload: UpdateKbInput = {
           name: v.name,
           description: v.description,
-          pathyWikiPrefix,
+          wikiPrefix,
           status: v.status as UpdateKbInput['status'],
         };
         await updateKnowledgeBase(editing.id, payload);
@@ -146,7 +238,7 @@ export default function KnowledgePage() {
           tenantId: activeTenantId,
           name: v.name,
           description: v.description,
-          pathyWikiPrefix,
+          wikiPrefix,
         };
         await createKnowledgeBase(payload);
       }
@@ -161,7 +253,7 @@ export default function KnowledgePage() {
   const handleDelete = (kb: KnowledgeBase) => {
     modal.confirm({
       title: `确认删除知识库绑定「${kb.name}」？`,
-      content: '删除后仅移除平台侧租户绑定元数据，pathy 侧已有文件不会自动删除。',
+      content: '删除后仅移除平台侧租户绑定元数据，wiki 服务侧已有文件不会自动删除。',
       okButtonProps: { danger: true },
       onOk: async () => {
         try { await deleteKnowledgeBase(kb.id); message.success('已删除'); void load(); }
@@ -179,8 +271,8 @@ export default function KnowledgePage() {
       render: (v: string | null) => renderOptionalText(v),
     }),
     withNowrap<KnowledgeBase>({
-      title: 'pathy wiki 前缀',
-      dataIndex: 'pathyWikiPrefix',
+      title: 'wiki 路径前缀',
+      dataIndex: 'wikiPrefix',
       ellipsis: true,
       render: (v: string | null) => {
         const text = v || `（默认）tenants/${activeTenantId}/`;
@@ -234,6 +326,87 @@ export default function KnowledgePage() {
         </Button>
       </div>
 
+      <Card
+        className="mb-4"
+        title={
+          <Space
+            className="cursor-pointer select-none"
+            onClick={() => setConnExpanded((open) => !open)}
+          >
+            <ApiOutlined />
+            wiki 知识库服务连接
+            {connExpanded ? (
+              <UpOutlined className="text-xs text-gray-400" />
+            ) : (
+              <DownOutlined className="text-xs text-gray-400" />
+            )}
+          </Space>
+        }
+        extra={
+          <Button
+            size="small"
+            loading={connTesting}
+            onClick={(e) => {
+              e.stopPropagation();
+              void testConnection();
+            }}
+          >
+            检测连接
+          </Button>
+        }
+        styles={connExpanded ? undefined : { body: { padding: 0 } }}
+      >
+        <div className={connExpanded ? undefined : 'hidden'} aria-hidden={!connExpanded}>
+          {connLoading ? (
+            <div className="flex justify-center py-8">
+              <Spin />
+            </div>
+          ) : (
+            <>
+              {!wikiConfigured ? (
+                <Alert
+                  className="mb-4"
+                  type="warning"
+                  showIcon
+                  message="尚未配置 wiki 服务连接"
+                  description="请填写 wiki 服务地址并保存，配置将写入 MySQL（system_config 表），全平台与 job-worker 共用。"
+                />
+              ) : null}
+              <Form form={connForm} layout="vertical" className="max-w-2xl">
+                <Form.Item
+                  name="wikiBaseUrl"
+                  label="wiki 服务地址"
+                  rules={[
+                    { required: true, message: '请输入 wiki 知识库服务根 URL' },
+                    { type: 'url', message: '须为有效 URL（如 http://10.30.20.222:8765）' },
+                  ]}
+                  extra="无尾斜杠，对应 wiki 知识库服务监听地址；全平台共用。"
+                >
+                  <Input placeholder="http://127.0.0.1:8765" />
+                </Form.Item>
+                <Form.Item
+                  name="wikiTimeoutMs"
+                  label="代理超时（毫秒）"
+                  rules={[{ required: true, message: '请输入超时时间' }]}
+                >
+                  <InputNumber min={1000} max={600000} step={1000} className="!w-full" />
+                </Form.Item>
+                <Form.Item>
+                  <Space wrap>
+                    <Button type="primary" loading={connSaving} onClick={() => void saveConnection()}>
+                      保存连接配置
+                    </Button>
+                    <Button icon={<ReloadOutlined />} onClick={() => void loadConnection()}>
+                      重新加载
+                    </Button>
+                  </Space>
+                </Form.Item>
+              </Form>
+            </>
+          )}
+        </div>
+      </Card>
+
       {!activeTenantId ? (
         <Alert type="warning" showIcon message="请先在顶栏选择「当前操作租户」" description="知识库按租户隔离，需选定租户后查看与维护。" />
       ) : (
@@ -245,9 +418,9 @@ export default function KnowledgePage() {
             message={`当前租户：${activeTenantName ?? activeTenantId}`}
             description={
               <>
-                本页仅维护租户与 pathy 的 wiki 路径绑定；文档存储、分块与召回由 pathy-knowledge-server 提供。
+                上方配置全平台 wiki 服务地址；本区维护各租户与 wiki 的 wiki 路径绑定。文档存储、分块与召回由 wiki 知识库服务 提供。
                 请使用：
-                {PATHY_GUIDE_LINKS.map((item, i) => (
+                {WIKI_GUIDE_LINKS.map((item, i) => (
                   <span key={item.href}>
                     {i > 0 ? '、' : ' '}
                     <Link to={item.href}>{item.label}</Link>
@@ -295,9 +468,9 @@ export default function KnowledgePage() {
             <Input.TextArea rows={2} placeholder="绑定说明…" />
           </Form.Item>
           <Form.Item
-            label="pathy wiki 前缀"
-            name="pathyWikiPrefix"
-            extra="留空则运行时使用 tenants/{租户ID}/；需与 pathy DATA_ROOT 下目录一致。"
+            label="wiki 路径前缀"
+            name="wikiPrefix"
+            extra="留空则运行时使用 tenants/{租户ID}/；需与 wiki DATA_ROOT 下目录一致。"
           >
             <Input placeholder={defaultWikiPrefix || 'tenants/<tenantId>/'} />
           </Form.Item>
@@ -318,8 +491,8 @@ export default function KnowledgePage() {
                 <Tag color={KB_STATUS_META[detail.status]?.color}>{KB_STATUS_META[detail.status]?.label}</Tag>
               </Descriptions.Item>
               <Descriptions.Item label="描述">{detail.description || '—'}</Descriptions.Item>
-              <Descriptions.Item label="pathy wiki 前缀">
-                <Typography.Text code>{detail.pathyWikiPrefix || `（默认）tenants/${detail.tenantId}/`}</Typography.Text>
+              <Descriptions.Item label="wiki 路径前缀">
+                <Typography.Text code>{detail.wikiPrefix || `（默认）tenants/${detail.tenantId}/`}</Typography.Text>
               </Descriptions.Item>
               <Descriptions.Item label="创建时间">{fmt(detail.createdAt)}</Descriptions.Item>
               <Descriptions.Item label="更新时间">{fmt(detail.updatedAt)}</Descriptions.Item>
@@ -332,7 +505,7 @@ export default function KnowledgePage() {
               description={
                 <>
                   上传文档、检索测试请在左侧菜单进入
-                  {PATHY_GUIDE_LINKS.map((item, i) => (
+                  {WIKI_GUIDE_LINKS.map((item, i) => (
                     <span key={item.href}>
                       {i > 0 ? '、' : ' '}
                       <Link to={item.href}>{item.label}</Link>

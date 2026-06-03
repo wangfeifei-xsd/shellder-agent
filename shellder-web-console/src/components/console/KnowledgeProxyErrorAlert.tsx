@@ -34,7 +34,7 @@ function formatErrorDetails(details: unknown): string[] {
   return [];
 }
 
-/** 知识库 pathy 代理不可用时的明确提示（执行计划 §7.4） */
+/** 知识库 wiki 代理不可用时的明确提示（执行计划 §7.4） */
 export function KnowledgeProxyErrorAlert({ error, className }: Props) {
   if (!error) return null;
 
@@ -63,6 +63,10 @@ export function KnowledgeProxyErrorAlert({ error, className }: Props) {
   if (isKnowledgeProxyError(error)) {
     const isUnavailable = error.code === 'KNOWLEDGE_PROXY_UNAVAILABLE';
     const isTimeout = error.code === 'KNOWLEDGE_PROXY_TIMEOUT';
+    const isUpstream = error.code === 'KNOWLEDGE_PROXY_UPSTREAM';
+    const needsWikiLlmKey =
+      isUpstream &&
+      /API\s*密钥|OPENAI_API_KEY|openai_api_key/i.test(error.message);
     const detailLines = formatErrorDetails(error.details);
     return (
       <Alert
@@ -87,12 +91,22 @@ export function KnowledgeProxyErrorAlert({ error, className }: Props) {
               </ul>
             )}
             <p className="mb-0 text-sm opacity-80">
-              请确认 pathy-knowledge-server 已启动，且平台环境变量{' '}
-              <code>PATHY_KNOWLEDGE_SERVER_BASE_URL</code> 配置正确。管理后台仅通过平台代理访问，请勿直连 pathy。
+              {needsWikiLlmKey ? (
+                <>
+                  wiki 全流程测试需在 <strong>wiki 知识库服务</strong> 所在机器配置大模型密钥（环境变量{' '}
+                  <code>OPENAI_API_KEY</code> 或数据目录 <code>.pathy/openai_api_key</code>），与平台「模型接入」无关。
+                  也可在问答测试页切换到「平台 QA」模式，由平台 LLM 生成回答。
+                </>
+              ) : (
+                <>
+                  请确认 wiki 知识库服务已启动，并在「知识库管理」页保存 wiki 服务连接（写入 MySQL）。管理后台仅通过平台代理访问，请勿直连
+                  wiki 服务。
+                </>
+              )}
               {error.status === 422 && (
                 <>
                   {' '}
-                  422 多为请求参数校验失败，请核对知识库绑定中的 <code>pathy_wiki_prefix</code> 与 pathy{' '}
+                  422 多为请求参数校验失败，请核对知识库绑定中的 <code>wiki_prefix</code> 与 wiki 服务{' '}
                   <code>DATA_ROOT</code> 下目录是否一致。
                 </>
               )}

@@ -12,7 +12,7 @@ import { CapabilityResult } from './capability-result';
 /**
  * 问答型能力 Handler（§5.1）。
  *
- * 两阶段：pathy dialogue/recall（仅召回）→ 平台 LlmService 流式生成。
+ * 两阶段：wiki dialogue/recall（仅召回）→ 平台 LlmService 流式生成。
  */
 @Injectable()
 export class QaCapabilityHandler implements CapabilityHandler {

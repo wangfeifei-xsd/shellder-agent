@@ -43,7 +43,7 @@ flowchart LR
     end
 
     subgraph External["外部系统"]
-        Pathy["Pathy Knowledge Server（知识服务）"]
+        WikiSvc["Wiki Knowledge Server（知识服务）"]
         UpstreamLLM["OpenAI-Compatible LLM API（兼容 OpenAI 的大模型接口）"]
         DBRO["业务只读库 / SQL Data Source（SQL 数据源）"]
         HTTPBiz["业务 HTTP API（业务 HTTP 接口）/ 通知系统"]
@@ -84,7 +84,7 @@ flowchart LR
     InternalAPI --> Approval
     InternalAPI --> Audit
 
-    Knowledge --> Pathy
+    Knowledge --> WikiSvc
     LLM --> UpstreamLLM
     Tooling --> DBRO
     Tooling --> HTTPBiz
@@ -162,7 +162,7 @@ flowchart TB
     A["接入层\nWeb Console（管理控制台）/ OpenAPI（开放接口）/ Copilot（智能副驾）/ REST（表述性接口）/ SSE（服务端发送事件）"]
     B["编排层\nAgentRuntimeService（智能体运行时服务）/ ApprovalRuntimeService（审批运行时服务）/ RoutingEngineService（路由引擎服务）"]
     C["能力层\nQA（问答）/ Query（查询）/ Action（动作）/ Workflow Handlers（工作流处理器）+ QaPipeline（问答流水线）"]
-    D["执行层\nPlatform LLM（平台大语言模型）/ SQL Tool（SQL 工具）/ HTTP Action Tool（HTTP 动作工具）/ Workflow Task（工作流任务）/ Pathy Recall Proxy（Pathy 召回代理）"]
+    D["执行层\nPlatform LLM（平台大语言模型）/ SQL Tool（SQL 工具）/ HTTP Action Tool（HTTP 动作工具）/ Workflow Task（工作流任务）/ Wiki Recall Proxy（Wiki 召回代理）"]
     E["治理层\nAuth（认证）/ RBAC（基于角色的访问控制）/ Policy（策略）/ Audit（审计）/ Tenant Isolation（租户隔离）"]
     F["基础设施层\nMySQL / Redis / BullMQ / Prisma / Monitoring（监控）"]
 
@@ -182,8 +182,8 @@ flowchart TB
 - `shellder-web-console`（管理控制台）是管理后台与预览前端，技术栈为 Vite（前端构建工具）、React（前端界面框架）与 Ant Design（蚂蚁设计组件库），走 `/api/v1/*` 和 `/copilot/v1/*`。
 - `shellder-agent-server`（智能体服务端）是统一控制面与运行时入口，负责认证、会话、编排、审批、审计、OpenAPI（开放接口）、Copilot BFF（前端聚合后端）。
 - `shellder-job-worker`（任务工作进程）只负责异步消费、状态机推进、重试与续跑；底层依赖 BullMQ（任务队列库）与 Redis（内存数据库），真实能力执行通过 `agent-server`（智能体服务端）的 `/internal/tasks/*` 完成。
-- `LlmModule`（大语言模型模块）提供平台级 OpenAI-compatible（兼容 OpenAI）模型接入，配置入口是 `/api/v1/settings/llm`，配置保存在平台侧 `system_config`（系统配置），不代理 `pathy`（知识服务）的 LLM（Large Language Model，大语言模型）设置。
-- `qa`（问答）能力已经改为两阶段：`KnowledgeProxyService.dialogueRecall -> QaPipelineService -> LlmService`，即“知识召回服务 -> 问答流水线服务 -> 大语言模型服务”。也就是说 `pathy`（知识服务）只负责召回，最终回答由平台 LLM（大语言模型）生成。
+- `LlmModule`（大语言模型模块）提供平台级 OpenAI-compatible（兼容 OpenAI）模型接入，配置入口是 `/api/v1/settings/llm`，配置保存在平台侧 `system_config`（系统配置），不代理 `wiki`（知识服务）的 LLM（Large Language Model，大语言模型）设置。
+- `qa`（问答）能力已经改为两阶段：`KnowledgeProxyService.dialogueRecall -> QaPipelineService -> LlmService`，即“知识召回服务 -> 问答流水线服务 -> 大语言模型服务”。也就是说 `wiki`（知识服务）只负责召回，最终回答由平台 LLM（大语言模型）生成。
 - `query`（查询）/ `action`（动作）/ `workflow`（工作流）通过 Tool（工具）+ Connector（连接器）落到只读数据库或外部 HTTP（HyperText Transfer Protocol，超文本传输协议）系统。
 - `Policy`（策略）与 `Approval`（审批）嵌入 Runtime（运行时）主链路，在工具执行前决定放行、拒绝或转人工确认。
 - 管理端 `knowledge/recall-test`（召回测试）现在走 `qa-preview`（问答预览）两阶段链路，与 Runtime（运行时）的 QA（问答）行为保持一致。

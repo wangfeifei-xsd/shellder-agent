@@ -21,18 +21,15 @@ export class MessageController {
   constructor(private readonly messageService: MessageService) {}
 
   /**
-   * 追加消息到指定会话。
-   * 路径：POST /api/v1/sessions/:sessionId/messages（与执行计划保持一致）。
-   * 同时通过 POST /api/v1/messages 提供独立入口供内部模块调用。
+   * 管理端追加消息（不触发 Agent Runtime）。
+   * POST /api/v1/sessions/:id/messages 由 AgentRuntimeController 占用（发送并编排）。
    */
-  @Post('sessions/:sessionId/messages')
+  @Post('messages')
   @Audit({ action: 'message.create', module: 'session', targetType: 'message' })
-  createForSession(
+  create(
     @CurrentUser() user: AuthUser,
-    @Param('sessionId') sessionId: string,
     @Body() dto: CreateMessageDto,
   ) {
-    dto.sessionId = sessionId;
     return this.messageService.create(user, dto);
   }
 

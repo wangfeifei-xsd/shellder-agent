@@ -26,7 +26,7 @@ export interface QaPipelineResult {
 }
 
 /**
- * 问答型两阶段流水线（pathy recall → 平台 LLM），供 Runtime 与管理端预览共用。
+ * 问答型两阶段流水线（wiki recall → 平台 LLM），供 Runtime 与管理端预览共用。
  */
 @Injectable()
 export class QaPipelineService {
@@ -146,7 +146,7 @@ export class QaPipelineService {
         return msg ?? '平台 LLM 未配置';
       }
       if (res.code === 'KNOWLEDGE_PROXY_UNAVAILABLE') {
-        return `知识库服务不可用：${msg ?? '请检查 PATHY_KNOWLEDGE_SERVER_BASE_URL 与 pathy 进程'}`;
+        return `知识库服务不可用：${msg ?? '请在「知识库管理」配置 wiki 服务地址并确认 wiki 服务进程已启动'}`;
       }
       if (res.code === 'KNOWLEDGE_PROXY_TIMEOUT') {
         return `知识库服务请求超时：${msg ?? ''}`;

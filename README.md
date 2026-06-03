@@ -184,14 +184,14 @@ npm run prisma:migrate       # 部署（migrate deploy）
 - [x] **09** 任务中心与异步 Worker — `task`/`task_step`/`task_log`、`/api/v1/tasks`、BullMQ `shellder-job-worker`、页面 `/tasks/*`[^07]
 - [x] **10** 能力路由 — `capability`/`routing_rule`、`/api/v1/capabilities`·`/routing-rules`·`/routing/test`、页面 `/routing/*`
 - [x] **11** 技能书管理 — `skill`/`skill_trigger`/`skill_binding`/`skill_execution_log`、`/api/v1/skills`、页面 `/skills/*`
-- [x] **11A** 知识库代理与知识库管理 — `knowledge_base` 租户绑定、`/api/v1/knowledge/*` 代理 pathy、`/api/v1/knowledge-bases`、页面 `/knowledge/*`（`project-sql/12-knowledge-base`）[^02][^08]
+- [x] **11A** 知识库代理与知识库管理 — `knowledge_base` 租户绑定、`/api/v1/knowledge/*` 代理 wiki、`/api/v1/knowledge-bases`、页面 `/knowledge/*`（`project-sql/12-knowledge-base`）[^02][^08]
 - [x] **12** Agent 运行时与流式响应 — `session`/`task` 枚举 `pending_confirm`、`/api/v1/sessions/:id/messages`·`/stream`·`/confirm`、SSE 事件（`project-sql/13-agent-runtime`）[^04]
-- [x] **13** 四类业务能力 — qa/query/action/workflow Handler 编排；问答型 **pathy recall + 平台 LLM**；查询型 **ER 图 + NL2SQL + SqlToolService 执行**（`QueryModule` / `Nl2SqlService`，非 pathy）
+- [x] **13** 四类业务能力 — qa/query/action/workflow Handler 编排；问答型 **wiki recall + 平台 LLM**；查询型 **ER 图 + NL2SQL + SqlToolService 执行**（`QueryModule` / `Nl2SqlService`，非 wiki 知识库）
 - [x] **14** 审批中心 — `approval` 表、`/api/v1/approvals`、`ApprovalRuntimeService` 断点恢复、页面 `/approvals/*`（`project-sql/15-approval-center`）[^04]
 - [x] **15** OpenAPI 对外接口与管理 — `openapi_app`/`openapi_call_log`、`/openapi/v1/*`·`/api/v1/openapi-apps`、页面 `/openapi/*`（`project-sql/16-openapi`）[^03]
 - [x] **16** 会话管理与调试台 — 无新表、调试 API、页面 `/sessions/[id]`·`/sessions/messages`·`/sessions/debug`（`project-sql/17-session-debug-console`）
 - [x] **17** 工作台 — 无新表、`GET /api/v1/dashboard/summary`、首页 `/`（`project-sql/18-workbench`）
-- [x] **18** 系统设置 — `system_config`/`notification_template`、`/api/v1/system-settings`、页面 `/settings/*`（`project-sql/19-system-settings`）；**模型接入** `GET/PUT/POST /api/v1/settings/llm` + `/settings/llm`（平台 OpenAI 兼容 LLM，不代理 pathy settings/llm）
+- [x] **18** 系统设置 — `system_config`/`notification_template`、`/api/v1/system-settings`、页面 `/settings/*`（`project-sql/19-system-settings`）；**模型接入** `GET/PUT/POST /api/v1/settings/llm` + `/settings/llm`（平台 OpenAI 兼容 LLM，不代理 wiki settings/llm）
 - [x] **19** 嵌入式 Copilot — `copilot_config` 表、`/api/v1/copilot/configs`·`/copilot/v1/*`、嵌入页 `/copilot`·`/copilot-admin/*`（`project-sql/20-embedded-copilot`）[^06]
 
 **Prisma 迁移**：`shellder-agent-server/prisma/migrations/` 已覆盖 01–07 基线及 08–20 对应增量（含 `knowledge_pathy_binding`、`kb_layer_processing_job`）；空库 `npm run prisma:migrate` 验收见 [remediation/01](../prompt/remediation/01-补齐-prisma-migrations.md)。[^01]
@@ -201,12 +201,12 @@ npm run prisma:migrate       # 部署（migrate deploy）
 | 标记 | 说明 | 文档 |
 |------|------|------|
 | [^01] | 08–20 迁移与 `project-sql` 对齐、空库 deploy 可复现 | [01-补齐-prisma-migrations.md](../prompt/remediation/01-补齐-prisma-migrations.md) |
-| [^02] | pathy 代理方案、租户 wiki 前缀、废弃自建向量路径 | [02-知识库方向拍板与实现.md](../prompt/remediation/02-知识库方向拍板与实现.md) |
+| [^02] | wiki 代理方案、租户 wiki 前缀、废弃自建向量路径 | [02-知识库方向拍板与实现.md](../prompt/remediation/02-知识库方向拍板与实现.md) |
 | [^03] | OpenAPI 发消息 / SSE 与 Agent Runtime 联调验收 | [03-openapi-对接-agent-runtime.md](../prompt/remediation/03-openapi-对接-agent-runtime.md) |
 | [^04] | 会话确认 `/confirm`、审批后 Runtime 断点恢复 | [04-审批确认与-runtime-断点恢复.md](../prompt/remediation/04-审批确认与-runtime-断点恢复.md) |
 | [^05] | Worker 驱动四类能力 / workflow 步骤真实执行 | [05-task-processor-接入四类能力.md](../prompt/remediation/05-task-processor-接入四类能力.md) |
 | [^06] | Copilot 换票后会话 / 消息 / SSE / 确认全链路 | [06-copilot-后端与会话打通.md](../prompt/remediation/06-copilot-后端与会话打通.md) |
-| [^07] | 异步通知、pathy 文档处理队列与系统设置模板 | [07-job-worker-通知与文档处理.md](../prompt/remediation/07-job-worker-通知与文档处理.md) |
+| [^07] | 异步通知、wiki 文档处理队列与系统设置模板 | [07-job-worker-通知与文档处理.md](../prompt/remediation/07-job-worker-通知与文档处理.md) |
 | [^08] | 知识库 Web 子菜单（知识层 / 存储结构 / 媒体 / 问答测试）深化 | [08-知识库-web-菜单深化.md](../prompt/remediation/08-知识库-web-菜单深化.md) |
 
 > ⚠️ 上表为 2026-05-29 进度审查项；`master` 已提交对应实现，**仍建议按 remediation 文档做联调与空库迁移验收**。  

@@ -2,14 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
- * 租户与 pathy 存储路径隔离（V1）。
+ * 租户与 wiki 存储路径隔离（V1）。
  *
- * pathy-knowledge-server 无内置多租户；平台在代理层注入 wiki 子路径前缀：
+ * wiki 知识库服务 无内置多租户；平台在代理层注入 wiki 子路径前缀：
  * - 默认：`tenants/{tenantId}/`（raw/wiki/schema 层内相对路径均加此前缀）
- * - 覆盖：`knowledge_base.pathy_wiki_prefix`（每租户可绑定一条活跃知识库元数据记录）
+ * - 覆盖：`knowledge_base.wiki_prefix`（每租户可绑定一条活跃知识库元数据记录）
  *
- * 部署约定：pathy 的 DATA_ROOT 下需按上述前缀组织各租户目录，或由运维为每租户部署独立 pathy 实例并配置
- * 对应 PATHY_KNOWLEDGE_SERVER_BASE_URL（单租户部署时可设 pathy_wiki_prefix 为空字符串表示不追加前缀）。
+ * 部署约定：wiki 服务 DATA_ROOT 下需按上述前缀组织各租户目录，或由运维为每租户部署独立 wiki 服务实例并配置
+ * wiki 服务地址见 system_config.knowledge.wikiBaseUrl（知识库管理配置）。
  */
 @Injectable()
 export class KnowledgeTenantScopeService {
@@ -23,10 +23,10 @@ export class KnowledgeTenantScopeService {
         deletedAt: null,
       },
       orderBy: { createdAt: 'asc' },
-      select: { pathyWikiPrefix: true },
+      select: { wikiPrefix: true },
     });
-    if (kb?.pathyWikiPrefix != null && kb.pathyWikiPrefix !== '') {
-      return this.normalizePrefix(kb.pathyWikiPrefix);
+    if (kb?.wikiPrefix != null && kb.wikiPrefix !== '') {
+      return this.normalizePrefix(kb.wikiPrefix);
     }
     return `tenants/${tenantId}/`;
   }
