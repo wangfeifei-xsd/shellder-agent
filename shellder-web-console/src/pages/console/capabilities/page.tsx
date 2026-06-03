@@ -38,7 +38,8 @@ import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '@/lib/api';
 import type { CapabilityResult, CapabilityTypeKey } from '@/lib/copilot';
-import { extractMessageText } from '@/lib/copilot';
+import { extractMessageText, extractQaRecallMediaBundle } from '@/lib/copilot';
+import { InjectedContextMediaPanel } from '@/components/console/knowledge/InjectedContextMediaPanel';
 import {
   fetchCapabilityDemoCopilotToken,
   runCopilotStreamRound,
@@ -220,6 +221,7 @@ export default function CapabilitiesPage() {
 
   const queryRows = result?.data?.rows as Record<string, unknown>[] | undefined;
   const queryRowCount = result?.data?.rowCount as number | undefined;
+  const qaRecallMedia = extractQaRecallMediaBundle(result);
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
@@ -395,6 +397,16 @@ export default function CapabilitiesPage() {
               {displayText && (
                 <Card type="inner" title="回答正文（data.text）" className="mb-4">
                   <Paragraph className="whitespace-pre-wrap">{displayText}</Paragraph>
+                </Card>
+              )}
+
+              {qaRecallMedia && activeTenantId && (
+                <Card type="inner" title="知识库召回媒体（data.merged_media）" className="mb-4">
+                  <InjectedContextMediaPanel
+                    tenantId={activeTenantId}
+                    recall={qaRecallMedia}
+                    variant="qa"
+                  />
                 </Card>
               )}
 

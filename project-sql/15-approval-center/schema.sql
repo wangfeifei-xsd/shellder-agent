@@ -27,7 +27,7 @@ CREATE TABLE `agent_platform`.`approval` (
     `session_id`      CHAR(36)     NULL     COMMENT '关联会话 ID',
     `task_id`         CHAR(36)     NULL     COMMENT '关联任务 ID',
     `message_id`      CHAR(36)     NULL     COMMENT '关联确认消息 ID',
-    `initiator_id`    CHAR(36)     NULL     COMMENT '发起人 user.id',
+    `initiator_id`    VARCHAR(256) NULL     COMMENT '发起人：管理端 user.id；Copilot 为 JWT sub',
     `initiator_name`  VARCHAR(128) NULL     COMMENT '发起人名称快照',
     `action_type`     VARCHAR(128) NOT NULL COMMENT '动作类型/Tool 名称',
     `action_summary`  TEXT         NULL     COMMENT '动作摘要（操作背景、原始请求概要）',

@@ -53,7 +53,7 @@ CREATE TABLE `agent_platform`.`rule_hit` (
     `tool_name`       VARCHAR(128) NULL COMMENT '触发请求的 Tool 名称（07 起）',
     `capability`      VARCHAR(32)  NULL COMMENT '业务能力：qa/query/action/workflow',
     `request_summary` TEXT         NULL COMMENT '请求内容摘要（脱敏）',
-    `caller_user_id`  CHAR(36)     NULL COMMENT '触发用户 user.id（如有）',
+    `caller_user_id`  VARCHAR(256) NULL COMMENT '触发方：管理端 user.id；Copilot 为 JWT sub',
     `session_id`      CHAR(36)     NULL COMMENT '会话 ID（08）占位',
     `task_id`         CHAR(36)     NULL COMMENT '任务 ID（09）占位',
     `created_at`      DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '命中时间',

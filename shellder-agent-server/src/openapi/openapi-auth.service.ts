@@ -42,13 +42,12 @@ export class OpenApiAuthService {
       });
     }
 
-    const payload: OpenApiJwtPayload = {
+    const payload: Omit<OpenApiJwtPayload, 'iss' | 'iat' | 'exp'> = {
       sub: app.id,
       appName: app.name,
       clientId: app.clientId,
       allowedTenantIds: app.allowedTenantIds as string[],
       allowedCapabilities: app.allowedCapabilities as string[],
-      iss: OPENAPI_JWT_ISSUER,
     };
 
     const accessToken = this.jwtService.sign(payload, {

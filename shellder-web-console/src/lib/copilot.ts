@@ -115,6 +115,17 @@ export interface CopilotSendMessageResult {
 /** 与 server capability-result.ts / 嵌入消息 content 对齐 */
 export type CapabilityTypeKey = 'qa' | 'query' | 'action' | 'workflow';
 
+/** 问答型 data.merged_media / injected_context（与 wiki recall、知识库测试一致） */
+export interface QaRecallMediaRef {
+  code: string;
+  title?: string | null;
+}
+
+export interface QaRecallMediaBundle {
+  injected_context: string;
+  merged_media: QaRecallMediaRef[];
+}
+
 export interface CapabilityResult {
   capabilityType: CapabilityTypeKey;
   data: Record<string, unknown>;
@@ -138,14 +149,36 @@ function copilotHeaders(token: string): Record<string, string> {
   };
 }
 
-async function parseCopilotError(res: Response, fallback: string): Promise<never> {
-  try {
-    const body = await res.json();
-    throw new Error(body.message ?? body.code ?? fallback);
-  } catch (e) {
-    if (e instanceof Error && e.message !== fallback) throw e;
-    throw new Error(`${fallback}：${res.status}`);
+async function readCopilotJson<T>(res: Response, fallback: string): Promise<T> {
+  const text = await res.text();
+  let data: unknown = null;
+  if (text) {
+    try {
+      data = JSON.parse(text) as unknown;
+    } catch {
+      data = null;
+    }
   }
+
+  if (!res.ok) {
+    const body = (data ?? {}) as { message?: string; code?: string };
+    const detail =
+      body.message ??
+      body.code ??
+      (text.trim().slice(0, 300) || `HTTP ${res.status}`);
+    throw new Error(`${fallback}：${detail}`);
+  }
+
+  if (!text.trim()) {
+    throw new Error(`${fallback}：服务端返回空响应`);
+  }
+  if (data === null) {
+    throw new Error(
+      `${fallback}：响应不是合法 JSON${text.trim() ? `（${text.trim().slice(0, 120)}）` : ''}`,
+    );
+  }
+
+  return data as T;
 }
 
 export async function copilotExchangeToken(params: {
@@ -160,8 +193,7 @@ export async function copilotExchangeToken(params: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
-  if (!res.ok) await parseCopilotError(res, '换票失败');
-  return res.json();
+  return readCopilotJson<CopilotTokenResponse>(res, '换票失败');
 }
 
 export async function copilotCreateSession(
@@ -173,8 +205,7 @@ export async function copilotCreateSession(
     headers: copilotHeaders(token),
     body: JSON.stringify({ title }),
   });
-  if (!res.ok) await parseCopilotError(res, '创建会话失败');
-  return res.json();
+  return readCopilotJson<CopilotSession>(res, '创建会话失败');
 }
 
 export async function copilotListSessions(
@@ -185,8 +216,10 @@ export async function copilotListSessions(
   const res = await fetch(`${COPILOT_BASE}/sessions?page=${page}&pageSize=${pageSize}`, {
     headers: copilotHeaders(token),
   });
-  if (!res.ok) await parseCopilotError(res, '获取会话列表失败');
-  return res.json();
+  return readCopilotJson<{ items: CopilotSession[]; total: number }>(
+    res,
+    '获取会话列表失败',
+  );
 }
 
 export async function copilotGetSession(
@@ -196,8 +229,7 @@ export async function copilotGetSession(
   const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}`, {
     headers: copilotHeaders(token),
   });
-  if (!res.ok) await parseCopilotError(res, '获取会话失败');
-  return res.json();
+  return readCopilotJson<CopilotSessionDetail>(res, '获取会话失败');
 }
 
 export async function copilotSendMessage(
@@ -211,8 +243,7 @@ export async function copilotSendMessage(
     headers: copilotHeaders(token),
     body: JSON.stringify({ content, mode }),
   });
-  if (!res.ok) await parseCopilotError(res, '发送消息失败');
-  return res.json();
+  return readCopilotJson<CopilotSendMessageResult>(res, '发送消息失败');
 }
 
 /** EventSource 无法携带 Authorization，通过 query token 鉴权 */
@@ -229,8 +260,7 @@ export async function copilotListConfirmations(
   const res = await fetch(`${COPILOT_BASE}/confirmations${qs}`, {
     headers: copilotHeaders(token),
   });
-  if (!res.ok) await parseCopilotError(res, '获取待确认列表失败');
-  return res.json();
+  return readCopilotJson<CopilotConfirmation[]>(res, '获取待确认列表失败');
 }
 
 export async function copilotSubmitConfirmation(
@@ -244,8 +274,10 @@ export async function copilotSubmitConfirmation(
     headers: copilotHeaders(token),
     body: JSON.stringify({ action, opinion }),
   });
-  if (!res.ok) await parseCopilotError(res, '提交确认失败');
-  return res.json();
+  return readCopilotJson<{ id: string; status: string; resumed?: boolean }>(
+    res,
+    '提交确认失败',
+  );
 }
 
 export async function copilotGetTask(
@@ -255,8 +287,7 @@ export async function copilotGetTask(
   const res = await fetch(`${COPILOT_BASE}/tasks/${taskId}`, {
     headers: copilotHeaders(token),
   });
-  if (!res.ok) await parseCopilotError(res, '获取任务失败');
-  return res.json();
+  return readCopilotJson<CopilotTask>(res, '获取任务失败');
 }
 
 /** 从消息 content 提取展示文本 */
@@ -266,6 +297,21 @@ export function extractMessageText(content: Record<string, unknown>): string {
   if (data && typeof data.text === 'string') return data.text;
   if (typeof content.reason === 'string') return content.reason;
   return JSON.stringify(content, null, 2);
+}
+
+/** 从 CapabilityResult 提取知识库召回媒体（问答型） */
+export function extractQaRecallMediaBundle(
+  result: CapabilityResult | null,
+): QaRecallMediaBundle | null {
+  if (!result || result.capabilityType !== 'qa') return null;
+  const data = result.data;
+  const merged_media = Array.isArray(data.merged_media)
+    ? (data.merged_media as QaRecallMediaRef[])
+    : [];
+  const injected_context =
+    typeof data.injected_context === 'string' ? data.injected_context : '';
+  if (!injected_context.trim() && merged_media.length === 0) return null;
+  return { injected_context, merged_media };
 }
 
 /** 从消息 content 提取引用（问答型 CapabilityResult） */

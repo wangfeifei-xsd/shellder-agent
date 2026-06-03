@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`task` (
   `id`               CHAR(36)     NOT NULL,
   `tenant_id`        CHAR(36)     NOT NULL,
   `session_id`       CHAR(36)     DEFAULT NULL,
-  `user_id`          CHAR(36)     DEFAULT NULL,
+  `user_id`          VARCHAR(256) DEFAULT NULL COMMENT '发起人：管理端 user.id；Copilot 为 JWT sub',
   `title`            VARCHAR(256) DEFAULT NULL,
   `type`             ENUM('sync','async','scheduled') NOT NULL DEFAULT 'async',
   `status`           ENUM('pending','running','completed','failed','cancelled','timeout') NOT NULL DEFAULT 'pending',

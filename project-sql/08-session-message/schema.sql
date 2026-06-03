@@ -11,7 +11,7 @@ USE `agent_platform`;
 CREATE TABLE IF NOT EXISTS `agent_platform`.`session` (
   `id`               CHAR(36)     NOT NULL,
   `tenant_id`        CHAR(36)     NOT NULL,
-  `user_id`          CHAR(36)     NOT NULL,
+  `user_id`          VARCHAR(256) NOT NULL COMMENT '主体 ID：管理端 user.id；Copilot 为 JWT sub',
   `title`            VARCHAR(256) DEFAULT NULL,
   `status`           ENUM('active','completed','failed','cancelled') NOT NULL DEFAULT 'active',
   `capability_type`  ENUM('qa','query','action','workflow') DEFAULT NULL,

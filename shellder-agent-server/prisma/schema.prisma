@@ -159,7 +159,7 @@ model ToolCallAudit {
   tenantId       String?     @map("tenant_id") @db.Char(36)
   toolId         String?     @map("tool_id") @db.Char(36)
   toolName       String      @map("tool_name") @db.VarChar(128)
-  callerUserId   String?     @map("caller_user_id") @db.Char(36)
+  callerUserId   String?     @map("caller_user_id") @db.VarChar(256)
   callerName     String?     @map("caller_name") @db.VarChar(128)
   sessionId      String?     @map("session_id") @db.Char(36)
   taskId         String?     @map("task_id") @db.Char(36)
@@ -219,7 +219,7 @@ model ExternalCallAudit {
   connectorId    String?     @map("connector_id") @db.Char(36)
   target         String      @db.VarChar(255)
   method         String?     @db.VarChar(16)
-  callerUserId   String?     @map("caller_user_id") @db.Char(36)
+  callerUserId   String?     @map("caller_user_id") @db.VarChar(256)
   sessionId      String?     @map("session_id") @db.Char(36)
   taskId         String?     @map("task_id") @db.Char(36)
   requestSummary String?     @map("request_summary") @db.Text
@@ -306,7 +306,7 @@ model RuleHit {
   toolName       String?    @map("tool_name") @db.VarChar(128)
   capability     String?    @db.VarChar(32)
   requestSummary String?    @map("request_summary") @db.Text
-  callerUserId   String?    @map("caller_user_id") @db.Char(36)
+  callerUserId   String?    @map("caller_user_id") @db.VarChar(256)
   sessionId      String?    @map("session_id") @db.Char(36)
   taskId         String?    @map("task_id") @db.Char(36)
   createdAt      DateTime   @default(now()) @map("created_at")
@@ -501,7 +501,8 @@ enum CapabilityType {
 model Session {
   id             String         @id @default(uuid()) @db.Char(36)
   tenantId       String         @map("tenant_id") @db.Char(36)
-  userId         String         @map("user_id") @db.Char(36)
+  /// 管理端为 platform User.id；Copilot 为 JWT sub（copilot:appId:externalUserId）
+  userId         String         @map("user_id") @db.VarChar(256)
   title          String?        @db.VarChar(256)
   status         SessionStatus  @default(active)
   capabilityType CapabilityType? @map("capability_type")
@@ -598,7 +599,7 @@ model Task {
   id             String         @id @default(uuid()) @db.Char(36)
   tenantId       String         @map("tenant_id") @db.Char(36)
   sessionId      String?        @map("session_id") @db.Char(36)
-  userId         String?        @map("user_id") @db.Char(36)
+  userId         String?        @map("user_id") @db.VarChar(256)
   title          String?        @db.VarChar(256)
   type           TaskType       @default(async)
   status         TaskStatus     @default(pending)
@@ -936,7 +937,7 @@ model SkillExecutionLog {
   sessionId      String?         @map("session_id") @db.Char(36)
   taskId         String?         @map("task_id") @db.Char(36)
   tenantId       String          @map("tenant_id") @db.Char(36)
-  userId         String?         @map("user_id") @db.Char(36)
+  userId         String?         @map("user_id") @db.VarChar(256)
   status         SkillExecStatus @default(running)
   /// 输入快照（JSON）
   inputSnapshot  Json?           @map("input_snapshot")
@@ -1211,8 +1212,8 @@ model Approval {
   sessionId       String?            @map("session_id") @db.Char(36)
   taskId          String?            @map("task_id") @db.Char(36)
   messageId       String?            @map("message_id") @db.Char(36)
-  /// 发起人 user.id
-  initiatorId     String?            @map("initiator_id") @db.Char(36)
+  /// 发起人：管理端 user.id；Copilot 为 JWT sub
+  initiatorId     String?            @map("initiator_id") @db.VarChar(256)
   /// 发起人名称快照
   initiatorName   String?            @map("initiator_name") @db.VarChar(128)
   /// 动作类型 / Tool 名称

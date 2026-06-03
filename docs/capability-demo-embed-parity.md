@@ -10,10 +10,17 @@
 4. `POST /copilot/v1/sessions/:id/messages` — body `{ content, mode: "stream" }`
 5. `GET /copilot/v1/sessions/:id` — 从助手消息 `content` 解析 `CapabilityResult`
 
+问答型 `CapabilityResult.data` 除 `text` 外包含与知识库测试一致的召回字段：
+
+- `merged_media` — wiki 召回合并的媒体引用（code 列表）
+- `injected_context` — 拼入 LLM 的上下文（供核对；媒体不在 prompt 内）
+- `recall_method` — 召回方式
+
 ## 前端封装
 
 - `src/lib/copilot-runtime.ts` — `runCopilotStreamRound`
-- `src/lib/copilot.ts` — `parseCapabilityResult` / `findLastAssistantCapabilityResult`
+- `src/lib/copilot.ts` — `parseCapabilityResult` / `findLastAssistantCapabilityResult` / `extractQaRecallMediaBundle`
+- 能力演示页用 `InjectedContextMediaPanel` 解析 `merged_media` 并内联预览（与「知识库 → 召回测试」一致）
 - `src/lib/copilot-sse.ts` — `connectCopilotSse`
 
 ## 验收

@@ -18,7 +18,8 @@ export interface CopilotJwtPayload {
   appName: string;
   tenantId: string;
   externalUserId?: string;
-  iss: string;
+  /** 由 sign({ issuer }) 写入，勿在 payload 中重复设置 iss */
+  iss?: string;
   iat?: number;
   exp?: number;
 }
@@ -77,13 +78,12 @@ export class CopilotAuthService {
 
     const tokenTtl = copilotConfig.tokenTtlSeconds ?? 3600;
 
-    const payload: CopilotJwtPayload = {
+    const payload: Omit<CopilotJwtPayload, 'iss' | 'iat' | 'exp'> = {
       sub: `copilot:${app.id}:${dto.externalUserId ?? 'anonymous'}`,
       appId: app.id,
       appName: app.name,
       tenantId,
       externalUserId: dto.externalUserId,
-      iss: COPILOT_JWT_ISSUER,
     };
 
     const accessToken = this.jwtService.sign(payload, {
@@ -154,13 +154,12 @@ export class CopilotAuthService {
     const externalUserId =
       params.externalUserId ?? `demo-${params.adminUserId}`;
 
-    const payload: CopilotJwtPayload = {
+    const payload: Omit<CopilotJwtPayload, 'iss' | 'iat' | 'exp'> = {
       sub: `copilot:${app.id}:demo-${params.adminUserId}`,
       appId: app.id,
       appName: app.name,
       tenantId: params.tenantId,
       externalUserId,
-      iss: COPILOT_JWT_ISSUER,
     };
 
     const accessToken = this.jwtService.sign(payload, {

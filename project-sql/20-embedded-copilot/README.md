@@ -29,6 +29,16 @@ mysql -u root -p < project-sql/20-embedded-copilot/schema.sql
 mysql -u root -p < project-sql/20-embedded-copilot/seed.sql  # 当前为空
 ```
 
+## 增量迁移
+
+| 文件 | 说明 |
+|------|------|
+| `migrate-copilot-principal-id-width.sql` | 将会话/任务/审批/审计等表的 `user_id` / `caller_user_id` / `initiator_id` 放宽为 `VARCHAR(256)`，以存储 Copilot JWT `sub`（与 Prisma `20260603120000_copilot_principal_id_width` 对齐） |
+
+```bash
+mysql -u root -p agent_platform < project-sql/20-embedded-copilot/migrate-copilot-principal-id-width.sql
+```
+
 ## 设计说明
 
 1. **Copilot 不新建会话/消息表**：复用阶段 08 的 `session`/`message` 表，通过阶段 15 的 OpenAPI 接口交互。

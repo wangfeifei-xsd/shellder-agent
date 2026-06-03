@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_execution_log` (
   `session_id`      CHAR(36)      DEFAULT NULL,
   `task_id`         CHAR(36)      DEFAULT NULL,
   `tenant_id`       CHAR(36)      NOT NULL,
-  `user_id`         CHAR(36)      DEFAULT NULL,
+  `user_id`         VARCHAR(256)  DEFAULT NULL COMMENT '执行人：管理端 user.id；Copilot 为 JWT sub',
   `status`          ENUM('success','failed','running','timeout') NOT NULL DEFAULT 'running',
   `input_snapshot`  JSON          DEFAULT NULL,
   `output_snapshot` JSON          DEFAULT NULL,

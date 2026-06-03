@@ -6,7 +6,7 @@ export interface OpenApiJwtPayload {
   clientId: string;
   allowedTenantIds: string[];
   allowedCapabilities: string[];
-  iss: string;
+  iss?: string;
   iat?: number;
   exp?: number;
 }

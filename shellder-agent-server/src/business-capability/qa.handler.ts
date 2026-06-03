@@ -81,7 +81,12 @@ export class QaCapabilityHandler implements CapabilityHandler {
 
       const result: CapabilityResult = {
         capabilityType: 'qa',
-        data: { text: pipelineResult.replyText },
+        data: {
+          text: pipelineResult.replyText,
+          merged_media: pipelineResult.recall.merged_media ?? [],
+          injected_context: pipelineResult.recall.injected_context ?? '',
+          recall_method: pipelineResult.recall.recall_method,
+        },
         citations: pipelineResult.citations,
         status: 'success',
       };

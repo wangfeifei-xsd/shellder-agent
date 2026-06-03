@@ -19,6 +19,14 @@ export interface Citation {
   score?: number;
 }
 
+/** 问答型 data 扩展字段（与 wiki dialogue/recall、知识库测试页一致） */
+export interface QaCapabilityData {
+  text?: string;
+  merged_media?: { code: string; title?: string | null }[];
+  injected_context?: string;
+  recall_method?: string;
+}
+
 export interface WorkflowStepResult {
   seq: number;
   name: string;
