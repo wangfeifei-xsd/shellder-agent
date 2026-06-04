@@ -76,8 +76,6 @@ export class QueryCapabilityHandler implements CapabilityHandler {
         tenantId: ctx.tenantId,
       });
 
-      emitSse({ event: 'delta', data: { text: '正在查询…\n' } });
-
       const execResult = await this.sqlToolService.execute(
         connector,
         generated.sql,

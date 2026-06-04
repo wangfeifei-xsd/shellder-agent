@@ -171,17 +171,19 @@ export class AgentRuntimeService {
         data: { capabilityType: capabilityType as CapabilityType },
       });
 
-      // 路由结果写入消息元数据（验收标准 2）
-      await this.appendMessage(sessionId, 'system', {
-        type: 'routing_result',
-        capabilityType,
-        capabilityName: routingResult.capabilityName,
-        reason: routingResult.reason,
-        candidates: routingResult.candidates,
-        needConfirmation: routingResult.needConfirmation,
-        pinnedCapability: !!pinnedType,
-        resolvedToolIds: toolIds,
-      });
+      // 路由结果写入消息元数据（验收标准 2）；定向选择时不写入，避免嵌入页展示路由说明
+      if (!pinnedType) {
+        await this.appendMessage(sessionId, 'system', {
+          type: 'routing_result',
+          capabilityType,
+          capabilityName: routingResult.capabilityName,
+          reason: routingResult.reason,
+          candidates: routingResult.candidates,
+          needConfirmation: routingResult.needConfirmation,
+          pinnedCapability: false,
+          resolvedToolIds: toolIds,
+        });
+      }
 
       // 构建运行时上下文
       const ctx: RuntimeContext = {

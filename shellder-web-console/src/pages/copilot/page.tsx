@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Input, Spin, Tag, Tabs, Badge, Empty, List, Timeline, Modal, message, Alert } from 'antd';
+import { Avatar, Button, Input, Spin, Tag, Tabs, Badge, Empty, List, Timeline, Modal, message, Alert, Tooltip } from 'antd';
 import {
   SendOutlined,
   HistoryOutlined,
@@ -10,6 +10,12 @@ import {
   RobotOutlined,
   UserOutlined,
   BookOutlined,
+  MessageOutlined,
+  SearchOutlined,
+  ThunderboltOutlined,
+  NodeIndexOutlined,
+  FormatPainterOutlined,
+  ProfileOutlined,
 } from '@ant-design/icons';
 import type {
   CapabilityTypeKey,
@@ -32,16 +38,46 @@ import {
   copilotGetTask,
   extractMessageText,
   extractCitations,
+  isHiddenCopilotChatMessage,
 } from '@/lib/copilot';
+import {
+  useThinkingStatusText,
+  hasSubstantiveStreamText,
+  shouldIgnoreInterimStreamDelta,
+} from '@/lib/copilot-thinking-status';
 
 const { TextArea } = Input;
 const STREAMING_MSG_ID = '__streaming__';
-const CAPABILITY_OPTIONS: { value: CapabilityTypeKey; label: string }[] = [
-  { value: 'qa', label: '问答' },
-  { value: 'query', label: '查询' },
-  { value: 'action', label: '操作' },
-  { value: 'workflow', label: '流程' },
-];
+
+const CAPABILITY_META: Record<
+  CapabilityTypeKey,
+  { label: string; activeClass: string; icon: React.ReactNode }
+> = {
+  qa: {
+    label: '问答',
+    activeClass: 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm',
+    icon: <MessageOutlined />,
+  },
+  query: {
+    label: '查询',
+    activeClass: 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm',
+    icon: <SearchOutlined />,
+  },
+  action: {
+    label: '操作',
+    activeClass: 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm',
+    icon: <ThunderboltOutlined />,
+  },
+  workflow: {
+    label: '流程',
+    activeClass: 'border-purple-500 bg-purple-50 text-purple-700 shadow-sm',
+    icon: <NodeIndexOutlined />,
+  },
+};
+
+const CAPABILITY_OPTIONS = (
+  Object.entries(CAPABILITY_META) as [CapabilityTypeKey, (typeof CAPABILITY_META)['qa']][]
+).map(([value, meta]) => ({ value, ...meta }));
 
 type CopilotTab = 'chat' | 'history' | 'confirmations' | 'tasks';
 
@@ -162,14 +198,6 @@ export default function CopilotPage() {
       const es = new EventSource(copilotBuildSseUrl(sid, authToken));
       eventSourceRef.current = es;
 
-      es.addEventListener('session.connected', () => {
-        setStreaming(false);
-      });
-
-      es.addEventListener('session.snapshot_end', () => {
-        setStreaming(false);
-      });
-
       const runtimeTypes = ['delta', 'tool_start', 'tool_end', 'confirm_required', 'done', 'error'];
       for (const type of runtimeTypes) {
         es.addEventListener(type, (ev) => {
@@ -200,49 +228,81 @@ export default function CopilotPage() {
   const handleSend = async () => {
     const authToken = tokenRef.current;
     if (!inputValue.trim() || !authToken) return;
+    if (!sessionId && !selectedCapabilityType) {
+      message.warning('请先手动选择能力类型（查询/问答/操作/流程）');
+      return;
+    }
 
     const text = inputValue.trim();
+    setInputValue('');
     setSending(true);
     setInlineConfirm(null);
 
+    const userMsg: CopilotMessage = {
+      id: `temp-${Date.now()}`,
+      type: 'user',
+      role: 'user',
+      content: { text },
+      seq: 0,
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages((prev) => {
+      const base = prev.filter((m) => m.id !== STREAMING_MSG_ID);
+      const nextSeq = base.length + 1;
+      return [
+        ...base,
+        { ...userMsg, seq: nextSeq },
+        {
+          id: STREAMING_MSG_ID,
+          type: 'system',
+          role: 'assistant',
+          content: { text: '' },
+          seq: nextSeq + 1,
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    });
+    setStreaming(true);
+
+    let streamText = '';
+    const upsertStreaming = (chunk: string) => {
+      streamText += chunk;
+      setMessages((prev) => {
+        const without = prev.filter((m) => m.id !== STREAMING_MSG_ID);
+        return [
+          ...without,
+          {
+            id: STREAMING_MSG_ID,
+            type: 'system',
+            role: 'assistant',
+            content: { text: streamText },
+            seq: without.length + 1,
+            createdAt: new Date().toISOString(),
+          },
+        ];
+      });
+    };
+
+    const rollbackOptimistic = () => {
+      setMessages((prev) =>
+        prev.filter((m) => m.id !== userMsg.id && m.id !== STREAMING_MSG_ID),
+      );
+      setStreaming(false);
+    };
+
     try {
       const sid = await ensureSession();
-      if (!sid) return;
-
-      const userMsg: CopilotMessage = {
-        id: `temp-${Date.now()}`,
-        type: 'user',
-        role: 'user',
-        content: { text },
-        seq: messages.length + 1,
-        createdAt: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, userMsg]);
-      setInputValue('');
-      setStreaming(true);
-
-      let streamText = '';
-      const upsertStreaming = (chunk: string) => {
-        streamText += chunk;
-        setMessages((prev) => {
-          const without = prev.filter((m) => m.id !== STREAMING_MSG_ID);
-          return [
-            ...without,
-            {
-              id: STREAMING_MSG_ID,
-              type: 'system',
-              role: 'assistant',
-              content: { text: streamText },
-              seq: without.length + 1,
-              createdAt: new Date().toISOString(),
-            },
-          ];
-        });
-      };
+      if (!sid) {
+        rollbackOptimistic();
+        return;
+      }
 
       connectSSE(sid, authToken, (type, data) => {
         if (type === 'delta' && typeof data.text === 'string') {
-          upsertStreaming(data.text);
+          if (!shouldIgnoreInterimStreamDelta(data.text, streamText)) {
+            upsertStreaming(data.text);
+          }
         }
         if (type === 'confirm_required') {
           setInlineConfirm({
@@ -258,6 +318,9 @@ export default function CopilotPage() {
         }
         if (type === 'error') {
           setStreaming(false);
+          if (!streamText) {
+            setMessages((prev) => prev.filter((m) => m.id !== STREAMING_MSG_ID));
+          }
           message.error(String(data.message ?? '处理失败'));
         }
       });
@@ -275,6 +338,7 @@ export default function CopilotPage() {
       }
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : '发送失败');
+      setMessages((prev) => prev.filter((m) => m.id !== STREAMING_MSG_ID));
       setStreaming(false);
       closeSse();
     } finally {
@@ -335,6 +399,18 @@ export default function CopilotPage() {
       // ignore
     }
   };
+
+  const handleClearSession = useCallback(() => {
+    closeSse();
+    setSessionId(null);
+    setMessages([]);
+    setSessionTasks([]);
+    setInlineConfirm(null);
+    setInputValue('');
+    setStreaming(false);
+    setSending(false);
+    message.success('已清除当前会话，可重新选择能力类型开始对话');
+  }, [closeSse]);
 
   const handleConfirm = async (id: string, action: 'approve' | 'reject') => {
     const authToken = tokenRef.current;
@@ -397,7 +473,7 @@ export default function CopilotPage() {
   const showTasks = config?.features?.enableTask !== false;
 
   const tabItems = [
-    { key: 'chat', label: '对话' },
+    { key: 'chat', label: <span><MessageOutlined /> 对话</span> },
     ...(showHistory
       ? [{ key: 'history', label: <span><HistoryOutlined /> 历史</span> }]
       : []),
@@ -412,7 +488,7 @@ export default function CopilotPage() {
         }]
       : []),
     ...(showTasks
-      ? [{ key: 'tasks', label: <span><LoadingOutlined /> 任务</span> }]
+      ? [{ key: 'tasks', label: <span><ProfileOutlined /> 任务</span> }]
       : []),
   ];
 
@@ -444,7 +520,17 @@ export default function CopilotPage() {
               }
             }}
             onInputChange={setInputValue}
-            onCapabilityTypeChange={setSelectedCapabilityType}
+            onCapabilityTypeChange={(type) => {
+              if (sessionId) {
+                closeSse();
+                setSessionId(null);
+                setMessages([]);
+                setSessionTasks([]);
+                setInlineConfirm(null);
+              }
+              setSelectedCapabilityType(type);
+            }}
+            onClearSession={handleClearSession}
             onSend={() => void handleSend()}
             messagesEndRef={messagesEndRef}
           />
@@ -478,6 +564,7 @@ function ChatPanel({
   onInlineConfirm,
   onInputChange,
   onCapabilityTypeChange,
+  onClearSession,
   onSend,
   messagesEndRef,
 }: {
@@ -492,28 +579,54 @@ function ChatPanel({
   onInlineConfirm: (action: 'approve' | 'reject') => void;
   onInputChange: (v: string) => void;
   onCapabilityTypeChange: (v: CapabilityTypeKey) => void;
+  onClearSession: () => void;
   onSend: () => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const hasConversation = messages.length > 0 || !!sessionId;
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      {hasConversation && (
+        <div className="flex shrink-0 items-center justify-end border-b border-gray-100 px-2 py-1">
+          <Tooltip title="清除会话">
+            <span className="inline-flex">
+              <button
+                type="button"
+                disabled={sending || streaming}
+                onClick={() => {
+                  Modal.confirm({
+                    title: '清除当前会话？',
+                    content: '将清空当前对话记录；下次发送将创建新会话。',
+                    okText: '清除',
+                    cancelText: '取消',
+                    onOk: onClearSession,
+                  });
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                <FormatPainterOutlined className="text-sm" />
+              </button>
+            </span>
+          </Tooltip>
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && config?.welcomeMessage && (
-          <div className="flex gap-2">
-            <RobotOutlined className="mt-1 text-blue-500" />
-            <div className="rounded-lg bg-blue-50 px-3 py-2 text-sm max-w-[80%]">
+          <div className="flex gap-3 items-start">
+            <ChatAvatar role="assistant" />
+            <div className="rounded-2xl rounded-tl-sm bg-slate-50 px-3.5 py-2.5 text-sm max-w-[85%] text-slate-700 shadow-sm ring-1 ring-slate-100">
               {config.welcomeMessage}
             </div>
           </div>
         )}
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} message={msg} />
+        {messages.filter((msg) => !isHiddenCopilotChatMessage(msg)).map((msg) => (
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            capabilityType={selectedCapabilityType}
+          />
         ))}
-        {streaming && !messages.some((m) => m.id === STREAMING_MSG_ID) && (
-          <div className="flex gap-2 items-center text-gray-400">
-            <LoadingOutlined /> <span className="text-xs">正在处理…</span>
-          </div>
-        )}
         {inlineConfirm && (
           <Alert
             type="warning"
@@ -535,19 +648,12 @@ function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="border-t p-3">
-        <div className="mb-2 flex flex-wrap gap-2">
-          {CAPABILITY_OPTIONS.map((opt) => (
-            <Tag
-              key={opt.value}
-              color={selectedCapabilityType === opt.value ? 'processing' : 'default'}
-              className="cursor-pointer"
-              onClick={() => onCapabilityTypeChange(opt.value)}
-            >
-              {opt.label}
-            </Tag>
-          ))}
-        </div>
+      <div className="border-t bg-gray-50/80 p-3">
+        <CapabilityTypeSelector
+          selected={selectedCapabilityType}
+          locked={!!sessionId}
+          onChange={onCapabilityTypeChange}
+        />
         <div className="flex gap-2">
           <TextArea
             value={inputValue}
@@ -576,37 +682,107 @@ function ChatPanel({
   );
 }
 
-function MessageBubble({ message: msg }: { message: CopilotMessage }) {
+function ChatAvatar({ role }: { role: 'user' | 'assistant' }) {
+  const isUser = role === 'user';
+  return (
+    <Avatar
+      size={36}
+      className="shrink-0 shadow-sm"
+      style={{
+        background: isUser
+          ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+          : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+      }}
+      icon={isUser ? <UserOutlined className="text-sm" /> : <RobotOutlined className="text-sm" />}
+    />
+  );
+}
+
+function CapabilityTypeSelector({
+  selected,
+  locked,
+  onChange,
+}: {
+  selected: CapabilityTypeKey | null;
+  locked: boolean;
+  onChange: (v: CapabilityTypeKey) => void;
+}) {
+  return (
+    <div className="mb-2 grid grid-cols-4 gap-1 rounded-lg bg-white p-0.5 shadow-sm ring-1 ring-gray-200/80">
+      {CAPABILITY_OPTIONS.map((opt) => {
+        const isActive = selected === opt.value;
+        const disabled = locked && !isActive;
+        const tooltipTitle = disabled ? `${opt.label}（清除会话后可切换）` : opt.label;
+        return (
+          <Tooltip key={opt.value} title={tooltipTitle}>
+            <span className="inline-flex w-full">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onChange(opt.value)}
+                className={[
+                  'flex h-8 w-full items-center justify-center rounded-md border text-sm transition-all',
+                  'disabled:cursor-not-allowed disabled:opacity-45',
+                  isActive
+                    ? opt.activeClass
+                    : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-800',
+                ].join(' ')}
+              >
+                {opt.icon}
+              </button>
+            </span>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+}
+
+function MessageBubble({
+  message: msg,
+  capabilityType,
+}: {
+  message: CopilotMessage;
+  capabilityType: CapabilityTypeKey | null;
+}) {
   const isUser = msg.role === 'user';
   const text = extractMessageText(msg.content);
   const citations = extractCitations(msg.content);
+  const isTypingPlaceholder =
+    msg.id === STREAMING_MSG_ID && !hasSubstantiveStreamText(text);
+  const thinkingText = useThinkingStatusText(isTypingPlaceholder, capabilityType);
 
   return (
-    <div className={`flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
-      {isUser ? (
-        <UserOutlined className="mt-1 text-green-500" />
-      ) : (
-        <RobotOutlined className="mt-1 text-blue-500" />
-      )}
+    <div className={`flex gap-3 items-start ${isUser ? 'flex-row-reverse' : ''}`}>
+      <ChatAvatar role={isUser ? 'user' : 'assistant'} />
       <div
-        className={`rounded-lg px-3 py-2 text-sm max-w-[80%] ${
-          isUser ? 'bg-green-50' : 'bg-blue-50'
+        className={`rounded-2xl px-3.5 py-2.5 text-sm max-w-[calc(100%-3rem)] shadow-sm ${
+          isUser
+            ? 'rounded-tr-sm bg-emerald-500 text-white'
+            : 'rounded-tl-sm bg-white text-slate-800 ring-1 ring-slate-100'
         }`}
       >
-        <div className="whitespace-pre-wrap">{text}</div>
+        {isTypingPlaceholder ? (
+          <span className="inline-flex items-center gap-2 text-slate-400">
+            <LoadingOutlined />
+            <span className="text-xs">{thinkingText}</span>
+          </span>
+        ) : (
+          <div className="whitespace-pre-wrap">{text}</div>
+        )}
         {msg.type === 'confirmation' && (
           <Tag color="warning" className="mt-1">
             待确认
           </Tag>
         )}
         {citations.length > 0 && (
-          <div className="mt-2 border-t border-blue-100 pt-2">
-            <div className="flex items-center gap-1 text-xs text-gray-500 mb-1">
+          <div className="mt-2 border-t border-slate-100 pt-2">
+            <div className="flex items-center gap-1 text-xs text-slate-500 mb-1">
               <BookOutlined /> 引用来源
             </div>
-            <ul className="space-y-1 text-xs text-gray-600">
+            <ul className="space-y-1 text-xs text-slate-600">
               {citations.map((c: CopilotCitation, i: number) => (
-                <li key={i} className="rounded bg-white/60 px-2 py-1">
+                <li key={i} className="rounded-lg bg-slate-50 px-2 py-1">
                   {c.documentTitle && (
                     <span className="font-medium text-blue-600">{c.documentTitle}</span>
                   )}

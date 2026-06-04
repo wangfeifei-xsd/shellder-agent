@@ -103,6 +103,24 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'copilot',
+    icon: <RobotOutlined />,
+    label: '嵌入式 Copilot',
+    children: [
+      { key: '/copilot-admin', label: <Link to="/copilot-admin">Copilot 配置</Link> },
+      { key: '/copilot-admin/preview', label: <Link to="/copilot-admin/preview">嵌入预览</Link> },
+    ],
+  },
+  {
+    key: 'openapi',
+    icon: <KeyOutlined />,
+    label: 'OpenAPI 管理',
+    children: [
+      { key: '/openapi/apps', label: <Link to="/openapi/apps">应用接入</Link> },
+      { key: '/openapi/docs', label: <Link to="/openapi/docs">接口文档</Link> },
+    ],
+  },
+  {
     key: 'user',
     icon: <TeamOutlined />,
     label: '用户与权限',
@@ -212,24 +230,6 @@ export const consoleMenuItems: MenuProps['items'] = [
         key: '/audit/risk-actions',
         label: <Link to="/audit/risk-actions">风险动作审计</Link>,
       },
-    ],
-  },
-  {
-    key: 'openapi',
-    icon: <KeyOutlined />,
-    label: 'OpenAPI 管理（实验中）',
-    children: [
-      { key: '/openapi/apps', label: <Link to="/openapi/apps">应用接入</Link> },
-      { key: '/openapi/docs', label: <Link to="/openapi/docs">接口文档</Link> },
-    ],
-  },
-  {
-    key: 'copilot',
-    icon: <RobotOutlined />,
-    label: '嵌入式 Copilot（实验中）',
-    children: [
-      { key: '/copilot-admin', label: <Link to="/copilot-admin">Copilot 配置</Link> },
-      { key: '/copilot-admin/preview', label: <Link to="/copilot-admin/preview">嵌入预览</Link> },
     ],
   },
 ];

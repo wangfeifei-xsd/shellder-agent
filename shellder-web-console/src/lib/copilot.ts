@@ -295,8 +295,14 @@ export async function copilotGetTask(
   return readCopilotJson<CopilotTask>(res, '获取任务失败');
 }
 
+/** 嵌入对话中不展示的消息（如定向选择产生的路由元数据） */
+export function isHiddenCopilotChatMessage(message: CopilotMessage): boolean {
+  return message.content?.type === 'routing_result';
+}
+
 /** 从消息 content 提取展示文本 */
 export function extractMessageText(content: Record<string, unknown>): string {
+  if (content.type === 'routing_result') return '';
   if (typeof content.text === 'string') return content.text;
   const data = content.data as Record<string, unknown> | undefined;
   if (data && typeof data.text === 'string') return data.text;
