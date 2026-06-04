@@ -167,6 +167,31 @@ export function deleteRoutingRule(id: string) {
   return apiFetch<{ id: string }>(`${RULE_BASE}/${id}`, { method: 'DELETE' });
 }
 
+/** AI 生成的路由规则草案（填入表单后仍需人工保存） */
+export interface RoutingRuleAiSuggestion {
+  name: string;
+  description?: string;
+  keywords: string[];
+  patterns: string[];
+  intents: string[];
+  priority: number;
+  needConfirmation: boolean;
+  rationale: string;
+  warnings?: string[];
+}
+
+export function suggestRoutingRuleWithAi(input: {
+  tenantId: string;
+  capabilityId: string;
+  intentDescription: string;
+  sampleQueries?: string[];
+}) {
+  return apiFetch<RoutingRuleAiSuggestion>(`${RULE_BASE}/ai-suggest`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
 // ── 路由测试 API ─────────────────────────────────────────
 
 export function testRouting(input: { tenantId: string; input: string; userId?: string }) {

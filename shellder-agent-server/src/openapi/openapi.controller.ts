@@ -84,6 +84,7 @@ export class OpenApiController {
           tenantId,
           userId: app.appId,
           title: dto.title ?? null,
+          capabilityType: dto.capabilityType ?? null,
         },
       });
 
@@ -93,6 +94,7 @@ export class OpenApiController {
         tenantId: session.tenantId,
         title: session.title,
         status: session.status,
+        capabilityType: session.capabilityType,
         createdAt: session.createdAt,
       };
     } catch (err: any) {

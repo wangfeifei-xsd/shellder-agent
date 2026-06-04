@@ -22,8 +22,10 @@ import { SseEvent } from '../agent-runtime/agent-runtime.types';
 import { SseEmitterService } from '../agent-runtime/sse-emitter.service';
 import { ApprovalRuntimeService } from '../approval/approval-runtime.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { KnowledgeProxyService } from '../knowledge/knowledge-proxy.service';
 import { CopilotAuthService, CopilotJwtPayload } from './copilot-auth.service';
 import { CopilotConfigService } from './copilot-config.service';
+import { CreateCopilotSessionDto } from './dto/copilot-session.dto';
 import {
   CopilotTokenExchangeDto,
   CreateCopilotConfigDto,
@@ -85,6 +87,7 @@ export class CopilotWidgetController {
     private readonly approvalRuntime: ApprovalRuntimeService,
     private readonly runtimeService: AgentRuntimeService,
     private readonly sseEmitter: SseEmitterService,
+    private readonly knowledgeProxy: KnowledgeProxyService,
   ) {}
 
   /** POST /copilot/v1/auth/token — 换票接口 */
@@ -97,7 +100,7 @@ export class CopilotWidgetController {
   @Post('sessions')
   async createSession(
     @Headers('authorization') authHeader: string,
-    @Body() body: { title?: string },
+    @Body() body: CreateCopilotSessionDto,
   ) {
     const payload = this.extractPayload(authHeader);
 
@@ -106,6 +109,7 @@ export class CopilotWidgetController {
         tenantId: payload.tenantId,
         userId: payload.sub,
         title: body.title ?? null,
+        capabilityType: body.capabilityType,
       },
     });
 
@@ -114,6 +118,7 @@ export class CopilotWidgetController {
       tenantId: session.tenantId,
       title: session.title,
       status: session.status,
+      capabilityType: session.capabilityType,
       createdAt: session.createdAt,
     };
   }
@@ -410,6 +415,24 @@ export class CopilotWidgetController {
     };
   }
 
+  /** GET /copilot/v1/media/:code — 读取问答 merged_media 对应二进制资源 */
+  @Get('media/:code')
+  async getMedia(
+    @Headers('authorization') authHeader: string,
+    @Query('token') queryToken: string | undefined,
+    @Param('code') code: string,
+    @Res() res: Response,
+  ) {
+    const payload = this.extractPayload(authHeader, queryToken);
+    const user = this.toRuntimeUser(payload);
+    const result = await this.knowledgeProxy.downloadMedia(user, payload.tenantId, code);
+    res.setHeader('Content-Type', result.contentType);
+    if (result.contentDisposition) {
+      res.setHeader('Content-Disposition', result.contentDisposition);
+    }
+    res.send(result.buffer);
+  }
+
   /** GET /copilot/v1/docs — 接口清单（供管理端/集成方查阅） */
   @Get('docs')
   apiDocs() {
@@ -420,7 +443,7 @@ export class CopilotWidgetController {
       strategy: 'BFF 薄层，会话/消息/SSE/确认/任务委托 AgentRuntimeService（与 OpenAPI 对齐）',
       endpoints: [
         { method: 'POST', path: '/auth/token', description: '换票，获取 Copilot JWT', auth: 'Client ID + Client Secret' },
-        { method: 'POST', path: '/sessions', description: '创建会话', auth: 'Bearer Copilot JWT' },
+        { method: 'POST', path: '/sessions', description: '创建会话（capabilityType 必填，手动选择）', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/sessions', description: '历史会话列表', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/sessions/:id', description: '会话详情（消息 + 任务）', auth: 'Bearer Copilot JWT' },
         { method: 'POST', path: '/sessions/:id/messages', description: '发送消息并触发 Runtime（mode=stream|sync）', auth: 'Bearer Copilot JWT' },
@@ -428,6 +451,7 @@ export class CopilotWidgetController {
         { method: 'GET', path: '/confirmations', description: '待确认列表', auth: 'Bearer Copilot JWT' },
         { method: 'POST', path: '/confirmations/:id', description: '确认/驳回', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/tasks/:id', description: '任务状态与步骤进度', auth: 'Bearer Copilot JWT' },
+        { method: 'GET', path: '/media/:code', description: '读取问答 merged_media 二进制资源', auth: 'Bearer 或 ?token=' },
       ],
     };
   }

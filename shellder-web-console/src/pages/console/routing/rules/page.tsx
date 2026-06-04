@@ -1,10 +1,11 @@
 'use client';
 
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import {
   Alert,
   App,
   Button,
+  Card,
   Drawer,
   Empty,
   Form,
@@ -39,6 +40,7 @@ import {
   deleteRoutingRule,
   listCapabilities,
   listRoutingRules,
+  suggestRoutingRuleWithAi,
   updateRoutingRule,
   updateRoutingRuleStatus,
 } from '@/lib/capability';
@@ -72,6 +74,11 @@ export default function RoutingRulesPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<RoutingRule | undefined>();
   const [submitting, setSubmitting] = useState(false);
+  const [aiIntent, setAiIntent] = useState('');
+  const [aiSamples, setAiSamples] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiRationale, setAiRationale] = useState<string | null>(null);
+  const [aiWarnings, setAiWarnings] = useState<string[]>([]);
 
   const activeTenantName = useMemo(
     () => tenants.find((t) => t.id === activeTenantId)?.name,
@@ -102,22 +109,83 @@ export default function RoutingRulesPage() {
     try {
       const res = await listCapabilities({ tenantId: activeTenantId, pageSize: 200 });
       setCapabilities(res.items);
-    } catch { setCapabilities([]); }
-  }, [activeTenantId]);
+    } catch (err) {
+      setCapabilities([]);
+      message.error(err instanceof Error ? err.message : '加载能力列表失败');
+    }
+  }, [activeTenantId, message]);
 
   useEffect(() => { void load(); void loadCapabilities(); }, [load, loadCapabilities]);
 
   const capOptions = useMemo(() => capabilities.map((c) => ({ value: c.id, label: `${c.name}（${CAPABILITY_TYPE_META[c.type].label}）` })), [capabilities]);
 
+  const resetAiAssist = () => {
+    setAiIntent('');
+    setAiSamples('');
+    setAiRationale(null);
+    setAiWarnings([]);
+  };
+
   const openCreate = () => {
     setEditing(undefined);
     form.resetFields();
     form.setFieldsValue({ priority: 100, needConfirmation: false });
+    resetAiAssist();
     setDrawerOpen(true);
+  };
+
+  const handleAiSuggest = async () => {
+    if (!activeTenantId) {
+      message.warning('请先选择操作租户');
+      return;
+    }
+    const capabilityId = form.getFieldValue('capabilityId') as string | undefined;
+    if (!capabilityId) {
+      message.warning('请先选择关联能力');
+      return;
+    }
+    const intent = aiIntent.trim();
+    if (intent.length < 4) {
+      message.warning('请用至少一句话描述希望匹配的用户场景或问法');
+      return;
+    }
+    const sampleQueries = aiSamples
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    setAiLoading(true);
+    setAiRationale(null);
+    setAiWarnings([]);
+    try {
+      const draft = await suggestRoutingRuleWithAi({
+        tenantId: activeTenantId,
+        capabilityId,
+        intentDescription: intent,
+        sampleQueries: sampleQueries.length > 0 ? sampleQueries : undefined,
+      });
+      form.setFieldsValue({
+        name: draft.name,
+        description: draft.description,
+        keywordsText: JSON.stringify(draft.keywords, null, 2),
+        patternsText: draft.patterns.length ? JSON.stringify(draft.patterns, null, 2) : undefined,
+        intentsText: draft.intents.length ? JSON.stringify(draft.intents, null, 2) : undefined,
+        priority: draft.priority,
+        needConfirmation: draft.needConfirmation,
+      });
+      setAiRationale(draft.rationale);
+      setAiWarnings(draft.warnings ?? []);
+      message.success('已生成规则草案，请核对后保存');
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'AI 生成失败');
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const openEdit = (rule: RoutingRule) => {
     setEditing(rule);
+    resetAiAssist();
     form.resetFields();
     form.setFieldsValue({
       capabilityId: rule.capabilityId,
@@ -283,7 +351,22 @@ export default function RoutingRulesPage() {
         <Alert type="warning" showIcon message="请先在顶栏选择「当前操作租户」" />
       ) : (
         <>
-          <Alert className="mb-4" type="info" showIcon message={`当前租户：${activeTenantName ?? activeTenantId}`} description="配置能力与 Tool、条件的关联，定义每类能力的路由匹配规则。" />
+          <Alert
+            className="mb-4"
+            type="info"
+            showIcon
+            message={`当前租户：${activeTenantName ?? activeTenantId}`}
+            description="配置能力与 Tool、条件的关联，定义每类能力的路由匹配规则。关联能力来自「能力目录」；若为空，刷新后平台将按租户已开通类型自动初始化四类基础能力。"
+          />
+          {!loading && capabilities.length === 0 && (
+            <Alert
+              className="mb-4"
+              type="warning"
+              showIcon
+              message="当前租户暂无能力目录记录"
+              description="请刷新页面；若仍为空，请确认租户 config 已开通 qa/query/action/workflow，或在「能力路由 → 能力目录」手动新建。"
+            />
+          )}
           <Space className="mb-4" wrap>
             <Input.Search allowClear placeholder="搜索规则名称/描述" style={{ width: 240 }} onSearch={setKeyword} />
             <Select allowClear placeholder="关联能力" style={{ width: 200 }} options={capOptions} value={capFilter} onChange={setCapFilter} />
@@ -316,6 +399,65 @@ export default function RoutingRulesPage() {
         }
       >
         <Form form={form} layout="vertical">
+          <Card
+            size="small"
+            type="inner"
+            title={
+              <Space>
+                <ThunderboltOutlined />
+                AI 辅助生成
+              </Space>
+            }
+            className="mb-4"
+          >
+            <Typography.Paragraph type="secondary" className="!mb-3 text-xs">
+              先选择关联能力，用自然语言描述要匹配的用户问法；可粘贴示例用户输入（每行一条）。生成结果会填入下方表单，保存前建议在「路由测试」验证。
+            </Typography.Paragraph>
+            <Input.TextArea
+              rows={2}
+              placeholder="例如：用户询问订单状态、物流、退款进度时使用本规则"
+              value={aiIntent}
+              onChange={(e) => setAiIntent(e.target.value)}
+              disabled={aiLoading}
+            />
+            <Input.TextArea
+              className="mt-2"
+              rows={3}
+              placeholder={'示例用户输入（可选，每行一条）\n查一下我的订单到哪了\n订单 12345 物流'}
+              value={aiSamples}
+              onChange={(e) => setAiSamples(e.target.value)}
+              disabled={aiLoading}
+            />
+            <Button
+              type="primary"
+              ghost
+              icon={<ThunderboltOutlined />}
+              className="mt-2"
+              loading={aiLoading}
+              onClick={() => void handleAiSuggest()}
+            >
+              生成匹配条件
+            </Button>
+            {aiRationale && (
+              <Alert className="mt-3" type="info" showIcon message={aiRationale} />
+            )}
+            {aiWarnings.length > 0 && (
+              <Alert
+                className="mt-2"
+                type="warning"
+                showIcon
+                message="生成提示"
+                description={
+                  <ul className="mb-0 pl-4">
+                    {aiWarnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                }
+              />
+            )}
+          </Card>
+
           <Form.Item label="关联能力" name="capabilityId" rules={[{ required: true, message: '请选择关联能力' }]}>
             <Select placeholder="选择能力" options={capOptions} />
           </Form.Item>

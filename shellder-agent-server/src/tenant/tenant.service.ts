@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -36,6 +37,7 @@ export class TenantService {
     await this.ensureCodeAvailable(dto.code);
 
     const config = this.mergeConfig(DEFAULT_CONFIG, dto.config);
+    this.assertCapabilitiesConfigured(config.capabilities);
 
     const tenant = await this.prisma.tenant.create({
       data: {
@@ -117,6 +119,7 @@ export class TenantService {
     if (dto.remark !== undefined) data.remark = dto.remark || null;
     if (dto.config !== undefined) {
       const merged = this.mergeConfig(this.readConfig(existing), dto.config);
+      this.assertCapabilitiesConfigured(merged.capabilities);
       data.config = merged as unknown as Prisma.InputJsonValue;
     }
 
@@ -155,6 +158,16 @@ export class TenantService {
   }
 
   // ── 内部辅助 ────────────────────────────────────────────
+
+  /** 开通能力范围必填；空数组不再等价于「四类全开」 */
+  private assertCapabilitiesConfigured(capabilities: string[]) {
+    if (!capabilities?.length) {
+      throw new BadRequestException({
+        code: 'TENANT_CAPABILITIES_REQUIRED',
+        message: '请至少选择一种开通能力（问答/查询/操作/流程）',
+      });
+    }
+  }
 
   private async ensureCodeAvailable(code: string) {
     const exists = await this.prisma.tenant.findUnique({ where: { code } });

@@ -1,11 +1,11 @@
 # 能力演示与嵌入式 Copilot 参数对齐
 
-管理后台 **业务能力 → 能力演示** 与嵌入页 `/copilot` 使用同一套业务契约。
+管理后台 **业务调试**（侧栏第六项，`/capabilities`）与嵌入页 `/copilot` 使用同一套业务契约。
 
 ## 调用链
 
 1. `POST /api/v1/capabilities/demo/copilot-token` — 管理端代换票（响应同 `POST /copilot/v1/auth/token`）
-2. `POST /copilot/v1/sessions` — body `{ title? }`
+2. `POST /copilot/v1/sessions` — body `{ title?, capabilityType? }`（定向选择，不走路由匹配）
 3. `GET /copilot/v1/sessions/:id/stream?token=` — 先订阅 SSE
 4. `POST /copilot/v1/sessions/:id/messages` — body `{ content, mode: "stream" }`
 5. `GET /copilot/v1/sessions/:id` — 从助手消息 `content` 解析 `CapabilityResult`

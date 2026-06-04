@@ -118,6 +118,8 @@ export type CapabilityTypeKey = 'qa' | 'query' | 'action' | 'workflow';
 /** 问答型 data.merged_media / injected_context（与 wiki recall、知识库测试一致） */
 export interface QaRecallMediaRef {
   code: string;
+  mime: string;
+  size: number;
   title?: string | null;
 }
 
@@ -198,12 +200,15 @@ export async function copilotExchangeToken(params: {
 
 export async function copilotCreateSession(
   token: string,
-  title?: string,
+  options?: { title?: string; capabilityType?: CapabilityTypeKey },
 ): Promise<CopilotSession> {
   const res = await fetch(`${COPILOT_BASE}/sessions`, {
     method: 'POST',
     headers: copilotHeaders(token),
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({
+      title: options?.title,
+      capabilityType: options?.capabilityType,
+    }),
   });
   return readCopilotJson<CopilotSession>(res, '创建会话失败');
 }
@@ -312,6 +317,21 @@ export function extractQaRecallMediaBundle(
     typeof data.injected_context === 'string' ? data.injected_context : '';
   if (!injected_context.trim() && merged_media.length === 0) return null;
   return { injected_context, merged_media };
+}
+
+/** Copilot 下按 code 获取问答召回媒体 object URL（调用方需在不用时 revoke） */
+export async function copilotFetchMediaObjectUrl(
+  token: string,
+  code: string,
+): Promise<string> {
+  const res = await fetch(`${COPILOT_BASE}/media/${encodeURIComponent(code)}?token=${encodeURIComponent(token)}`, {
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    throw new Error(`加载媒体失败（HTTP ${res.status}）`);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
 }
 
 /** 从消息 content 提取引用（问答型 CapabilityResult） */

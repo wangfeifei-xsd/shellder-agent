@@ -3,13 +3,14 @@ import { AgentRuntimeModule } from '../agent-runtime/agent-runtime.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { OpenApiModule } from '../openapi/openapi.module';
 import { AuthModule } from '../auth/auth.module';
+import { KnowledgeModule } from '../knowledge/knowledge.module';
 import { CopilotAuthService } from './copilot-auth.service';
 import { CopilotConfigService } from './copilot-config.service';
 import { CapabilityDemoController } from './capability-demo.controller';
 import { CopilotConfigController, CopilotWidgetController } from './copilot.controller';
 
 @Module({
-  imports: [PrismaModule, OpenApiModule, AuthModule, AgentRuntimeModule],
+  imports: [PrismaModule, OpenApiModule, AuthModule, AgentRuntimeModule, KnowledgeModule],
   controllers: [
     CopilotConfigController,
     CopilotWidgetController,

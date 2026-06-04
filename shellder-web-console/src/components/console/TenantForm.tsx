@@ -101,7 +101,19 @@ export default function TenantForm({ initial, submitText, submitting, onSubmit, 
       </Card>
 
       <Card title="开通能力与限额" className="mb-4">
-        <Form.Item label="开通能力范围" name="capabilities">
+        <Form.Item
+          label="开通能力范围"
+          name="capabilities"
+          rules={[
+            {
+              required: true,
+              type: 'array',
+              min: 1,
+              message: '请至少选择一种开通能力',
+            },
+          ]}
+          tooltip="未选择任何项时，运行时不会视为「拥有全部能力」；必须显式勾选租户可用的业务类型。"
+        >
           <Checkbox.Group options={CAPABILITY_OPTIONS} />
         </Form.Item>
         <Space size="large">

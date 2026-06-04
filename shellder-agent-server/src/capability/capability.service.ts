@@ -8,9 +8,11 @@ import { Capability, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
+import { DEFAULT_TENANT_CAPABILITIES } from './capability-defaults';
 import { CreateCapabilityDto } from './dto/create-capability.dto';
 import { QueryCapabilityDto } from './dto/query-capability.dto';
 import { UpdateCapabilityDto } from './dto/update-capability.dto';
+import { TENANT_CAPABILITIES } from '../tenant/dto/tenant-config.dto';
 
 /**
  * 能力目录服务（功能清单 §1.4 / 架构 Capability Routing）。
@@ -53,8 +55,13 @@ export class CapabilityService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
+    const tenantFilter = await this.resolveTenantFilter(user, query.tenantId);
+    if (typeof tenantFilter === 'string') {
+      await this.ensureDefaultCapabilities(tenantFilter);
+    }
+
     const where: Prisma.CapabilityWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: tenantFilter,
     };
     if (query.type) where.type = query.type;
     if (query.status) where.status = query.status;
@@ -125,8 +132,59 @@ export class CapabilityService {
     return { id };
   }
 
+  /**
+   * 租户下无任何能力记录时，按 tenant.config.capabilities 自动创建四类基础能力。
+   * 路由规则、路由引擎、能力目录列表均依赖 capability 表，不可仅配置 tenant.config。
+   */
+  async ensureDefaultCapabilities(tenantId: string): Promise<void> {
+    const count = await this.prisma.capability.count({ where: { tenantId } });
+    if (count > 0) return;
+
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant || tenant.status === 'disabled') return;
+
+    const config = tenant.config as { capabilities?: string[] } | null;
+    const allowed =
+      config?.capabilities?.length
+        ? config.capabilities.filter((t): t is (typeof TENANT_CAPABILITIES)[number] =>
+            (TENANT_CAPABILITIES as readonly string[]).includes(t),
+          )
+        : [...TENANT_CAPABILITIES];
+
+    if (allowed.length === 0) return;
+
+    const allowedSet = new Set(allowed);
+    for (const def of DEFAULT_TENANT_CAPABILITIES) {
+      if (!allowedSet.has(def.type)) continue;
+      try {
+        await this.prisma.capability.create({
+          data: {
+            tenantId,
+            type: def.type,
+            name: def.name,
+            description: def.description,
+            applicableSystem: def.applicableSystem,
+            dependentTools: [] as Prisma.InputJsonValue,
+            permissionRequirements: [] as Prisma.InputJsonValue,
+            priority: def.priority,
+            status: 'enabled',
+          },
+        });
+      } catch (err) {
+        if (
+          !(
+            err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+          )
+        ) {
+          throw err;
+        }
+      }
+    }
+  }
+
   /** 获取租户的启用能力列表（供路由引擎调用） */
   async getEnabledByTenant(tenantId: string) {
+    await this.ensureDefaultCapabilities(tenantId);
     return this.prisma.capability.findMany({
       where: { tenantId, status: 'enabled' },
       orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
@@ -167,13 +225,18 @@ export class CapabilityService {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
     if (!tenant) return;
     const config = tenant.config as { capabilities?: string[] } | null;
-    if (config?.capabilities && config.capabilities.length > 0) {
-      if (!config.capabilities.includes(type)) {
-        throw new BadRequestException({
-          code: 'CAPABILITY_TYPE_NOT_ALLOWED',
-          message: `该租户未开通 ${type} 类型能力，已开通：${config.capabilities.join(', ')}`,
-        });
-      }
+    const allowed = config?.capabilities ?? [];
+    if (allowed.length === 0) {
+      throw new BadRequestException({
+        code: 'TENANT_CAPABILITIES_REQUIRED',
+        message: '该租户未配置开通能力范围，请先在租户管理中选择至少一种能力',
+      });
+    }
+    if (!allowed.includes(type)) {
+      throw new BadRequestException({
+        code: 'CAPABILITY_TYPE_NOT_ALLOWED',
+        message: `该租户未开通 ${type} 类型能力，已开通：${allowed.join(', ')}`,
+      });
     }
   }
 

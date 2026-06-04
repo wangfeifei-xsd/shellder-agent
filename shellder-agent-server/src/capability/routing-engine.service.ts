@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { CapabilityType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
+import { CapabilityService } from './capability.service';
 import { RoutingCandidate, RoutingTestResult } from './dto/routing-test.dto';
 
 /** 路由规则 conditions DSL 结构 */
@@ -34,6 +35,7 @@ export class RoutingEngineService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
+    private readonly capabilityService: CapabilityService,
   ) {}
 
   /**
@@ -47,7 +49,14 @@ export class RoutingEngineService {
     }
 
     const tenantConfig = tenant.config as { capabilities?: string[] } | null;
-    const allowedTypes = tenantConfig?.capabilities ?? ['qa', 'query', 'action', 'workflow'];
+    const allowedTypes = tenantConfig?.capabilities ?? [];
+    if (allowedTypes.length === 0) {
+      return this.fallbackResult(
+        '该租户未配置开通能力范围，请在租户管理中至少选择一种能力',
+      );
+    }
+
+    await this.capabilityService.ensureDefaultCapabilities(tenantId);
 
     const capabilities = await this.prisma.capability.findMany({
       where: { tenantId, status: 'enabled', type: { in: allowedTypes as CapabilityType[] } },
@@ -122,6 +131,65 @@ export class RoutingEngineService {
    */
   async route(tenantId: string, input: string, userId?: string): Promise<RoutingTestResult> {
     return this.routeTest(tenantId, input, userId);
+  }
+
+  /**
+   * 定向选择能力类型（演示页 / 嵌入 Copilot / 业务系统显式指定）。
+   * 不执行关键词、规则或启发式路由匹配。
+   */
+  async routeDirected(
+    tenantId: string,
+    capabilityType: CapabilityType,
+    userId?: string,
+  ): Promise<RoutingTestResult> {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) {
+      return this.fallbackResult('租户不存在');
+    }
+
+    const tenantConfig = tenant.config as { capabilities?: string[] } | null;
+    const allowedTypes = tenantConfig?.capabilities ?? [];
+    if (allowedTypes.length > 0 && !allowedTypes.includes(capabilityType)) {
+      return {
+        capabilityType,
+        capabilityName: this.typeLabel(capabilityType),
+        reason: `定向选择：${this.typeLabel(capabilityType)}（该租户未开通此能力类型）`,
+        candidates: [],
+        needConfirmation: false,
+      };
+    }
+
+    await this.capabilityService.ensureDefaultCapabilities(tenantId);
+
+    const cap = await this.prisma.capability.findFirst({
+      where: { tenantId, status: 'enabled', type: capabilityType },
+      orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const toolIds = cap ? this.readToolIds(cap.dependentTools) : [];
+    const needConfirmation = await this.checkNeedConfirmation(
+      tenantId,
+      capabilityType,
+      toolIds,
+      userId,
+    );
+
+    const capabilityName = cap?.name ?? this.typeLabel(capabilityType);
+    const candidate: RoutingCandidate = {
+      capabilityId: cap?.id ?? '',
+      capabilityName,
+      type: capabilityType,
+      score: 100,
+      toolIds,
+    };
+
+    return {
+      capabilityType,
+      capabilityName,
+      reason: `定向选择：${capabilityName}（不使用路由匹配）`,
+      candidates: [candidate],
+      needConfirmation,
+    };
   }
 
   // ── 匹配算法 ────────────────────────────────────────────

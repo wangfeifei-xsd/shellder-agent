@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { LlmModule } from '../llm/llm.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CapabilityController } from './capability.controller';
 import { CapabilityService } from './capability.service';
 import { RoutingRuleController } from './routing-rule.controller';
+import { RoutingRuleAssistService } from './routing-rule-assist.service';
 import { RoutingRuleService } from './routing-rule.service';
 import { RoutingTestController } from './routing-test.controller';
 import { RoutingEngineService } from './routing-engine.service';
@@ -15,9 +17,14 @@ import { RoutingEngineService } from './routing-engine.service';
  * - 导出 RoutingEngineService 供 12-Agent 运行时、16-调试台调用。
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, LlmModule],
   controllers: [CapabilityController, RoutingRuleController, RoutingTestController],
-  providers: [CapabilityService, RoutingRuleService, RoutingEngineService],
+  providers: [
+    CapabilityService,
+    RoutingRuleService,
+    RoutingRuleAssistService,
+    RoutingEngineService,
+  ],
   exports: [RoutingEngineService, CapabilityService],
 })
 export class CapabilityModule {}

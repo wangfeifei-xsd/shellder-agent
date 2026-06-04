@@ -95,6 +95,14 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'capability',
+    icon: <ExperimentOutlined />,
+    label: '业务调试',
+    children: [
+      { key: '/capabilities', label: <Link to="/capabilities">能力演示</Link> },
+    ],
+  },
+  {
     key: 'user',
     icon: <TeamOutlined />,
     label: '用户与权限',
@@ -142,14 +150,6 @@ export const consoleMenuItems: MenuProps['items'] = [
       { key: '/routing/rules', label: <Link to="/routing/rules">路由规则</Link> },
       { key: '/routing/test', label: <Link to="/routing/test">路由测试</Link> },
       { key: '/routing/capabilities', label: <Link to="/routing/capabilities">能力目录</Link> },
-    ],
-  },
-  {
-    key: 'capability',
-    icon: <ExperimentOutlined />,
-    label: '业务能力（实验中）',
-    children: [
-      { key: '/capabilities', label: <Link to="/capabilities">能力演示</Link> },
     ],
   },
   {
@@ -221,7 +221,6 @@ export const consoleMenuItems: MenuProps['items'] = [
     children: [
       { key: '/openapi/apps', label: <Link to="/openapi/apps">应用接入</Link> },
       { key: '/openapi/docs', label: <Link to="/openapi/docs">接口文档</Link> },
-      { key: '/openapi/logs', label: <Link to="/openapi/logs">调用日志</Link> },
     ],
   },
   {

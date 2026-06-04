@@ -29,13 +29,6 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_MAX_RETRIES = 2;
 const CONTEXT_MESSAGE_LIMIT = 20;
 
-const CAPABILITY_TYPE_LABELS: Record<string, string> = {
-  qa: '问答型',
-  query: '查询型',
-  action: '操作型',
-  workflow: '流程型',
-};
-
 /**
  * Agent Runtime 编排骨架（架构 §4.5 / 执行计划 §4.1）。
  *
@@ -159,17 +152,11 @@ export class AgentRuntimeService {
     const emitSse = (event: SseEvent) => this.sseEmitter.emit(sessionId, event);
 
     try {
-      // Step 2: 路由（会话已指定 capabilityType 时固定能力，供演示页/调试）
+      // Step 2: 路由（会话已指定 capabilityType 时定向选择，不走规则匹配）
       const pinnedType = session.capabilityType ?? null;
-      let routingResult = await this.routingEngine.route(
-        tenantId,
-        userMessage,
-        user.id,
-      );
-
-      if (pinnedType) {
-        routingResult = this.applyPinnedCapabilityType(routingResult, pinnedType);
-      }
+      const routingResult = pinnedType
+        ? await this.routingEngine.routeDirected(tenantId, pinnedType, user.id)
+        : await this.routingEngine.route(tenantId, userMessage, user.id);
 
       const capabilityType = routingResult.capabilityType;
       const toolIds = await this.resolveToolIds(
@@ -687,23 +674,6 @@ export class AgentRuntimeService {
   }
 
   // ── 辅助方法 ──────────────────────────────────────────────
-
-  /** 演示/调试：创建 Session 时已指定能力类型，不再被自动路由覆盖 */
-  private applyPinnedCapabilityType(
-    routingResult: RoutingTestResult,
-    pinnedType: CapabilityType,
-  ): RoutingTestResult {
-    const pinnedCandidate = routingResult.candidates.find((c) => c.type === pinnedType);
-    return {
-      ...routingResult,
-      capabilityType: pinnedType,
-      capabilityName: CAPABILITY_TYPE_LABELS[pinnedType] ?? pinnedType,
-      reason: `会话指定能力类型：${CAPABILITY_TYPE_LABELS[pinnedType] ?? pinnedType}（演示模式，不采用自动路由结果）`,
-      candidates: pinnedCandidate
-        ? [pinnedCandidate, ...routingResult.candidates.filter((c) => c.type !== pinnedType)]
-        : routingResult.candidates,
-    };
-  }
 
   /** 从路由候选或租户默认工具解析 toolIds */
   private async resolveToolIds(

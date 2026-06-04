@@ -5,6 +5,7 @@
 import { apiFetch } from './api';
 import {
   type CapabilityResult,
+  type CapabilityTypeKey,
   type CopilotMessage,
   type CopilotTokenResponse,
   copilotCreateSession,
@@ -47,13 +48,18 @@ export async function runCopilotStreamRound(params: {
   token: string;
   content: string;
   sessionId?: string | null;
+  /** 新建会话时定向选择的能力类型（不走路由匹配） */
+  capabilityType?: CapabilityTypeKey;
   onDelta?: (text: string) => void;
 }): Promise<CopilotStreamRoundResult> {
-  const { token, content, onDelta } = params;
+  const { token, content, onDelta, capabilityType } = params;
   let sessionId = params.sessionId ?? null;
 
   if (!sessionId) {
-    const session = await copilotCreateSession(token, '能力演示');
+    const session = await copilotCreateSession(token, {
+      title: '业务调试',
+      capabilityType,
+    });
     sessionId = session.id;
   }
 

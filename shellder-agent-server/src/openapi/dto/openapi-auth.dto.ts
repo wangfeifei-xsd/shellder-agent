@@ -1,3 +1,4 @@
+import { CapabilityType } from '@prisma/client';
 import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { SendMessageMode } from '../../agent-runtime/agent-runtime.types';
 
@@ -23,6 +24,11 @@ export class OpenApiCreateSessionDto {
   @IsOptional()
   @IsString()
   title?: string;
+
+  /** 定向选择的能力类型（创建会话时指定，不走路由匹配） */
+  @IsOptional()
+  @IsEnum(CapabilityType)
+  capabilityType?: CapabilityType;
 }
 
 export class OpenApiSendMessageDto {

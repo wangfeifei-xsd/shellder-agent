@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { Button, Card, Form, Input, Space, Typography, message } from 'antd';
+import { useMemo, useState } from 'react';
+import { Button, Card, Form, Input, Select, Space, Typography, message } from 'antd';
 import { PlayCircleOutlined, CopyOutlined } from '@ant-design/icons';
+import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -11,8 +12,22 @@ const { Title, Paragraph, Text } = Typography;
  * 并获取嵌入代码片段。
  */
 export default function CopilotPreviewPage() {
+  const { tenants } = useActiveTenant();
   const [form] = Form.useForm();
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
+  const resolveCopilotPath = () => {
+    const pathname = window.location.pathname.replace(/\/+$/, '');
+    const basePath = pathname.replace(/\/copilot-admin\/preview$/, '');
+    return `${basePath || ''}/copilot`;
+  };
+  const tenantOptions = useMemo(
+    () =>
+      tenants.map((tenant) => ({
+        value: tenant.id,
+        label: `${tenant.name}（${tenant.code}）`,
+      })),
+    [tenants],
+  );
 
   const handlePreview = async () => {
     const values = await form.validateFields();
@@ -22,7 +37,7 @@ export default function CopilotPreviewPage() {
     if (values.tenantId) params.set('tenantId', values.tenantId);
     if (values.externalTenantId) params.set('externalTenantId', values.externalTenantId);
     if (values.externalUserId) params.set('externalUserId', values.externalUserId);
-    setIframeSrc(`/copilot?${params.toString()}`);
+    setIframeSrc(`${resolveCopilotPath()}?${params.toString()}`);
   };
 
   const generateEmbedCode = () => {
@@ -34,7 +49,7 @@ export default function CopilotPreviewPage() {
     const code = `<!-- shellder-agent Copilot 嵌入代码 -->
 <iframe
   id="shellder-copilot"
-  src="${window.location.origin}/copilot"
+  src="${window.location.origin}${resolveCopilotPath()}"
   style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.12);"
   allow="clipboard-write"
 ></iframe>
@@ -76,7 +91,13 @@ export default function CopilotPreviewPage() {
               <Input.Password placeholder="OpenAPI 应用的 Client Secret" />
             </Form.Item>
             <Form.Item name="tenantId" label="租户 ID">
-              <Input placeholder="可选，Agent 平台 tenant.id" />
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                placeholder={tenantOptions.length > 0 ? '可选，选择租户' : '暂无可选租户'}
+                options={tenantOptions}
+              />
             </Form.Item>
             <Form.Item name="externalTenantId" label="外部租户 ID">
               <Input placeholder="可选，externalTenantId 映射" />

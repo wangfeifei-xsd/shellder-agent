@@ -12,6 +12,7 @@ import {
   BookOutlined,
 } from '@ant-design/icons';
 import type {
+  CapabilityTypeKey,
   CopilotConfig,
   CopilotMessage,
   CopilotSession,
@@ -35,6 +36,12 @@ import {
 
 const { TextArea } = Input;
 const STREAMING_MSG_ID = '__streaming__';
+const CAPABILITY_OPTIONS: { value: CapabilityTypeKey; label: string }[] = [
+  { value: 'qa', label: '问答' },
+  { value: 'query', label: '查询' },
+  { value: 'action', label: '操作' },
+  { value: 'workflow', label: '流程' },
+];
 
 type CopilotTab = 'chat' | 'history' | 'confirmations' | 'tasks';
 
@@ -60,6 +67,7 @@ export default function CopilotPage() {
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
   const [sessionTasks, setSessionTasks] = useState<CopilotSessionTask[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [selectedCapabilityType, setSelectedCapabilityType] = useState<CapabilityTypeKey | null>(null);
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [inlineConfirm, setInlineConfirm] = useState<PendingInlineConfirm | null>(null);
@@ -136,10 +144,16 @@ export default function CopilotPage() {
     const authToken = tokenRef.current;
     if (!authToken) return null;
     if (sessionId) return sessionId;
-    const session = await copilotCreateSession(authToken);
+    if (!selectedCapabilityType) {
+      message.warning('请先手动选择能力类型（查询/问答/操作/流程）');
+      return null;
+    }
+    const session = await copilotCreateSession(authToken, {
+      capabilityType: selectedCapabilityType,
+    });
     setSessionId(session.id);
     return session.id;
-  }, [sessionId]);
+  }, [sessionId, selectedCapabilityType]);
 
   const connectSSE = useCallback(
     (sid: string, authToken: string, onRuntimeEvent?: (type: string, data: Record<string, unknown>) => void) => {
@@ -285,6 +299,10 @@ export default function CopilotPage() {
     try {
       const detail = await refreshSessionDetail(sid, authToken);
       setSessionId(sid);
+      const cap = detail.capabilityType;
+      if (cap === 'qa' || cap === 'query' || cap === 'action' || cap === 'workflow') {
+        setSelectedCapabilityType(cap);
+      }
       setActiveTab('chat');
       setInlineConfirm(null);
       connectSSE(sid, authToken, (type, data) => {
@@ -414,6 +432,8 @@ export default function CopilotPage() {
           <ChatPanel
             messages={messages}
             inputValue={inputValue}
+            sessionId={sessionId}
+            selectedCapabilityType={selectedCapabilityType}
             sending={sending}
             streaming={streaming}
             config={config}
@@ -424,6 +444,7 @@ export default function CopilotPage() {
               }
             }}
             onInputChange={setInputValue}
+            onCapabilityTypeChange={setSelectedCapabilityType}
             onSend={() => void handleSend()}
             messagesEndRef={messagesEndRef}
           />
@@ -448,23 +469,29 @@ export default function CopilotPage() {
 function ChatPanel({
   messages,
   inputValue,
+  sessionId,
+  selectedCapabilityType,
   sending,
   streaming,
   config,
   inlineConfirm,
   onInlineConfirm,
   onInputChange,
+  onCapabilityTypeChange,
   onSend,
   messagesEndRef,
 }: {
   messages: CopilotMessage[];
   inputValue: string;
+  sessionId: string | null;
+  selectedCapabilityType: CapabilityTypeKey | null;
   sending: boolean;
   streaming: boolean;
   config: CopilotConfig | null;
   inlineConfirm: PendingInlineConfirm | null;
   onInlineConfirm: (action: 'approve' | 'reject') => void;
   onInputChange: (v: string) => void;
+  onCapabilityTypeChange: (v: CapabilityTypeKey) => void;
   onSend: () => void;
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
 }) {
@@ -509,6 +536,18 @@ function ChatPanel({
       </div>
 
       <div className="border-t p-3">
+        <div className="mb-2 flex flex-wrap gap-2">
+          {CAPABILITY_OPTIONS.map((opt) => (
+            <Tag
+              key={opt.value}
+              color={selectedCapabilityType === opt.value ? 'processing' : 'default'}
+              className="cursor-pointer"
+              onClick={() => onCapabilityTypeChange(opt.value)}
+            >
+              {opt.label}
+            </Tag>
+          ))}
+        </div>
         <div className="flex gap-2">
           <TextArea
             value={inputValue}
@@ -522,14 +561,14 @@ function ChatPanel({
             placeholder={config?.placeholder ?? '请输入您的问题…'}
             autoSize={{ minRows: 1, maxRows: 4 }}
             className="flex-1"
-            disabled={sending || !!inlineConfirm}
+            disabled={sending || !!inlineConfirm || (!sessionId && !selectedCapabilityType)}
           />
           <Button
             type="primary"
             icon={<SendOutlined />}
             onClick={onSend}
             loading={sending}
-            disabled={!inputValue.trim() || !!inlineConfirm}
+            disabled={!inputValue.trim() || !!inlineConfirm || (!sessionId && !selectedCapabilityType)}
           />
         </div>
       </div>

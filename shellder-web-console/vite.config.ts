@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => {
           target: apiTarget,
           changeOrigin: true,
         },
-        '/copilot': {
+        '/copilot/v1': {
           target: apiTarget,
           changeOrigin: true,
         },

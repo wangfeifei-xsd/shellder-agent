@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsEnum,
@@ -7,6 +8,7 @@ import {
   IsInt,
   IsOptional,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -56,8 +58,10 @@ export class TenantIsolationDto {
 }
 
 export class TenantConfigDto {
-  @IsOptional()
+  /** 至少一项；空数组不再表示「全部能力」 */
+  @ValidateIf((_, v) => v !== undefined)
   @IsArray()
+  @ArrayMinSize(1, { message: '请至少选择一种开通能力' })
   @IsIn(TENANT_CAPABILITIES, { each: true })
   capabilities?: TenantCapability[];
 

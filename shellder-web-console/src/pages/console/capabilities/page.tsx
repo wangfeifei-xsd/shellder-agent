@@ -93,12 +93,12 @@ export default function CapabilitiesPage() {
   const [configsLoading, setConfigsLoading] = useState(false);
   const [copilotConfigId, setCopilotConfigId] = useState<string | null>(null);
 
+  const [selectedType, setSelectedType] = useState<CapabilityTypeKey>('qa');
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [streamText, setStreamText] = useState('');
   const [result, setResult] = useState<CapabilityResult | null>(null);
-  const [routedType, setRoutedType] = useState<CapabilityTypeKey | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingConfirm, setPendingConfirm] = useState<{
     approvalId: string;
@@ -170,6 +170,7 @@ export default function CapabilitiesPage() {
         token: tokenRes.accessToken,
         content: inputText.trim(),
         sessionId,
+        capabilityType: sessionId ? undefined : selectedType,
         onDelta: (chunk) => setStreamText((prev) => prev + chunk),
       });
 
@@ -186,7 +187,6 @@ export default function CapabilitiesPage() {
 
       if (round.capabilityResult) {
         setResult(round.capabilityResult);
-        setRoutedType(round.capabilityResult.capabilityType);
         if (round.capabilityResult.status === 'failed') {
           const errText =
             round.capabilityResult.error ??
@@ -199,12 +199,6 @@ export default function CapabilitiesPage() {
         setError('未解析到 CapabilityResult，请检查会话消息结构');
       }
 
-      if (
-        round.sessionCapabilityType &&
-        CAPABILITY_META[round.sessionCapabilityType as CapabilityTypeKey]
-      ) {
-        setRoutedType(round.sessionCapabilityType as CapabilityTypeKey);
-      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       message.error(`执行失败：${errMsg}`);
@@ -212,7 +206,7 @@ export default function CapabilitiesPage() {
     } finally {
       setLoading(false);
     }
-  }, [inputText, activeTenantId, copilotConfigId, sessionId, message]);
+  }, [inputText, activeTenantId, copilotConfigId, sessionId, selectedType, message]);
 
   const displayText =
     result && typeof result.data?.text === 'string'
@@ -225,10 +219,11 @@ export default function CapabilitiesPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      <Title level={3}>四类业务能力</Title>
+      <Title level={3}>业务调试</Title>
       <Paragraph type="secondary">
         与嵌入式 Copilot 使用相同的 <Text code>/copilot/v1</Text> API 与{' '}
-        <Text code>CapabilityResult</Text> 业务结构；路由引擎自动识别能力类型。本页为管理端对照视图，样式可与嵌入不同。
+        <Text code>CapabilityResult</Text> 业务结构；请先定向选择能力类型（创建会话时写入{' '}
+        <Text code>capabilityType</Text>，不走路由匹配）。本页为管理端对照视图，样式可与嵌入不同。
       </Paragraph>
 
       <Card className="mb-4" size="small" title="Copilot 接入（与嵌入一致）">
@@ -266,8 +261,17 @@ export default function CapabilitiesPage() {
           ([type, meta]) => (
             <Col key={type} xs={24} sm={12} md={6} className="flex">
               <Card
-                className={`flex h-full min-h-[120px] w-full flex-col ${
-                  routedType === type ? 'border-blue-500 border-2' : 'opacity-80'
+                hoverable
+                onClick={() => {
+                  setSelectedType(type);
+                  setSessionId(null);
+                  setResult(null);
+                  setStreamText('');
+                  setError(null);
+                  setPendingConfirm(null);
+                }}
+                className={`flex h-full min-h-[120px] w-full cursor-pointer flex-col ${
+                  selectedType === type ? 'border-blue-500 border-2' : 'opacity-80'
                 }`}
                 styles={{
                   body: {
@@ -297,7 +301,7 @@ export default function CapabilitiesPage() {
         <TextArea
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
-          placeholder="输入测试内容（由路由引擎自动识别能力类型）..."
+          placeholder={`输入测试内容（当前：${CAPABILITY_META[selectedType].label}）…`}
           autoSize={{ minRows: 2, maxRows: 4 }}
           disabled={loading || !copilotConfigId}
           onPressEnter={(e) => {
@@ -313,7 +317,6 @@ export default function CapabilitiesPage() {
               setSessionId(null);
               setResult(null);
               setStreamText('');
-              setRoutedType(null);
               setError(null);
               setPendingConfirm(null);
             }}
@@ -367,7 +370,7 @@ export default function CapabilitiesPage() {
           {result && (
             <>
               <Descriptions bordered size="small" column={2} className="mb-4">
-                <Descriptions.Item label="能力类型（路由）">
+                <Descriptions.Item label="能力类型（定向）">
                   <Tag color={CAPABILITY_META[result.capabilityType]?.color}>
                     {CAPABILITY_META[result.capabilityType]?.label ?? result.capabilityType}
                   </Tag>
@@ -520,7 +523,8 @@ export default function CapabilitiesPage() {
                   换票：<Text code>POST /api/v1/capabilities/demo/copilot-token</Text>（响应同嵌入换票）
                 </li>
                 <li>
-                  会话：<Text code>POST /copilot/v1/sessions</Text> body <Text code>{'{ title? }'}</Text>
+                  会话：<Text code>POST /copilot/v1/sessions</Text> body{' '}
+                  <Text code>{'{ title?, capabilityType }'}</Text>（必填，手动选择）
                 </li>
                 <li>
                   消息：<Text code>POST /copilot/v1/sessions/:id/messages</Text> body{' '}
