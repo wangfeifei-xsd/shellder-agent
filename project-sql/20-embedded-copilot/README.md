@@ -24,19 +24,7 @@
 ## 执行顺序
 
 ```bash
-# 确保前序 SQL 已执行
-mysql -u root -p < project-sql/20-embedded-copilot/schema.sql
-mysql -u root -p < project-sql/20-embedded-copilot/seed.sql  # 当前为空
-```
-
-## 增量迁移
-
-| 文件 | 说明 |
-|------|------|
-| `migrate-copilot-principal-id-width.sql` | 将会话/任务/审批/审计等表的 `user_id` / `caller_user_id` / `initiator_id` 放宽为 `VARCHAR(256)`，以存储 Copilot JWT `sub`（与 Prisma `20260603120000_copilot_principal_id_width` 对齐） |
-
-```bash
-mysql -u root -p agent_platform < project-sql/20-embedded-copilot/migrate-copilot-principal-id-width.sql
+mysql -u root -p agent_platform < project-sql/20-embedded-copilot/schema.sql
 ```
 
 ## 设计说明

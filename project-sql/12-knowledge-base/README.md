@@ -34,21 +34,12 @@
 ## 执行顺序
 
 ```bash
-# 初版（若尚未执行）
-mysql -u root -p shellder_agent < project-sql/12-knowledge-base/schema.sql
-mysql -u root -p shellder_agent < project-sql/12-knowledge-base/seed.sql
-
-# wiki 绑定字段增量
-mysql -u root -p shellder_agent < project-sql/12-knowledge-base/schema-pathy-binding.sql
-
-# wiki 服务地址（system_config，非环境变量）
-mysql -u root -p shellder_agent < project-sql/19-system-settings/seed-knowledge-wiki-config.sql
-mysql -u root -p shellder_agent < project-sql/12-knowledge-base/migrate-pathy-wiki-prefix-column.sql
+mysql -u root -p agent_platform < project-sql/12-knowledge-base/schema.sql
 ```
 
-wiki 根 URL 存于 `system_config`（`knowledge.wikiBaseUrl`），在 **知识库管理** 页面维护；默认 seed 中 `wikiBaseUrl` 为空，需部署后填写。
+或一次性执行全量脚本：`project-sql/00-all-schema.sql` + `00-all-seed.sql`（见 [`project-sql/README.md`](../README.md)）。
 
-或使用 Prisma：`pnpm --filter shellder-agent-server prisma:migrate`
+wiki 根 URL 存于 `system_config`（`knowledge.wikiBaseUrl`），在 **知识库管理** 页面维护；默认 seed 中 `wikiBaseUrl` 为空，需部署后填写。
 
 ## 废弃表处理策略
 

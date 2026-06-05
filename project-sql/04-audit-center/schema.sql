@@ -1,20 +1,5 @@
--- 目标库: agent_platform
 USE `agent_platform`;
 
--- 模块 04 — 审计模块与审计中心
--- 依赖：02-tenant-management（tenant_id → tenant.id）、03-user-rbac（操作人 / 调用人取自 user）
--- 作用：新增三类审计采集通道表（工具调用 / 用户操作 / 外部接口）；
---      风险动作审计为聚合只读视图，不单独建表（执行计划 §3.4 / §5.2）。
--- 与 Prisma 对齐：shellder-agent-server/prisma/migrations/20260529020000_audit_center/migration.sql
---
--- 设计要点：
--- 1. 所有写操作必须审计（架构 §8），用户操作审计由 AuditInterceptor + @Audit 装饰器自动采集。
--- 2. 所有外部系统调用必须记录（external_call_audit），06 连接器 / 13 业务能力起写入。
--- 3. tool_call_audit 表结构就绪，07 工具模块起写入真实数据。
--- 4. 审计为保留性数据，tenant_id 外键 ON DELETE RESTRICT；平台内租户只禁用不删除。
--- 5. 审计日志均建 created_at 索引以支撑时间范围查询（架构 §7）。
-
--- CreateTable：工具调用审计
 CREATE TABLE `agent_platform`.`tool_call_audit` (
     `id`              CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`       CHAR(36)     NULL COMMENT '所属租户，→ tenant.id；平台级调用可空',
@@ -40,7 +25,6 @@ CREATE TABLE `agent_platform`.`tool_call_audit` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='工具调用审计';
 
--- CreateTable：用户操作审计
 CREATE TABLE `agent_platform`.`user_action_audit` (
     `id`               CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`        CHAR(36)     NULL COMMENT '操作所属租户上下文（取顶栏当前操作租户）',
@@ -65,7 +49,6 @@ CREATE TABLE `agent_platform`.`user_action_audit` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='用户操作审计';
 
--- CreateTable：外部接口审计
 CREATE TABLE `agent_platform`.`external_call_audit` (
     `id`              CHAR(36)     NOT NULL COMMENT '主键',
     `tenant_id`       CHAR(36)     NULL COMMENT '所属租户，→ tenant.id',
@@ -89,15 +72,9 @@ CREATE TABLE `agent_platform`.`external_call_audit` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT='外部接口调用审计';
 
--- AddForeignKey
 ALTER TABLE `agent_platform`.`tool_call_audit` ADD CONSTRAINT `tool_call_audit_tenant_id_fkey`
     FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE `agent_platform`.`user_action_audit` ADD CONSTRAINT `user_action_audit_tenant_id_fkey`
     FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE `agent_platform`.`external_call_audit` ADD CONSTRAINT `external_call_audit_tenant_id_fkey`
     FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- 风险动作审计：聚合只读视图，不建独立采集表。
--- V1 数据源 = tool_call_audit(high_risk = true)；14-审批中心 就绪后再 JOIN approval。
--- 参考应用层聚合（按 session_id / task_id 串联全链路）：
---   SELECT * FROM tool_call_audit WHERE high_risk = true ORDER BY created_at DESC;

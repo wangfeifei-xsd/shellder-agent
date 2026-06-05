@@ -1,2 +1,0 @@
-# Agent 业务库名（与 .env MYSQL_DATABASE / DATABASE_URL 一致）
-AGENT_DB=agent_platform

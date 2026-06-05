@@ -1,12 +1,5 @@
--- 目标库: agent_platform
 USE `agent_platform`;
 
--- ================================================================
--- 阶段 11 — 技能书管理（功能清单 §1.5A / 架构 Skill Management）
--- 依赖：01-bootstrap, 02-tenant-management, 07-tool-registry, 10-capability-routing
--- ================================================================
-
--- 技能书主表
 CREATE TABLE IF NOT EXISTS `agent_platform`.`skill` (
   `id`                     CHAR(36)     NOT NULL,
   `tenant_id`              CHAR(36)     NOT NULL,
@@ -42,7 +35,6 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`skill` (
   CONSTRAINT `fk_skill_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='技能书';
 
--- 技能书触发示例
 CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_trigger` (
   `id`           CHAR(36)     NOT NULL,
   `skill_id`     CHAR(36)     NOT NULL,
@@ -54,7 +46,6 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_trigger` (
   CONSTRAINT `fk_skill_trigger_skill` FOREIGN KEY (`skill_id`) REFERENCES `skill` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='技能书触发示例';
 
--- 技能书绑定关系
 CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_binding` (
   `id`           CHAR(36)    NOT NULL,
   `skill_id`     CHAR(36)    NOT NULL,
@@ -67,7 +58,6 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_binding` (
   CONSTRAINT `fk_skill_binding_skill` FOREIGN KEY (`skill_id`) REFERENCES `skill` (`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='技能书绑定关系';
 
--- 技能书执行记录
 CREATE TABLE IF NOT EXISTS `agent_platform`.`skill_execution_log` (
   `id`              CHAR(36)      NOT NULL,
   `skill_id`        CHAR(36)      NOT NULL,

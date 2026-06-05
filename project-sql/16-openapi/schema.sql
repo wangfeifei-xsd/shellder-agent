@@ -1,12 +1,5 @@
--- 目标库: agent_platform
 USE `agent_platform`;
 
--- ───────────────────────────────────────────────────────────
--- 阶段 15 / SQL 目录 16 — OpenAPI 对外接口与管理
--- 前置依赖：01-bootstrap ~ 15-approval-center
--- ───────────────────────────────────────────────────────────
-
--- OpenAPI 接入应用（功能清单 §1.12 / §3）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`openapi_app` (
   `id`                 CHAR(36)     NOT NULL,
   `name`               VARCHAR(128) NOT NULL,
@@ -29,7 +22,6 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`openapi_app` (
   INDEX `openapi_app_created_at_idx` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='OpenAPI 接入应用';
 
--- OpenAPI 调用日志（功能清单 §1.12 调用日志）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`openapi_call_log` (
   `id`              CHAR(36)     NOT NULL,
   `app_id`          CHAR(36)     NOT NULL,

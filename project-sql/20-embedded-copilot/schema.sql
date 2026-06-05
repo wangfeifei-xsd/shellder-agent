@@ -1,21 +1,5 @@
--- 目标库: agent_platform
 USE `agent_platform`;
 
--- ================================================================
--- 阶段 19 — 嵌入式 Copilot（Phase 19 / project-sql/20-embedded-copilot）
--- 功能清单 §2 / 架构 §4.1 接入层
--- 依赖：02-tenant-management（tenant 表）
---       16-openapi（openapi_app 表）
--- ================================================================
---
--- 设计要点：
--- 1. copilot_config 表存储每个租户/应用的 Copilot 嵌入配置。
--- 2. 复用 OpenAPI（阶段 15）的鉴权与会话接口，不重复建会话表。
--- 3. 换票机制：业务系统通过 externalToken 换取 Agent JWT，
---    验证逻辑在代码层实现（非数据库层面）。
--- 4. copilot_config 控制嵌入域名白名单、主题、功能开关等。
-
--- Copilot 嵌入配置（每个 OpenAPI 应用可关联一份 Copilot 配置）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`copilot_config` (
   `id`                   CHAR(36)     NOT NULL COMMENT '主键',
   `tenant_id`            CHAR(36)     NOT NULL COMMENT '所属租户 → tenant.id',

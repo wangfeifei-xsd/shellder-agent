@@ -30,17 +30,11 @@
 ## 执行顺序
 
 ```bash
-# 1. 创建表结构
-mysql -u root -p shellder_agent < schema.sql
-
-# 2. 导入初始化数据
-mysql -u root -p shellder_agent < seed.sql
-
-# 3.（可选）旧库增量：pathy 配置键 → wiki
-mysql -u root -p shellder_agent < migrate-pathy-to-wiki-config.sql
+mysql -u root -p agent_platform < schema.sql
+mysql -u root -p agent_platform < seed.sql
 ```
 
-`knowledge.wikiBaseUrl` / `knowledge.wikiTimeoutMs` 已写入 `seed.sql`；新装执行 `seed.sql` 即可。
+`knowledge.wikiBaseUrl` / `knowledge.wikiTimeoutMs` 已写入 `seed.sql`。
 
 ## 注意事项
 

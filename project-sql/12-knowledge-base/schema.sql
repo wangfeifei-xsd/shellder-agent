@@ -1,19 +1,11 @@
--- 目标库: agent_platform
 USE `agent_platform`;
 
--- ================================================================
--- 阶段 11A — 知识库代理与知识库管理（功能清单 §1.7 / 架构 Knowledge）
--- 依赖：01-bootstrap, 02-tenant-management
--- V1 仅保留 knowledge_base 租户绑定元数据；内容/召回由 wiki 知识库服务 承担。
--- 自建子表 kb_data_source / kb_document / kb_chunk / kb_embedding_task 已废弃，不在本 SQL 交付。
--- ================================================================
-
--- 知识库主表（租户 wiki wiki 路径绑定）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`knowledge_base` (
   `id`                CHAR(36)     NOT NULL,
   `tenant_id`         CHAR(36)     NOT NULL,
   `name`              VARCHAR(128) NOT NULL,
   `description`       VARCHAR(512) DEFAULT NULL,
+  `wiki_prefix`       VARCHAR(256) DEFAULT NULL COMMENT 'wiki 子路径前缀，如 tenants/{tenantId}/',
   `embedding_model`   VARCHAR(128) NOT NULL DEFAULT 'text-embedding-3-small',
   `similarity_metric` VARCHAR(32)  NOT NULL DEFAULT 'cosine',
   `chunk_strategy`    VARCHAR(32)  NOT NULL DEFAULT 'fixed_size',

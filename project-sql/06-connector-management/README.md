@@ -27,14 +27,12 @@
 | 文件 | 说明 |
 |------|------|
 | `schema.sql` | `connector` 表结构、索引与外键 |
-| `seed.sql` | 无平台级初始化数据（连接器按租户运行期配置），保留空文件并注明 |
 | `../06b-connector-db-metadata/` | `connector_db_metadata`（只读库结构抽取与 ER 图，查询型 §4） |
 
 ## 执行顺序
 
 1. 确认已执行 `01-bootstrap`、`02-tenant-management`、`03-user-rbac`、`04-audit-center`、`05-policy-engine`。
 2. 执行本目录 `schema.sql` 建表（或运行 Prisma 迁移，见下）。
-3. `seed.sql` 无需执行。
 
 ## 与 Prisma 对齐
 

@@ -1,13 +1,5 @@
--- 目标库: agent_platform
 USE `agent_platform`;
 
--- ================================================================
--- 阶段 09 — 任务中心与异步 Worker
--- 功能清单 §1.3 / §4.3 Task / §4.11 异步执行
--- 依赖：02-tenant-management（tenant 表）、08-session-message（session 表）
--- ================================================================
-
--- 任务表（Task 模块）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`task` (
   `id`               CHAR(36)     NOT NULL,
   `tenant_id`        CHAR(36)     NOT NULL,
@@ -15,7 +7,7 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`task` (
   `user_id`          VARCHAR(256) DEFAULT NULL COMMENT '发起人：管理端 user.id；Copilot 为 JWT sub',
   `title`            VARCHAR(256) DEFAULT NULL,
   `type`             ENUM('sync','async','scheduled') NOT NULL DEFAULT 'async',
-  `status`           ENUM('pending','running','completed','failed','cancelled','timeout') NOT NULL DEFAULT 'pending',
+  `status`           ENUM('pending','running','completed','failed','cancelled','timeout','pending_confirm') NOT NULL DEFAULT 'pending',
   `capability_type`  ENUM('qa','query','action','workflow') DEFAULT NULL,
   `current_node`     VARCHAR(256) DEFAULT NULL,
   `input`            JSON         DEFAULT NULL,
@@ -33,11 +25,9 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`task` (
 
   PRIMARY KEY (`id`),
 
-  -- 租户外键（任务为保留性数据，Restrict）
   CONSTRAINT `fk_task_tenant` FOREIGN KEY (`tenant_id`)
     REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
 
-  -- 索引（与 Prisma schema 对齐）
   INDEX `idx_task_tenant_id`           (`tenant_id`),
   INDEX `idx_task_session_id`          (`session_id`),
   INDEX `idx_task_user_id`             (`user_id`),
@@ -47,11 +37,10 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`task` (
   INDEX `idx_task_tenant_status`       (`tenant_id`, `status`),
   INDEX `idx_task_tenant_type_status`  (`tenant_id`, `type`, `status`),
   INDEX `idx_task_job_id`              (`job_id`),
-  INDEX `idx_task_created_at`          (`created_at`)
+  INDEX `idx_task_created_at`          (`created_at`),
+  INDEX `idx_task_cap_type_status_created` (`capability_type`, `status`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务';
 
-
--- 任务步骤表（长任务跟踪 §5.3）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`task_step` (
   `id`            CHAR(36)     NOT NULL,
   `task_id`       CHAR(36)     NOT NULL,
@@ -71,18 +60,14 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`task_step` (
 
   PRIMARY KEY (`id`),
 
-  -- 级联删除：任务删除时关联步骤一并清理
   CONSTRAINT `fk_task_step_task` FOREIGN KEY (`task_id`)
     REFERENCES `agent_platform`.`task`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
 
-  -- 索引
   INDEX `idx_task_step_task_id`      (`task_id`),
   INDEX `idx_task_step_task_seq`     (`task_id`, `seq`),
   INDEX `idx_task_step_status`       (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务步骤';
 
-
--- 任务执行日志表（§5.4 执行日志）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`task_log` (
   `id`         CHAR(36)    NOT NULL,
   `task_id`    CHAR(36)    NOT NULL,
@@ -95,11 +80,9 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`task_log` (
 
   PRIMARY KEY (`id`),
 
-  -- 级联删除：任务删除时关联日志一并清理
   CONSTRAINT `fk_task_log_task` FOREIGN KEY (`task_id`)
     REFERENCES `agent_platform`.`task`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
 
-  -- 索引
   INDEX `idx_task_log_task_id`       (`task_id`),
   INDEX `idx_task_log_task_type`     (`task_id`, `type`),
   INDEX `idx_task_log_step_id`       (`step_id`),

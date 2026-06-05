@@ -1,13 +1,5 @@
--- 目标库: agent_platform
 USE `agent_platform`;
 
--- ============================================================
--- 阶段 18 — 系统设置（功能清单 §1.13）
--- 新增表：system_config、notification_template
--- 前序依赖：01-bootstrap（MySQL/Prisma 基线）、09-task-worker
--- ============================================================
-
--- 系统配置 KV 表
 CREATE TABLE IF NOT EXISTS `agent_platform`.`system_config` (
   `id`           CHAR(36)     NOT NULL,
   `config_group` VARCHAR(64)  NOT NULL COMMENT '配置分组：basic / model / notification',
@@ -21,7 +13,6 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`system_config` (
   KEY `idx_config_group` (`config_group`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='系统配置 KV';
 
--- 通知模板表
 CREATE TABLE IF NOT EXISTS `agent_platform`.`notification_template` (
   `id`            CHAR(36)     NOT NULL,
   `type`          ENUM('approval','task_complete','exception') NOT NULL COMMENT '模板类型',

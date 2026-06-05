@@ -1,13 +1,5 @@
--- 目标库: agent_platform
 USE `agent_platform`;
 
--- ============================================================
--- 阶段 21 — Prompt 管理（方案 §5.3）
--- 新增表：prompt_template、prompt_version、prompt_binding
--- 前序依赖：02-tenant-management、03-user-rbac、04-audit-center、18-system-settings
--- ============================================================
-
--- 逻辑模板（SSOT 元数据）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`prompt_template` (
   `id`               CHAR(36)     NOT NULL COMMENT '主键',
   `prompt_key`       VARCHAR(128) NOT NULL COMMENT '全局逻辑键，如 query.nl2sql.system',
@@ -30,7 +22,6 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`prompt_template` (
     FOREIGN KEY (`tenant_id`) REFERENCES `agent_platform`.`tenant`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prompt 逻辑模板';
 
--- 不可变版本（正文与发布状态）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`prompt_version` (
   `id`            CHAR(36)     NOT NULL COMMENT '主键',
   `template_id`   CHAR(36)     NOT NULL COMMENT '→ prompt_template.id',
@@ -49,7 +40,6 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`prompt_version` (
     FOREIGN KEY (`template_id`) REFERENCES `agent_platform`.`prompt_template`(`id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Prompt 模板版本';
 
--- 业务锚点 → 逻辑键绑定（可选租户覆盖）
 CREATE TABLE IF NOT EXISTS `agent_platform`.`prompt_binding` (
   `id`          CHAR(36)     NOT NULL COMMENT '主键',
   `tenant_id`   CHAR(36)     NULL     COMMENT '租户覆盖，NULL 表示全局默认',

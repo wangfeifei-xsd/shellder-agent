@@ -1,10 +1,4 @@
--- 目标库: agent_platform
 USE `agent_platform`;
-
--- 模块 06b — 只读库连接器元数据（表结构抽取 + ER 关系图）
--- 依赖：06-connector-management（connector_db_metadata.connector_id → connector.id ON DELETE CASCADE）
--- 作用：存储 information_schema 抽取结果与 ER 关系图草稿/发布版，供查询型 NL2SQL 与 Runtime 使用。
--- 与 Prisma 对齐：shellder-agent-server/prisma/migrations/20260601000000_connector_db_metadata/migration.sql
 
 CREATE TABLE `agent_platform`.`connector_db_metadata` (
     `connector_id`          CHAR(36)     NOT NULL COMMENT '主键，→ connector.id',
