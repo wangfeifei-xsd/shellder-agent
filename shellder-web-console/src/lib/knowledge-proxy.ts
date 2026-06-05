@@ -1,4 +1,5 @@
 import { apiFetch, resolveApiOrigin, ApiError } from './api';
+import { redirectToLoginPage } from './navigation';
 
 const PROXY_BASE = '/api/v1/knowledge';
 
@@ -259,9 +260,7 @@ async function parseResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     if (res.status === 401 && typeof window !== 'undefined') {
       window.localStorage.removeItem(TOKEN_KEY);
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`;
-      }
+      redirectToLoginPage();
     }
     throw new ApiError(res.status, (data ?? {}) as Partial<import('./api').ApiErrorBody>);
   }

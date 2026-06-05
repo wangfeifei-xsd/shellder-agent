@@ -1,3 +1,5 @@
+import { redirectToLoginPage } from './navigation';
+
 /** 开发环境走 Vite 代理（/api → 后端）；生产可通过 VITE_API_BASE_URL 指定绝对地址。 */
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ??
@@ -70,10 +72,7 @@ function authHeader(): Record<string, string> {
 function handleUnauthorized() {
   if (typeof window === 'undefined') return;
   window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  if (!window.location.pathname.startsWith('/login')) {
-    const redirect = encodeURIComponent(window.location.pathname);
-    window.location.href = `/login?redirect=${redirect}`;
-  }
+  redirectToLoginPage();
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {

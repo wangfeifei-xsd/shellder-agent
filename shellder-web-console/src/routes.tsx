@@ -75,6 +75,7 @@ export const appRoutes: RouteObject[] = [
     ),
   },
   {
+    path: '/',
     element: <ConsoleLayout />,
     children: [
       { index: true, element: <DashboardPage /> },

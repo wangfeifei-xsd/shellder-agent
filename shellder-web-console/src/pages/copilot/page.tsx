@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Avatar, Button, Input, Spin, Tag, Tabs, Badge, Empty, List, Timeline, Modal, message, Alert, Tooltip } from 'antd';
 import {
   SendOutlined,
@@ -90,10 +91,11 @@ interface PendingInlineConfirm {
 
 /**
  * 嵌入式 Copilot 主页面
- * URL: /copilot?clientId=xxx&clientSecret=xxx&tenantId=xxx
+ * URL: /#/copilot?clientId=xxx&clientSecret=xxx&tenantId=xxx
  * 也可通过 postMessage 传入凭证。
  */
 export default function CopilotPage() {
+  const [searchParams] = useSearchParams();
   const [token, setToken] = useState<string | null>(null);
   const [config, setConfig] = useState<CopilotConfig | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,13 +123,12 @@ export default function CopilotPage() {
   }, [token]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const clientId = params.get('clientId');
-    const clientSecret = params.get('clientSecret');
-    const tenantId = params.get('tenantId') ?? undefined;
-    const externalTenantId = params.get('externalTenantId') ?? undefined;
-    const externalUserId = params.get('externalUserId') ?? undefined;
-    const scopeList = parseScopeListFromQuery(params.get('scopeList'));
+    const clientId = searchParams.get('clientId');
+    const clientSecret = searchParams.get('clientSecret');
+    const tenantId = searchParams.get('tenantId') ?? undefined;
+    const externalTenantId = searchParams.get('externalTenantId') ?? undefined;
+    const externalUserId = searchParams.get('externalUserId') ?? undefined;
+    const scopeList = parseScopeListFromQuery(searchParams.get('scopeList'));
 
     if (clientId && clientSecret) {
       void doExchangeToken({
@@ -148,7 +149,7 @@ export default function CopilotPage() {
       setLoading(false);
       return () => window.removeEventListener('message', handler);
     }
-  }, []);
+  }, [searchParams]);
 
   const doExchangeToken = async (params: {
     clientId: string;

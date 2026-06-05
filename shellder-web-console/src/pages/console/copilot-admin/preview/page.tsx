@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Button, Card, Form, Input, Select, Space, Typography, message } from 'antd';
 import { PlayCircleOutlined, CopyOutlined } from '@ant-design/icons';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
+import { buildHashRouteUrl } from '@/lib/navigation';
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -15,11 +16,7 @@ export default function CopilotPreviewPage() {
   const { tenants } = useActiveTenant();
   const [form] = Form.useForm();
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
-  const resolveCopilotPath = () => {
-    const pathname = window.location.pathname.replace(/\/+$/, '');
-    const basePath = pathname.replace(/\/copilot-admin\/preview$/, '');
-    return `${basePath || ''}/copilot`;
-  };
+  const resolveCopilotPath = () => buildHashRouteUrl('/copilot');
   const tenantOptions = useMemo(
     () =>
       tenants.map((tenant) => ({
@@ -41,7 +38,7 @@ export default function CopilotPreviewPage() {
     if (scopeList?.length) {
       params.set('scopeList', scopeList.join(','));
     }
-    setIframeSrc(`${resolveCopilotPath()}?${params.toString()}`);
+    setIframeSrc(buildHashRouteUrl('/copilot', params));
   };
 
   const generateEmbedCode = () => {
@@ -53,7 +50,7 @@ export default function CopilotPreviewPage() {
     const code = `<!-- shellder-agent Copilot 嵌入代码 -->
 <iframe
   id="shellder-copilot"
-  src="${window.location.origin}${resolveCopilotPath()}"
+  src="${resolveCopilotPath()}"
   style="width: 400px; height: 600px; border: none; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.12);"
   allow="clipboard-write"
 ></iframe>

@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { clearToken, fetchMe, getToken, MeResponse } from '@/lib/auth';
+import { redirectToLoginHome } from '@/lib/navigation';
 
 interface AuthContextValue {
   me?: MeResponse;
@@ -43,9 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(() => {
     clearToken();
     setMe(undefined);
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login';
-    }
+    redirectToLoginHome();
   }, []);
 
   const hasMenu = useCallback(
