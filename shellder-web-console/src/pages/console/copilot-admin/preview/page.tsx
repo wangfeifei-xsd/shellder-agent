@@ -37,6 +37,10 @@ export default function CopilotPreviewPage() {
     if (values.tenantId) params.set('tenantId', values.tenantId);
     if (values.externalTenantId) params.set('externalTenantId', values.externalTenantId);
     if (values.externalUserId) params.set('externalUserId', values.externalUserId);
+    const scopeList = (values.scopeList as string[] | undefined)?.filter(Boolean);
+    if (scopeList?.length) {
+      params.set('scopeList', scopeList.join(','));
+    }
     setIframeSrc(`${resolveCopilotPath()}?${params.toString()}`);
   };
 
@@ -64,6 +68,7 @@ export default function CopilotPreviewPage() {
       ${values.tenantId ? `tenantId: '${values.tenantId}',` : ''}
       ${values.externalTenantId ? `externalTenantId: '${values.externalTenantId}',` : ''}
       ${values.externalUserId ? `externalUserId: '${values.externalUserId}',` : ''}
+      ${(values.scopeList as string[] | undefined)?.length ? `scopeList: ${JSON.stringify(values.scopeList)},` : ''}
     }, '${window.location.origin}');
   });
 </script>`;
@@ -104,6 +109,17 @@ export default function CopilotPreviewPage() {
             </Form.Item>
             <Form.Item name="externalUserId" label="外部用户 ID">
               <Input placeholder="可选，业务系统用户标识" />
+            </Form.Item>
+            <Form.Item
+              name="scopeList"
+              label="数据范围 scopeList"
+              tooltip="对应问数范围字段 IN 条件；留空表示不按范围过滤"
+            >
+              <Select
+                mode="tags"
+                placeholder="输入部门/组织 ID 后回车，如 dept-01"
+                tokenSeparators={[',']}
+              />
             </Form.Item>
             <Space>
               <Button type="primary" icon={<PlayCircleOutlined />} onClick={handlePreview}>

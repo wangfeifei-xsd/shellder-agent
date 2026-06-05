@@ -94,4 +94,5 @@ export class ConnectorSchemaController {
   regenerate(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.schemaService.regenerateDraft(user, id);
   }
+
 }

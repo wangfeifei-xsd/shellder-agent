@@ -6,6 +6,7 @@ import { ErDiagram } from './connector-schema.types';
 import { ConnectorIntrospectionService } from './connector-introspection.service';
 import { ConnectorService } from './connector.service';
 import { ErDiagramService } from './er-diagram.service';
+import { ErDataScopeService } from './er-data-scope.service';
 
 @Injectable()
 export class ConnectorSchemaService {
@@ -14,6 +15,7 @@ export class ConnectorSchemaService {
     private readonly connectorService: ConnectorService,
     private readonly introspection: ConnectorIntrospectionService,
     private readonly erDiagram: ErDiagramService,
+    private readonly erDataScope: ErDataScopeService,
   ) {}
 
   /** 库表结构页：db_readonly 连接器 + 元数据摘要 */
@@ -103,6 +105,12 @@ export class ConnectorSchemaService {
     const connector = await this.requireDbConnector(user, id);
     const draft = await this.erDiagram.regenerateDraft(connector);
     return { draft };
+  }
+
+  async suggestDataScope(user: AuthUser, id: string) {
+    const connector = await this.requireDbConnector(user, id);
+    const { diagram, warnings } = await this.erDataScope.suggestDataScope(connector);
+    return { draft: diagram, warnings };
   }
 
   private async getConnectorOrThrow(id: string): Promise<Connector> {

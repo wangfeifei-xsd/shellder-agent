@@ -45,6 +45,7 @@ import {
   hasSubstantiveStreamText,
   shouldIgnoreInterimStreamDelta,
 } from '@/lib/copilot-thinking-status';
+import { parseScopeListFromQuery } from '@/lib/scope-list';
 
 const { TextArea } = Input;
 const STREAMING_MSG_ID = '__streaming__';
@@ -126,9 +127,17 @@ export default function CopilotPage() {
     const tenantId = params.get('tenantId') ?? undefined;
     const externalTenantId = params.get('externalTenantId') ?? undefined;
     const externalUserId = params.get('externalUserId') ?? undefined;
+    const scopeList = parseScopeListFromQuery(params.get('scopeList'));
 
     if (clientId && clientSecret) {
-      void doExchangeToken({ clientId, clientSecret, tenantId, externalTenantId, externalUserId });
+      void doExchangeToken({
+        clientId,
+        clientSecret,
+        tenantId,
+        externalTenantId,
+        externalUserId,
+        scopeList,
+      });
     } else {
       const handler = (event: MessageEvent) => {
         if (event.data?.type === 'copilot:init' && event.data.clientId) {
@@ -147,6 +156,7 @@ export default function CopilotPage() {
     tenantId?: string;
     externalTenantId?: string;
     externalUserId?: string;
+    scopeList?: string[];
   }) => {
     try {
       setLoading(true);

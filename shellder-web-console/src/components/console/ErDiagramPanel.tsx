@@ -1,7 +1,7 @@
 'use client';
 
 import { useEdgesState, useNodesState } from '@xyflow/react';
-import { App, Button, Card, Collapse, Input, Space, Table, Tabs, Tag, Typography } from 'antd';
+import { App, Button, Card, Collapse, Input, Space, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -11,12 +11,18 @@ import {
   withNowrap,
 } from '@/components/console/tableEllipsis';
 import { ApiError } from '@/lib/api';
+import {
+  DataScopeDimensionPanel,
+  tableHasAnyDataScope,
+} from '@/components/console/DataScopeDimensionPanel';
 import { ErDiagramAnnotateEditor } from '@/components/console/ErDiagramAnnotateEditor';
 import { ErDiagramFlowCanvas } from '@/components/console/ErDiagramFlowCanvas';
 import { diagramToFlow, flowToDiagram } from '@/components/console/er-diagram-flow';
 import {
+  ErDataScopeBinding,
   ErDiagram,
   ErDiagramState,
+  ErTableNode,
   getConnectorErDiagram,
   getConnectorSchema,
   introspectConnector,
@@ -26,7 +32,22 @@ import {
   publishConnectorErDiagram,
   regenerateConnectorErDraft,
   saveConnectorErDraft,
+  suggestConnectorErDataScope,
 } from '@/lib/connector';
+import {
+  type DataScopeDimension,
+  DATA_SCOPE_PANEL_HINT,
+  confirmAllDataScopeBindings,
+  confirmDataScopeDimension,
+  countPendingDataScopeTables,
+  filterTablesByDimension,
+  normalizeDiagramDataScope,
+  hasScopeMaintenance,
+  hasUserMaintenance,
+  initDataScopeForDimension,
+  patchDataScopeDimension,
+  removeDataScopeDimension,
+} from '@/components/console/er-data-scope-ui';
 
 function formatApiError(err: unknown, fallback: string): string {
   if (!(err instanceof ApiError)) {
@@ -170,8 +191,26 @@ export function ErDiagramPanel({
   const [jsonText, setJsonText] = useState('');
   const [jsonDirty, setJsonDirty] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [dataScopeCollapseOpen, setDataScopeCollapseOpen] = useState<string[]>([]);
 
   const draft = state?.draft;
+  const diagramForScope = diagramBase ?? draft ?? state?.published ?? null;
+  const scopeTables = useMemo(
+    () => filterTablesByDimension(diagramForScope?.tables ?? [], 'scope'),
+    [diagramForScope],
+  );
+  const userTables = useMemo(
+    () => filterTablesByDimension(diagramForScope?.tables ?? [], 'user'),
+    [diagramForScope],
+  );
+  const tablesWithAnyDataScope = useMemo(
+    () => (diagramForScope?.tables ?? []).filter(tableHasAnyDataScope),
+    [diagramForScope],
+  );
+  const pendingDataScopeCount = useMemo(
+    () => countPendingDataScopeTables(diagramForScope?.tables ?? []),
+    [diagramForScope],
+  );
   const { nodes: initNodes, edges: initEdges } = useMemo(
     () => diagramToFlow(diagramBase ?? draft ?? state?.published ?? null),
     [diagramBase, draft, state?.published],
@@ -277,6 +316,152 @@ export function ErDiagramPanel({
     message.success('已从画布同步到编辑器');
   };
 
+  const resolveTableColumnOptions = useCallback(
+    (tableName: string) => {
+      const fromDiagram = diagramForScope?.tables?.find((t) => t.name === tableName);
+      if (fromDiagram?.columns?.length) {
+        return fromDiagram.columns.map((c) => ({ value: c.name, label: c.name }));
+      }
+      const fromSchema = schema?.tables?.find((t) => t.name === tableName);
+      return (fromSchema?.columns ?? []).map((c) => ({ value: c.name, label: c.name }));
+    },
+    [diagramForScope?.tables, schema?.tables],
+  );
+
+  const ensureTableInDiagram = (base: ErDiagram, tableName: string): ErDiagram => {
+    const existing = (base.tables ?? []).find((t) => t.name === tableName);
+    if (existing) return base;
+    const schemaTable = schema?.tables?.find((t) => t.name === tableName);
+    const columns = (schemaTable?.columns ?? []).map((c) => ({
+      name: c.name,
+      type: c.dataType,
+    }));
+    return {
+      ...base,
+      tables: [
+        ...(base.tables ?? []),
+        {
+          name: tableName,
+          displayName: schemaTable?.comment?.trim() || undefined,
+          columns,
+        },
+      ],
+    };
+  };
+
+  const applyTableDataScopePatch = (
+    tableName: string,
+    updater: (existing: ErDataScopeBinding | undefined) => ErDataScopeBinding | undefined,
+  ): ErDiagram => {
+    let base = diagramForScope ?? { tables: [], relationships: [] };
+    base = ensureTableInDiagram(base, tableName);
+    const tables = (base.tables ?? []).map((t) => {
+      if (t.name !== tableName) return t;
+      const schemaTable = schema?.tables?.find((s) => s.name === tableName);
+      const columns =
+        t.columns?.length
+          ? t.columns
+          : (schemaTable?.columns ?? []).map((c) => ({ name: c.name, type: c.dataType }));
+      const next = updater(t.dataScope);
+      return next
+        ? { ...t, columns, dataScope: next }
+        : { ...t, columns, dataScope: undefined };
+    });
+    return { ...base, tables };
+  };
+
+  const patchTableDataScope = (
+    tableName: string,
+    updater: (existing: ErDataScopeBinding | undefined) => ErDataScopeBinding | undefined,
+  ) => {
+    const nextDiagram = applyTableDataScopePatch(tableName, updater);
+    commitDiagram(nextDiagram);
+    setJsonDirty(true);
+  };
+
+  const persistErDraft = async (
+    diagram: ErDiagram,
+    busyKey: string,
+    successMessage: string,
+  ) => {
+    setBusy(busyKey);
+    try {
+      const normalized = normalizeDiagramDataScope(diagram) as ErDiagram;
+      const res = await saveConnectorErDraft(connectorId, normalized);
+      const saved = res.draft ?? normalized;
+      setDiagramBase(saved);
+      setState((prev) => (prev ? { ...prev, draft: saved } : prev));
+      resetJsonFromDiagram(saved);
+      setJsonDirty(false);
+      message.success(successMessage);
+    } catch (err) {
+      message.error(formatApiError(err, '保存失败'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const addTableToDimension = (tableName: string, dim: DataScopeDimension) => {
+    const existing = diagramForScope?.tables?.find((t) => t.name === tableName);
+    if (dim === 'scope' && hasScopeMaintenance(existing?.dataScope)) {
+      message.warning('该表已在范围列列表中');
+      return;
+    }
+    if (dim === 'user' && hasUserMaintenance(existing?.dataScope)) {
+      message.warning('该表已在用户列列表中');
+      return;
+    }
+    patchTableDataScope(tableName, (ds) =>
+      patchDataScopeDimension(ds ?? initDataScopeForDimension(dim), dim, {
+        inferred: false,
+      }),
+    );
+    setDataScopeCollapseOpen(['data-scope-confirm']);
+    message.success(`已添加表「${tableName}」到${dim === 'scope' ? '范围列' : '用户列'}映射`);
+  };
+
+  const removeTableFromDimension = async (tableName: string, dim: DataScopeDimension) => {
+    const diagram = applyTableDataScopePatch(tableName, (ds) =>
+      removeDataScopeDimension(ds, dim),
+    );
+    commitDiagram(diagram);
+    await persistErDraft(
+      diagram,
+      `remove-${dim}-${tableName}`,
+      `已从${dim === 'scope' ? '范围列' : '用户列'}映射中移除`,
+    );
+  };
+
+  const updateDimensionColumn = (
+    tableName: string,
+    dim: DataScopeDimension,
+    column: string | undefined,
+  ) => {
+    patchTableDataScope(tableName, (ds) =>
+      patchDataScopeDimension(ds ?? initDataScopeForDimension(dim), dim, {
+        column,
+        inferred: false,
+      }),
+    );
+  };
+
+  const confirmDimensionRow = async (tableName: string, dim: DataScopeDimension) => {
+    const diagram = applyTableDataScopePatch(tableName, (ds) => {
+      if (!ds) return undefined;
+      return confirmDataScopeDimension(ds, dim);
+    });
+    commitDiagram(diagram);
+    await persistErDraft(diagram, `confirm-${dim}-${tableName}`, '已确认列映射');
+  };
+
+  const confirmAllDataScope = async () => {
+    const base = diagramForScope ?? { tables: [], relationships: [] };
+    const tables = confirmAllDataScopeBindings(base.tables ?? []);
+    const diagram: ErDiagram = { ...base, tables };
+    commitDiagram(diagram);
+    await persistErDraft(diagram, 'confirm-all-scope', '已全部确认限制字段');
+  };
+
   const formatJsonEditor = () => {
     const parsed = parseDiagramJsonText(jsonText);
     if (!parsed.ok) {
@@ -326,6 +511,32 @@ export function ErDiagramPanel({
           >
             LLM 辅助生成草稿
           </Button>
+          <Tooltip
+            title={
+              state?.introspectedAt
+                ? undefined
+                : '请先抽取表结构'
+            }
+          >
+            <Button
+              size="small"
+              disabled={!state?.introspectedAt}
+              loading={busy === 'suggest-scope'}
+              onClick={() =>
+                run('suggest-scope', async () => {
+                  const res = await suggestConnectorErDataScope(connectorId);
+                  if (res.warnings?.length) {
+                    message.warning(res.warnings.join(' '));
+                  } else {
+                    message.success('列映射建议已生成，请核对物理列后确认');
+                  }
+                  setDataScopeCollapseOpen(['data-scope-confirm']);
+                })
+              }
+            >
+              分析列映射
+            </Button>
+          </Tooltip>
           <Button
             size="small"
             loading={busy === 'save'}
@@ -393,6 +604,95 @@ export function ErDiagramPanel({
         <Typography.Text type="secondary" className="mb-3 block text-xs">
           已抽取（{fmt(state.introspectedAt)}），表结构数据加载中或为空
         </Typography.Text>
+      ) : null}
+      {state?.introspectedAt && schema?.tables?.length ? (
+        <Collapse
+          className="mb-3"
+          activeKey={dataScopeCollapseOpen}
+          onChange={(keys) =>
+            setDataScopeCollapseOpen(
+              Array.isArray(keys) ? keys : keys ? [keys] : [],
+            )
+          }
+          items={[
+            {
+              key: 'data-scope-confirm',
+              label: (
+                <Space wrap>
+                  <Tag color={pendingDataScopeCount > 0 ? 'warning' : 'processing'}>
+                    {pendingDataScopeCount > 0
+                      ? '待确认'
+                      : tablesWithAnyDataScope.length > 0
+                        ? '已配置'
+                        : '可配置'}
+                  </Tag>
+                  <span>
+                    数据范围列映射 · 范围 {scopeTables.length} / 用户 {userTables.length} 张表
+                  </span>
+                </Space>
+              ),
+              children: (
+                <>
+                  <Typography.Paragraph type="secondary" className="!mb-3 text-xs">
+                    {DATA_SCOPE_PANEL_HINT}
+                  </Typography.Paragraph>
+                  <DataScopeDimensionPanel
+                    dimension="scope"
+                    allTables={diagramForScope?.tables ?? []}
+                    schemaTableNames={(schema?.tables ?? []).map((t) => t.name)}
+                    resolveTableComment={(name) => {
+                      const fromSchema = schema?.tables?.find((t) => t.name === name);
+                      const fromDiagram = diagramForScope?.tables?.find((t) => t.name === name);
+                      return (
+                        fromSchema?.comment?.trim() ||
+                        fromDiagram?.displayName?.trim() ||
+                        undefined
+                      );
+                    }}
+                    resolveColumnOptions={resolveTableColumnOptions}
+                    onColumnChange={(tableName, column) =>
+                      updateDimensionColumn(tableName, 'scope', column)
+                    }
+                    onAddTable={(tableName) => addTableToDimension(tableName, 'scope')}
+                    onRemoveTable={(tableName) => removeTableFromDimension(tableName, 'scope')}
+                    onConfirmRow={(tableName) => confirmDimensionRow(tableName, 'scope')}
+                  />
+                  <DataScopeDimensionPanel
+                    dimension="user"
+                    allTables={diagramForScope?.tables ?? []}
+                    schemaTableNames={(schema?.tables ?? []).map((t) => t.name)}
+                    resolveTableComment={(name) => {
+                      const fromSchema = schema?.tables?.find((t) => t.name === name);
+                      const fromDiagram = diagramForScope?.tables?.find((t) => t.name === name);
+                      return (
+                        fromSchema?.comment?.trim() ||
+                        fromDiagram?.displayName?.trim() ||
+                        undefined
+                      );
+                    }}
+                    resolveColumnOptions={resolveTableColumnOptions}
+                    onColumnChange={(tableName, column) =>
+                      updateDimensionColumn(tableName, 'user', column)
+                    }
+                    onAddTable={(tableName) => addTableToDimension(tableName, 'user')}
+                    onRemoveTable={(tableName) => removeTableFromDimension(tableName, 'user')}
+                    onConfirmRow={(tableName) => confirmDimensionRow(tableName, 'user')}
+                  />
+                  {pendingDataScopeCount > 0 ? (
+                    <Button
+                      size="small"
+                      className="mt-2"
+                      loading={busy === 'confirm-all-scope'}
+                      onClick={() => void confirmAllDataScope()}
+                    >
+                      全部确认
+                    </Button>
+                  ) : null}
+                </>
+              ),
+            },
+          ]}
+        />
       ) : null}
       <Typography.Text type="secondary" className="mb-2 block text-xs">
         ER 关系图 · 推荐在「标注编辑」中改显示名与关联；可视化可拖拽布局；JSON 高级用于批量改列

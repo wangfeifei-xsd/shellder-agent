@@ -200,10 +200,26 @@ export interface ErColumn {
   fk?: { table: string; column: string };
 }
 
+export interface ErDataScopeBinding {
+  scopeColumn?: string;
+  userColumn?: string;
+  /** 已加入范围列维护列表（可与 user 维度独立） */
+  scopeConfigured?: boolean;
+  /** 已加入用户列维护列表 */
+  userConfigured?: boolean;
+  /** 范围列映射已人工确认（LLM 推断后点确认） */
+  scopeConfirmed?: boolean;
+  /** 用户列映射已人工确认 */
+  userConfirmed?: boolean;
+  inferred?: boolean;
+  reason?: string;
+}
+
 export interface ErTableNode {
   name: string;
   displayName?: string;
   columns: ErColumn[];
+  dataScope?: ErDataScopeBinding;
 }
 
 export interface ErRelationship {
@@ -266,6 +282,15 @@ export function regenerateConnectorErDraft(id: string) {
   return apiFetch<{ draft: ErDiagram }>(`${BASE}/${id}/er-diagram/regenerate`, {
     method: 'POST',
   });
+}
+
+export function suggestConnectorErDataScope(id: string) {
+  return apiFetch<{ draft: ErDiagram; warnings?: string[] }>(
+    `${BASE}/${id}/er-diagram/suggest-data-scope`,
+    {
+      method: 'POST',
+    },
+  );
 }
 
 /** db_readonly 展示：host:port / database */

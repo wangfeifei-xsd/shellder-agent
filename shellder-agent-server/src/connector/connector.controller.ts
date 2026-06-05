@@ -82,4 +82,15 @@ export class ConnectorController {
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.connectorService.remove(user, id);
   }
+
+  /** ER 限制字段分析（与 ConnectorSchemaController 同路径，便于热更新后路由可见） */
+  @Post(':id/er-diagram/suggest-data-scope')
+  @Audit({
+    action: 'connector.erDiagram.suggestDataScope',
+    module: 'connector.manage',
+    targetType: 'connector',
+  })
+  suggestDataScope(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.connectorSchemaService.suggestDataScope(user, id);
+  }
 }

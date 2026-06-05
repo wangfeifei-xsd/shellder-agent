@@ -44,10 +44,31 @@ export interface ErDiagram {
   relationships: ErRelationship[];
 }
 
+/** 单表数据范围绑定（发布前须管理员确认） */
+export interface ErDataScopeBinding {
+  /** 范围字段，对应 scopeList，如 dept_id / org_id */
+  scopeColumn?: string;
+  /** 用户字段，对应 externalUserId，如 owner_user_id / created_by */
+  userColumn?: string;
+  /** 已加入范围列维护列表（可与 user 维度独立） */
+  scopeConfigured?: boolean;
+  /** 已加入用户列维护列表 */
+  userConfigured?: boolean;
+  /** 范围列映射已人工确认（LLM 推断后点确认） */
+  scopeConfirmed?: boolean;
+  /** 用户列映射已人工确认 */
+  userConfirmed?: boolean;
+  /** LLM 建议未人工确认时为 true */
+  inferred?: boolean;
+  /** LLM 建议理由（可选，便于确认面板展示） */
+  reason?: string;
+}
+
 export interface ErTableNode {
   name: string;
   displayName?: string;
   columns: ErColumn[];
+  dataScope?: ErDataScopeBinding;
 }
 
 export interface ErColumn {

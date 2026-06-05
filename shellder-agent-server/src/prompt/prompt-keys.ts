@@ -19,6 +19,10 @@ export const PROMPT_KEYS = {
   CONNECTOR_ER_DIAGRAM_REFINE_SYSTEM: 'connector.er_diagram.refine.system',
   /** ER user 消息骨架 */
   CONNECTOR_ER_DIAGRAM_USER: 'connector.er_diagram.user',
+  /** ER 限制字段分析 system */
+  CONNECTOR_ER_DATA_SCOPE_SYSTEM: 'connector.er_data_scope.system',
+  /** ER 限制字段分析 user 骨架 */
+  CONNECTOR_ER_DATA_SCOPE_USER: 'connector.er_data_scope.user',
 } as const;
 
 export type PromptKey = (typeof PROMPT_KEYS)[keyof typeof PROMPT_KEYS];

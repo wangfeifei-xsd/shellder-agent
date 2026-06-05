@@ -9,6 +9,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { OpenApiAppService } from '../openapi/openapi-app.service';
 import { OpenApiAuthService } from '../openapi/openapi-auth.service';
 import { CopilotTokenExchangeDto } from './dto/copilot-config.dto';
+import {
+  buildPrincipalContextSnapshot,
+  normalizeScopeList,
+} from './principal-context.types';
 
 export const COPILOT_JWT_ISSUER = 'shellder-copilot';
 
@@ -18,6 +22,8 @@ export interface CopilotJwtPayload {
   appName: string;
   tenantId: string;
   externalUserId?: string;
+  /** 数据可见范围；空或未传表示不按范围过滤 */
+  scopeList?: string[];
   /** 由 sign({ issuer }) 写入，勿在 payload 中重复设置 iss */
   iss?: string;
   iat?: number;
@@ -78,12 +84,14 @@ export class CopilotAuthService {
 
     const tokenTtl = copilotConfig.tokenTtlSeconds ?? 3600;
 
+    const scopeList = normalizeScopeList(dto.scopeList);
     const payload: Omit<CopilotJwtPayload, 'iss' | 'iat' | 'exp'> = {
       sub: `copilot:${app.id}:${dto.externalUserId ?? 'anonymous'}`,
       appId: app.id,
       appName: app.name,
       tenantId,
       externalUserId: dto.externalUserId,
+      ...(scopeList.length > 0 ? { scopeList } : {}),
     };
 
     const accessToken = this.jwtService.sign(payload, {
@@ -114,6 +122,7 @@ export class CopilotAuthService {
     copilotConfigId: string;
     adminUserId: string;
     externalUserId?: string;
+    scopeList?: string[];
   }) {
     const copilotConfig = await this.prisma.copilotConfig.findUnique({
       where: { id: params.copilotConfigId },
@@ -154,12 +163,14 @@ export class CopilotAuthService {
     const externalUserId =
       params.externalUserId ?? `demo-${params.adminUserId}`;
 
+    const scopeList = normalizeScopeList(params.scopeList);
     const payload: Omit<CopilotJwtPayload, 'iss' | 'iat' | 'exp'> = {
       sub: `copilot:${app.id}:demo-${params.adminUserId}`,
       appId: app.id,
       appName: app.name,
       tenantId: params.tenantId,
       externalUserId,
+      ...(scopeList.length > 0 ? { scopeList } : {}),
     };
 
     const accessToken = this.jwtService.sign(payload, {
@@ -180,6 +191,16 @@ export class CopilotAuthService {
         maxHistoryMessages: copilotConfig.maxHistoryMessages,
       },
     };
+  }
+
+  /** 从 JWT 载荷构建会话 principalContext 快照 */
+  snapshotPrincipalContext(
+    payload: Pick<CopilotJwtPayload, 'externalUserId' | 'scopeList'>,
+  ) {
+    return buildPrincipalContextSnapshot({
+      externalUserId: payload.externalUserId,
+      scopeList: payload.scopeList,
+    });
   }
 
   /** 验证 Copilot JWT */

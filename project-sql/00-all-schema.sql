@@ -541,6 +541,7 @@ CREATE TABLE IF NOT EXISTS `agent_platform`.`session` (
   `has_task`         TINYINT(1)   NOT NULL DEFAULT 0,
   `has_confirmation` TINYINT(1)   NOT NULL DEFAULT 0,
   `last_message_at`  DATETIME(3)  DEFAULT NULL,
+  `principal_context` JSON         DEFAULT NULL COMMENT '嵌入主体：externalUserId、scopeList',
   `created_at`       DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   `updated_at`       DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
 

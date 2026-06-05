@@ -189,6 +189,8 @@ export async function copilotExchangeToken(params: {
   tenantId?: string;
   externalTenantId?: string;
   externalUserId?: string;
+  /** 数据可见范围；空或未传表示不按范围过滤 */
+  scopeList?: string[];
 }): Promise<CopilotTokenResponse> {
   const res = await fetch(`${COPILOT_BASE}/auth/token`, {
     method: 'POST',

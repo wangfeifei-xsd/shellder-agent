@@ -5,6 +5,7 @@ import { LlmModule } from '../llm/llm.module';
 import { AuditModule } from '../audit/audit.module';
 import { ToolModule } from '../tool/tool.module';
 import { PromptModule } from '../prompt/prompt.module';
+import { ConnectorModule } from '../connector/connector.module';
 import { QueryModule } from '../query/query.module';
 import { QaCapabilityHandler } from './qa.handler';
 import { QaPipelineService } from './qa-pipeline.service';
@@ -28,6 +29,7 @@ import { registerCapabilityHandler } from '../agent-runtime/capability-handlers'
     LlmModule,
     AuditModule,
     ToolModule,
+    ConnectorModule,
     QueryModule,
     PromptModule,
   ],

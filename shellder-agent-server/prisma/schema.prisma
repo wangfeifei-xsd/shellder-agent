@@ -513,6 +513,8 @@ model Session {
   hasConfirmation Boolean       @default(false) @map("has_confirmation")
   /// 最近一条消息时间（冗余，供列表排序）
   lastMessageAt  DateTime?      @map("last_message_at")
+  /// 嵌入主体快照：externalUserId、scopeList（创建会话时从 Copilot JWT 写入）
+  principalContext Json?        @map("principal_context")
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 

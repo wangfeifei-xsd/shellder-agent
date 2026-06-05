@@ -26,6 +26,11 @@ import {
   withNowrap,
 } from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
+import {
+  QueryPrincipalContextFields,
+  toQueryPrincipalContextBody,
+  type QueryPrincipalContextValue,
+} from '@/components/console/QueryPrincipalContextFields';
 import { ToolTestResultView } from '@/components/console/ToolTestResultView';
 import {
   SqlTemplate,
@@ -70,6 +75,10 @@ export default function QueryTestPage() {
   const [paramsText, setParamsText] = useState(navState.paramsText ?? '{}');
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<ToolTestResult | undefined>();
+  const [principalContext, setPrincipalContext] = useState<QueryPrincipalContextValue>({
+    externalUserId: '',
+    scopeList: [],
+  });
 
   const [tplForm] = Form.useForm<{ name: string; sql: string; description?: string }>();
   const [savingTpl, setSavingTpl] = useState(false);
@@ -141,6 +150,10 @@ export default function QueryTestPage() {
 
   const sqlConfig = selected?.config.sql;
   const templates = sqlConfig?.templates ?? [];
+  const principalBody = useMemo(
+    () => toQueryPrincipalContextBody(principalContext),
+    [principalContext],
+  );
 
   const applySqlForTest = (sqlText: string, params?: Record<string, unknown>) => {
     setSql(sqlText);
@@ -180,7 +193,9 @@ export default function QueryTestPage() {
     setNlPreview(undefined);
     setE2eResult(undefined);
     try {
-      setNlPreview(await nl2sqlPreviewTool(selected.id, nlMessage.trim()));
+      setNlPreview(
+        await nl2sqlPreviewTool(selected.id, nlMessage.trim(), principalBody),
+      );
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'NL2SQL 生成失败');
     } finally {
@@ -197,7 +212,11 @@ export default function QueryTestPage() {
     setE2eRunning(true);
     setE2eResult(undefined);
     try {
-      const preview = await queryE2ePreviewTool(selected.id, nlMessage.trim());
+      const preview = await queryE2ePreviewTool(
+        selected.id,
+        nlMessage.trim(),
+        principalBody,
+      );
       setE2eResult(preview);
       setNlPreview(preview.nl2sql);
     } catch (err) {
@@ -240,7 +259,9 @@ export default function QueryTestPage() {
     }
     setRunning(true);
     try {
-      setResult(await sqlTestTool(selected.id, { sql, params }));
+      setResult(
+        await sqlTestTool(selected.id, { sql, params, ...principalBody }),
+      );
     } catch (err) {
       message.error(err instanceof Error ? err.message : 'SQL 测试失败');
     } finally {
@@ -404,7 +425,21 @@ export default function QueryTestPage() {
                 </Typography.Paragraph>
               </Card>
 
-              <Card title="三步试跑（NL2SQL → 执行 → 结果解读）" size="small">
+              <Card title="问数范围与限制（试跑入参）" size="small">
+                <QueryPrincipalContextFields
+                  value={principalContext}
+                  onChange={setPrincipalContext}
+                />
+                <Typography.Paragraph type="secondary" className="!mb-0 text-xs">
+                  列映射在
+                  <Link to="/query/db-er" className="mx-1">
+                    库表 ER 图
+                  </Link>
+                  中配置；此处仅模拟嵌入页传入的主体范围，三步试跑与 SQL 执行会按 Runtime 同样规则注入过滤。
+                </Typography.Paragraph>
+              </Card>
+
+              <Card title="三步试跑（NL2SQL → 执行 → 结果解读）" size="small" className="lg:col-span-2">
                 <Typography.Text type="secondary" className="text-xs">
                   与 Runtime 对齐：基于已发布 ER 生成 SQL、执行只读查询、LLM 生成自然语言回复。
                 </Typography.Text>
@@ -430,6 +465,11 @@ export default function QueryTestPage() {
                 </Space>
                 {nlPreview && (
                   <div className="mt-3 rounded border border-gray-100 bg-gray-50 p-3">
+                    {nlPreview.scopeContext ? (
+                      <Typography.Paragraph type="secondary" className="!mb-2 text-xs">
+                        数据范围上下文：{nlPreview.scopeContext}
+                      </Typography.Paragraph>
+                    ) : null}
                     <Typography.Text type="secondary" className="text-xs">
                       步骤 ① — NL2SQL 说明
                     </Typography.Text>
@@ -458,6 +498,16 @@ export default function QueryTestPage() {
                 )}
                 {e2eResult && (
                   <div className="mt-3 space-y-3">
+                    {e2eResult.dataScope ? (
+                      <div className="rounded border border-purple-100 bg-purple-50 p-3 text-xs">
+                        <div>数据范围：{e2eResult.dataScope.scopeContextText}</div>
+                        {e2eResult.dataScope.appliedScopeFilters.length > 0 ? (
+                          <div className="mt-1">
+                            已注入：{e2eResult.dataScope.appliedScopeFilters.join('；')}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <div className="rounded border border-blue-100 bg-blue-50 p-3">
                       <Typography.Text type="secondary" className="text-xs">
                         步骤 ② — 查询结果（{e2eResult.execution.rowCount} 行，耗时{' '}
@@ -528,7 +578,7 @@ export default function QueryTestPage() {
               <div ref={sqlExecRef} className="lg:col-span-2">
               <Card title="SQL 执行" size="small">
                 <Typography.Text type="secondary" className="text-xs">
-                  仅 SELECT；命名参数用 :name。直连只读库验证连接器与约束（表白名单、行数上限等）。
+                  仅 SELECT；命名参数用 :name。直连只读库验证连接器与约束；若已填写问数范围入参，将自动注入与 Runtime 一致的数据范围 WHERE 条件。
                 </Typography.Text>
                 <Input.TextArea
                   rows={6}

@@ -23,7 +23,7 @@ sequenceDiagram
 
     U->>B: 打开嵌入式 Copilot（智能副驾）
     B->>S: 请求业务系统自身登录态/用户信息
-    S->>C: POST /copilot/v1/auth/token\n（clientId 客户端标识, clientSecret 客户端密钥, tenantId 租户标识, externalUserId 外部用户标识）
+    S->>C: POST /copilot/v1/auth/token\n（clientId, clientSecret, tenantId, externalUserId, scopeList 数据范围）
     C->>OA: 校验 OpenAPI App（应用）+ CopilotConfig（副驾配置）+ tenant（租户）
     OA->>DB: 查询 openapi_app（开放应用）/ copilot_config（副驾配置）/ tenant（租户）
     DB-->>OA: 返回配置

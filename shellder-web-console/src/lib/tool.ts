@@ -211,9 +211,18 @@ export function testTool(id: string, params: Record<string, unknown>) {
   });
 }
 
+export interface QueryPrincipalContextInput {
+  externalUserId?: string;
+  scopeList?: string[];
+}
+
 export function sqlTestTool(
   id: string,
-  input: { sql?: string; templateId?: string; params?: Record<string, unknown> },
+  input: {
+    sql?: string;
+    templateId?: string;
+    params?: Record<string, unknown>;
+  } & QueryPrincipalContextInput,
 ) {
   return apiFetch<ToolTestResult>(`${BASE}/${id}/sql-test`, {
     method: 'POST',
@@ -226,12 +235,17 @@ export interface Nl2SqlPreviewResult {
   explanation: string;
   referencedTables: string[];
   params: Record<string, unknown>;
+  scopeContext?: string;
 }
 
-export function nl2sqlPreviewTool(id: string, message: string) {
+export function nl2sqlPreviewTool(
+  id: string,
+  message: string,
+  principal?: QueryPrincipalContextInput,
+) {
   return apiFetch<Nl2SqlPreviewResult>(`${BASE}/${id}/nl2sql-preview`, {
     method: 'POST',
-    body: { message },
+    body: { message, ...principal },
   });
 }
 
@@ -249,13 +263,21 @@ export interface QueryE2ePreviewResult {
     truncated: boolean;
     displayedRowCount: number;
   };
+  dataScope?: {
+    scopeContextText: string;
+    appliedScopeFilters: string[];
+  };
   totalDurationMs: number;
 }
 
-export function queryE2ePreviewTool(id: string, message: string) {
+export function queryE2ePreviewTool(
+  id: string,
+  message: string,
+  principal?: QueryPrincipalContextInput,
+) {
   return apiFetch<QueryE2ePreviewResult>(`${BASE}/${id}/query-e2e-preview`, {
     method: 'POST',
-    body: { message },
+    body: { message, ...principal },
   });
 }
 

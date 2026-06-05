@@ -22,6 +22,8 @@ export interface Nl2SqlGenerateInput {
   sqlConfig: SqlToolConfig;
   templates?: SqlTemplate[];
   tenantId?: string;
+  /** 由 DataScopeResolveService 生成的人类可读约束摘要 */
+  scopeContext?: string;
 }
 
 @Injectable()
@@ -62,6 +64,7 @@ export class Nl2SqlService {
       maxRows: input.sqlConfig.maxRows,
       userMessage: input.userMessage,
       fewShot,
+      scopeContext: input.scopeContext,
     });
 
     const [systemRendered, userRendered] = await Promise.all([

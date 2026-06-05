@@ -92,6 +92,12 @@ export class SqlToolService {
     this.assertReadonlySql(sql, sqlConfig);
   }
 
+  /** 提取 SQL 中 FROM/JOIN 引用的物理表名（供数据范围过滤等） */
+  extractReferencedTables(sql: string): string[] {
+    const lower = this.stripComments(sql).trim().toLowerCase();
+    return this.extractTables(lower);
+  }
+
   private assertTableAccess(referenced: string[], sqlConfig: SqlToolConfig): void {
     const legacy = sqlConfig as LegacySqlToolConfig;
     const blacklist = (sqlConfig.tableBlacklist ?? []).map((t) => t.toLowerCase());

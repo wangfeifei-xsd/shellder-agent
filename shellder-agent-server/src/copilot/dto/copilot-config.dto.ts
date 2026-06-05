@@ -1,4 +1,13 @@
-import { IsString, IsOptional, IsInt, IsEnum, IsArray, Min, Max } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsInt,
+  IsEnum,
+  IsArray,
+  Min,
+  Max,
+  ArrayMaxSize,
+} from 'class-validator';
 
 export class CreateCopilotConfigDto {
   @IsString()
@@ -99,4 +108,11 @@ export class CopilotTokenExchangeDto {
   @IsOptional()
   @IsString()
   externalUserId?: string;
+
+  /** 数据可见范围 ID 列表；空数组或未传 → 运行期不按范围维度过滤 */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(50)
+  scopeList?: string[];
 }

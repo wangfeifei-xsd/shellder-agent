@@ -11,6 +11,7 @@ import { ConnectorSchemaService } from './connector-schema.service';
 import { ConnectorSqlTestService } from './connector-sql-test.service';
 import { ConnectorService } from './connector.service';
 import { ErDiagramService } from './er-diagram.service';
+import { ErDataScopeService } from './er-data-scope.service';
 
 /**
  * 连接器管理模块（功能清单 §1.6 / 架构 §4.4）。
@@ -19,12 +20,14 @@ import { ErDiagramService } from './er-diagram.service';
  */
 @Module({
   imports: [PrismaModule, LlmModule, PromptModule, forwardRef(() => ToolModule)],
-  controllers: [ConnectorController, ConnectorSchemaController],
+  // Schema 子资源路由须在 ConnectorController 的 :id 通配之前注册
+  controllers: [ConnectorSchemaController, ConnectorController],
   providers: [
     ConnectorService,
     ConnectivityTestService,
     ConnectorIntrospectionService,
     ErDiagramService,
+    ErDataScopeService,
     ConnectorSchemaService,
     ConnectorSqlTestService,
   ],

@@ -34,6 +34,7 @@ export async function fetchCapabilityDemoCopilotToken(params: {
   tenantId: string;
   copilotConfigId: string;
   externalUserId?: string;
+  scopeList?: string[];
 }): Promise<CopilotTokenResponse> {
   return apiFetch<CopilotTokenResponse>('/api/v1/capabilities/demo/copilot-token', {
     method: 'POST',
@@ -93,7 +94,8 @@ export async function runCopilotStreamRound(params: {
   try {
     const sendRes = await copilotSendMessage(token, sessionId, content, 'stream');
 
-    const deadline = Date.now() + 120_000;
+    // 与 Runtime 能力超时（basic.defaultTimeoutMs 默认 300s，query 不低于 180s）对齐并留缓冲
+    const deadline = Date.now() + 360_000;
     while (!done && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 80));
     }

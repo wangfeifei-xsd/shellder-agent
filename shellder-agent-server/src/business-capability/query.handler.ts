@@ -1,8 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Connector, Tool } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ErDiagramService } from '../connector/er-diagram.service';
+import { DataScopeResolveService } from '../query/data-scope-resolve.service';
 import { Nl2SqlService } from '../query/nl2sql.service';
 import { QueryResultService } from '../query/query-result.service';
+import { SqlScopeFilterService } from '../query/sql-scope-filter.service';
 import { SqlToolService } from '../tool/sql-tool.service';
 import { ToolService } from '../tool/tool.service';
 import {
@@ -17,7 +20,7 @@ import { SqlToolConfig } from '../tool/tool.types';
 /**
  * 查询型能力 Handler（§5 / 运行期三步流水线）。
  *
- * 编排：已发布 ER → ① Nl2SqlService → ② SqlToolService → ③ QueryResultService。
+ * 编排：已发布 ER → ① DataScopeResolve → ② Nl2Sql → ③ SqlScopeFilter → ④ SqlTool → ⑤ QueryResult。
  * Policy 由 Agent Runtime 在 Handler 前统一评估。
  */
 @Injectable()
@@ -29,6 +32,9 @@ export class QueryCapabilityHandler implements CapabilityHandler {
     private readonly prisma: PrismaService,
     private readonly sqlToolService: SqlToolService,
     private readonly toolService: ToolService,
+    private readonly erDiagram: ErDiagramService,
+    private readonly dataScopeResolve: DataScopeResolveService,
+    private readonly sqlScopeFilter: SqlScopeFilterService,
     private readonly nl2Sql: Nl2SqlService,
     private readonly queryResult: QueryResultService,
   ) {}
@@ -68,26 +74,49 @@ export class QueryCapabilityHandler implements CapabilityHandler {
     const sqlConfig = this.readSqlConfig(queryTool);
 
     try {
+      const published = await this.erDiagram.getPublished(connector.id);
+      if (!published?.tables?.length) {
+        throw new BadRequestException({
+          code: 'ER_NOT_PUBLISHED',
+          message:
+            '连接器尚无已发布 ER 关系图，查询型 Runtime 不可用。请先在连接器详情中抽取表结构并发布关系图。',
+        });
+      }
+
+      const resolved = this.dataScopeResolve.resolve(
+        ctx.principalContext,
+        published,
+      );
+
       const generated = await this.nl2Sql.generate({
         userMessage: ctx.userMessage,
         connectorId: connector.id,
         sqlConfig,
         templates: sqlConfig.templates,
         tenantId: ctx.tenantId,
+        scopeContext: resolved.scopeContextText,
       });
+
+      const scoped = this.sqlScopeFilter.apply(
+        generated.sql,
+        generated.referencedTables,
+        resolved,
+        generated.params,
+      );
 
       const execResult = await this.sqlToolService.execute(
         connector,
-        generated.sql,
-        generated.params,
+        scoped.sql,
+        scoped.params,
         sqlConfig,
       );
 
       const durationMs = Date.now() - startTime;
       const auditSummary = this.buildAuditSummary(
         ctx.userMessage,
-        generated.sql,
+        scoped.sql,
         generated.referencedTables,
+        scoped.appliedScopeFilters,
       );
 
       emitSse({
@@ -125,10 +154,11 @@ export class QueryCapabilityHandler implements CapabilityHandler {
           text: summarized.replyText,
           rows: execResult.rows,
           rowCount: execResult.rowCount,
-          sql: generated.sql,
+          sql: scoped.sql,
           explanation: generated.explanation,
           executedSql: execResult.executedSql,
           referencedTables: generated.referencedTables,
+          appliedScopeFilters: scoped.appliedScopeFilters,
         },
         status: 'success',
       };
@@ -246,9 +276,14 @@ export class QueryCapabilityHandler implements CapabilityHandler {
     userMessage: string,
     sql: string,
     referencedTables: string[],
+    appliedScopeFilters: string[] = [],
   ): string {
     const tables = referencedTables.length ? referencedTables.join(', ') : '—';
-    return `[query] NL: ${userMessage.slice(0, 200)} | tables: ${tables} | sql: ${this.maskSqlForAudit(sql).slice(0, 500)}`;
+    const scope =
+      appliedScopeFilters.length > 0
+        ? appliedScopeFilters.join('; ')
+        : '—';
+    return `[query] NL: ${userMessage.slice(0, 200)} | tables: ${tables} | scope: ${scope} | sql: ${this.maskSqlForAudit(sql).slice(0, 500)}`;
   }
 
   private maskSqlForAudit(sql: string): string {

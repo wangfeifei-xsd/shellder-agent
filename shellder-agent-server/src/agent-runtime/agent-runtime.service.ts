@@ -18,14 +18,24 @@ import { AuthUser } from '../auth/jwt.types';
 import { SseEmitterService } from './sse-emitter.service';
 import { getCapabilityHandler } from './capability-handlers';
 import {
+  PrincipalContext,
   RuntimeContext,
   SseEvent,
   SendMessageMode,
 } from './agent-runtime.types';
+import { parsePrincipalContextFromDb } from '../copilot/principal-context.types';
+import {
+  CONFIG_KEYS,
+  SystemSettingsService,
+} from '../system-settings/system-settings.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ConfirmationActor } from '../approval/approval-runtime.types';
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+/** 未配置系统设置时的兜底（与 basic.defaultTimeoutMs 默认 300000 对齐） */
+const FALLBACK_CAPABILITY_TIMEOUT_MS = 300_000;
+/** 查询型含 NL2SQL + 执行 + 结果解读，下限不低于 3 分钟 */
+const QUERY_CAPABILITY_TIMEOUT_FLOOR_MS = 180_000;
+const CAPABILITY_TIMEOUT_CEILING_MS = 600_000;
 const DEFAULT_MAX_RETRIES = 2;
 const CONTEXT_MESSAGE_LIMIT = 20;
 
@@ -52,7 +62,25 @@ export class AgentRuntimeService {
     private readonly routingEngine: RoutingEngineService,
     private readonly sessionService: SessionService,
     private readonly sseEmitter: SseEmitterService,
+    private readonly systemSettings: SystemSettingsService,
   ) {}
+
+  /** 能力 Handler 总超时（Copilot 预览 / 嵌入会话共用） */
+  private async resolveCapabilityTimeoutMs(
+    capabilityType: string,
+  ): Promise<number> {
+    const raw = await this.systemSettings.getConfigValue(
+      CONFIG_KEYS.DEFAULT_TIMEOUT_MS,
+    );
+    let ms = Number(raw);
+    if (!Number.isFinite(ms) || ms <= 0) {
+      ms = FALLBACK_CAPABILITY_TIMEOUT_MS;
+    }
+    if (capabilityType === 'query') {
+      ms = Math.max(ms, QUERY_CAPABILITY_TIMEOUT_FLOOR_MS);
+    }
+    return Math.min(Math.max(ms, 30_000), CAPABILITY_TIMEOUT_CEILING_MS);
+  }
 
   /**
    * 发送消息并触发 Agent 编排（POST /api/v1/sessions/:id/messages）。
@@ -138,6 +166,7 @@ export class AgentRuntimeService {
       tenantId: string;
       userId: string;
       capabilityType?: CapabilityType | null;
+      principalContext?: unknown;
     },
     userMessage: string,
     userMessageId: string,
@@ -185,6 +214,9 @@ export class AgentRuntimeService {
         });
       }
 
+      const principalContext = this.resolvePrincipalContext(session);
+      const timeoutMs = await this.resolveCapabilityTimeoutMs(capabilityType);
+
       // 构建运行时上下文
       const ctx: RuntimeContext = {
         sessionId,
@@ -198,8 +230,9 @@ export class AgentRuntimeService {
         routingCandidates: routingResult.candidates,
         toolIds,
         needConfirmation: routingResult.needConfirmation,
-        timeoutMs: DEFAULT_TIMEOUT_MS,
+        timeoutMs,
         maxRetries: DEFAULT_MAX_RETRIES,
+        principalContext,
       };
 
       // Step 3: 路由级确认拦截检查
@@ -544,6 +577,7 @@ export class AgentRuntimeService {
         })
       : null;
 
+    const timeoutMs = await this.resolveCapabilityTimeoutMs(capabilityType);
     const ctx: RuntimeContext = {
       sessionId,
       tenantId: approval.tenantId,
@@ -556,8 +590,9 @@ export class AgentRuntimeService {
       routingCandidates: undefined,
       toolIds,
       needConfirmation: false,
-      timeoutMs: DEFAULT_TIMEOUT_MS,
+      timeoutMs,
       maxRetries: DEFAULT_MAX_RETRIES,
+      principalContext: this.resolvePrincipalContext(session),
     };
 
     const emitSse = (event: SseEvent) => this.sseEmitter.emit(sessionId, event);
@@ -710,6 +745,12 @@ export class AgentRuntimeService {
       workflow: ToolType.workflow,
     };
     return map[capabilityType] ?? null;
+  }
+
+  private resolvePrincipalContext(session: {
+    principalContext?: unknown;
+  }): PrincipalContext | undefined {
+    return parsePrincipalContextFromDb(session.principalContext);
   }
 
   private normalizeToolIds(

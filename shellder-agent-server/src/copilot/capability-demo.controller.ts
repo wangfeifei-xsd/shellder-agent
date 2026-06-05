@@ -27,6 +27,7 @@ export class CapabilityDemoController {
       copilotConfigId: dto.copilotConfigId,
       adminUserId: user.id,
       externalUserId: dto.externalUserId,
+      scopeList: dto.scopeList,
     });
   }
 

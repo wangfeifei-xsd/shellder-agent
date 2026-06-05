@@ -21,6 +21,7 @@ import { AgentRuntimeService } from '../agent-runtime/agent-runtime.service';
 import { SseEvent } from '../agent-runtime/agent-runtime.types';
 import { SseEmitterService } from '../agent-runtime/sse-emitter.service';
 import { ApprovalRuntimeService } from '../approval/approval-runtime.service';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { KnowledgeProxyService } from '../knowledge/knowledge-proxy.service';
 import { CopilotAuthService, CopilotJwtPayload } from './copilot-auth.service';
@@ -104,12 +105,17 @@ export class CopilotWidgetController {
   ) {
     const payload = this.extractPayload(authHeader);
 
+    const principalContext = this.authService.snapshotPrincipalContext(payload);
+
     const session = await this.prisma.session.create({
       data: {
         tenantId: payload.tenantId,
         userId: payload.sub,
         title: body.title ?? null,
         capabilityType: body.capabilityType,
+        principalContext: (principalContext ?? undefined) as
+          | Prisma.InputJsonValue
+          | undefined,
       },
     });
 

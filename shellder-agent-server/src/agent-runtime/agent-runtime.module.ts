@@ -5,6 +5,7 @@ import { AuditModule } from '../audit/audit.module';
 import { CapabilityModule } from '../capability/capability.module';
 import { ApprovalModule } from '../approval/approval.module';
 import { SessionModule } from '../session/session.module';
+import { SystemSettingsModule } from '../system-settings/system-settings.module';
 import { AgentRuntimeService } from './agent-runtime.service';
 import { AgentRuntimeController } from './agent-runtime.controller';
 import { SseEmitterService } from './sse-emitter.service';
@@ -16,6 +17,7 @@ import { SseEmitterService } from './sse-emitter.service';
     AuditModule,
     CapabilityModule,
     SessionModule,
+    SystemSettingsModule,
     forwardRef(() => ApprovalModule),
   ],
   controllers: [AgentRuntimeController],

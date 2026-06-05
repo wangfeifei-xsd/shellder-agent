@@ -69,6 +69,12 @@ export interface SseErrorEvent extends SseEvent {
 
 // ── Runtime 上下文 ────────────────────────────────────────
 
+/** 嵌入主体：问数行级范围（Copilot Session 快照） */
+export interface PrincipalContext {
+  externalUserId?: string;
+  scopeList?: string[];
+}
+
 export interface RuntimeContext {
   sessionId: string;
   tenantId: string;
@@ -84,6 +90,8 @@ export interface RuntimeContext {
   /** 控制参数 */
   timeoutMs: number;
   maxRetries: number;
+  /** Copilot 嵌入主体快照；管理端会话为空 */
+  principalContext?: PrincipalContext;
 }
 
 // ── 能力 Handler 接口 ─────────────────────────────────────

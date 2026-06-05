@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { AuditStatus, Connector, Tool } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -6,10 +6,16 @@ import { AuthUser } from '../auth/jwt.types';
 import { PolicyService } from '../policy/policy.service';
 import { PolicyDecision } from '../policy/policy.types';
 import { decryptSecret } from '../connector/connector-secret.util';
+import { ErDiagramService } from '../connector/er-diagram.service';
+import { buildPrincipalContextSnapshot } from '../copilot/principal-context.types';
+import { PrincipalContext } from '../agent-runtime/agent-runtime.types';
+import { DataScopeResolveService } from '../query/data-scope-resolve.service';
 import { Nl2SqlService } from '../query/nl2sql.service';
 import { QueryResultService } from '../query/query-result.service';
+import { SqlScopeFilterService } from '../query/sql-scope-filter.service';
 import { SqlToolService } from './sql-tool.service';
 import { Nl2SqlPreviewDto } from './dto/nl2sql-preview.dto';
+import { QueryPrincipalContextFieldsDto } from './dto/query-principal-context.dto';
 import { TestSqlDto, TestToolDto } from './dto/test-tool.dto';
 import { ToolService } from './tool.service';
 import { validateAgainstSchema, SchemaValidationResult } from './schema-validator.util';
@@ -59,7 +65,32 @@ export class ToolTestService {
     private readonly toolService: ToolService,
     private readonly nl2Sql: Nl2SqlService,
     private readonly queryResult: QueryResultService,
+    private readonly erDiagram: ErDiagramService,
+    private readonly dataScopeResolve: DataScopeResolveService,
+    private readonly sqlScopeFilter: SqlScopeFilterService,
   ) {}
+
+  private principalFromDto(
+    dto: QueryPrincipalContextFieldsDto,
+  ): PrincipalContext | undefined {
+    const snap = buildPrincipalContextSnapshot({
+      externalUserId: dto.externalUserId,
+      scopeList: dto.scopeList,
+    });
+    return snap ?? undefined;
+  }
+
+  private async requirePublishedEr(connectorId: string) {
+    const published = await this.erDiagram.getPublished(connectorId);
+    if (!published?.tables?.length) {
+      throw new BadRequestException({
+        code: 'ER_NOT_PUBLISHED',
+        message:
+          '连接器尚无已发布 ER 关系图，无法应用问数数据范围。请先在库表 ER 图中发布关系图并配置列映射。',
+      });
+    }
+    return published;
+  }
 
   /** 通用调用测试（action / notification / workflow；query 型走模板或建议改用 SQL 测试）。 */
   async test(user: AuthUser, tool: Tool, dto: TestToolDto): Promise<ToolTestResult> {
@@ -133,6 +164,7 @@ export class ToolTestService {
     explanation: string;
     referencedTables: string[];
     params: Record<string, unknown>;
+    scopeContext?: string;
   }> {
     if (tool.type !== 'query') {
       throw new Error('仅查询型工具支持 NL2SQL 试跑');
@@ -145,22 +177,27 @@ export class ToolTestService {
       throw new Error(shortCircuit.message);
     }
 
+    const principal = this.principalFromDto(dto);
+    const published = await this.requirePublishedEr(connector.id);
+    const resolved = this.dataScopeResolve.resolve(principal, published);
+
     const generated = await this.nl2Sql.generate({
       userMessage: dto.message,
       connectorId: connector.id,
       sqlConfig,
       templates: sqlConfig.templates,
       tenantId: tool.tenantId,
+      scopeContext: resolved.scopeContextText,
     });
 
     await this.recordAudit(user, tool, {
       status: 'success',
       durationMs: 0,
       highRisk: decision.highRisk,
-      summary: `NL2SQL 预览 | tables: ${generated.referencedTables.join(', ') || '—'} | sql: ${generated.sql.slice(0, 300)}`,
+      summary: `NL2SQL 预览 | tables: ${generated.referencedTables.join(', ') || '—'} | scope: ${resolved.scopeContextText.slice(0, 120)} | sql: ${generated.sql.slice(0, 300)}`,
     });
 
-    return generated;
+    return { ...generated, scopeContext: resolved.scopeContextText };
   }
 
   /**
@@ -176,6 +213,7 @@ export class ToolTestService {
       explanation: string;
       referencedTables: string[];
       params: Record<string, unknown>;
+      scopeContext?: string;
     };
     execution: {
       rowCount: number;
@@ -188,6 +226,10 @@ export class ToolTestService {
       summary: string;
       truncated: boolean;
       displayedRowCount: number;
+    };
+    dataScope?: {
+      scopeContextText: string;
+      appliedScopeFilters: string[];
     };
     totalDurationMs: number;
   }> {
@@ -204,18 +246,30 @@ export class ToolTestService {
 
     const start = Date.now();
 
+    const principal = this.principalFromDto(dto);
+    const published = await this.requirePublishedEr(connector.id);
+    const resolved = this.dataScopeResolve.resolve(principal, published);
+
     const generated = await this.nl2Sql.generate({
       userMessage: dto.message,
       connectorId: connector.id,
       sqlConfig,
       templates: sqlConfig.templates,
       tenantId: tool.tenantId,
+      scopeContext: resolved.scopeContextText,
     });
+
+    const scoped = this.sqlScopeFilter.apply(
+      generated.sql,
+      generated.referencedTables,
+      resolved,
+      generated.params ?? {},
+    );
 
     const exec = await this.sqlTool.execute(
       connector,
-      generated.sql,
-      generated.params ?? {},
+      scoped.sql,
+      scoped.params,
       sqlConfig,
     );
 
@@ -240,16 +294,25 @@ export class ToolTestService {
       status: 'success',
       durationMs: totalDurationMs,
       highRisk: decision.highRisk,
-      summary: `三步试跑 | tables: ${generated.referencedTables.join(', ') || '—'} | rows: ${exec.rowCount}`,
+      summary: `三步试跑 | tables: ${generated.referencedTables.join(', ') || '—'} | scope: ${scoped.appliedScopeFilters.join('; ') || '—'} | rows: ${exec.rowCount}`,
     });
 
     return {
-      nl2sql: generated,
+      nl2sql: {
+        ...generated,
+        sql: scoped.sql,
+        params: scoped.params,
+        scopeContext: resolved.scopeContextText,
+      },
       execution: {
         rowCount: exec.rowCount,
         rows: exec.rows,
         executedSql: exec.executedSql,
         durationMs: exec.durationMs,
+      },
+      dataScope: {
+        scopeContextText: resolved.scopeContextText,
+        appliedScopeFilters: scoped.appliedScopeFilters,
       },
       reply: {
         text: summarized.replyText,
@@ -287,9 +350,39 @@ export class ToolTestService {
     }
 
     const connector = await this.requireConnector(tool, 'db_readonly');
+    const principal = this.principalFromDto(dto);
+    let runSql = sql;
+    let runParams = params;
+    let scopeMeta:
+      | { scopeContext: string; appliedScopeFilters: string[] }
+      | undefined;
+
+    if (principal) {
+      const published = await this.requirePublishedEr(connector.id);
+      const resolved = this.dataScopeResolve.resolve(principal, published);
+      const referencedTables = this.sqlTool.extractReferencedTables(sql);
+      const scoped = this.sqlScopeFilter.apply(
+        sql,
+        referencedTables,
+        resolved,
+        params,
+      );
+      runSql = scoped.sql;
+      runParams = scoped.params;
+      scopeMeta = {
+        scopeContext: resolved.scopeContextText,
+        appliedScopeFilters: scoped.appliedScopeFilters,
+      };
+    }
+
     let result: ToolTestResult;
     try {
-      const exec = await this.sqlTool.execute(connector, sql, params, sqlConfig);
+      const exec = await this.sqlTool.execute(
+        connector,
+        runSql,
+        runParams,
+        sqlConfig,
+      );
       const outputValidation = validateAgainstSchema(tool.outputSchema, exec.rows);
       result = {
         policy: decision,
@@ -297,7 +390,11 @@ export class ToolTestService {
         outputValidation,
         executed: true,
         status: 'success',
-        rawRequest: { sql: exec.executedSql, values: exec.boundValues },
+        rawRequest: {
+          sql: exec.executedSql,
+          values: exec.boundValues,
+          ...(scopeMeta ?? {}),
+        },
         rawResponse: { rowCount: exec.rowCount, rows: exec.rows },
         transformedResult: exec.rows,
         durationMs: exec.durationMs,

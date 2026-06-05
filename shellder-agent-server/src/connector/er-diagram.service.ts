@@ -22,6 +22,19 @@ import {
   ER_DIAGRAM_MAX_TOKENS,
   ER_DIAGRAM_MIN_MAX_TOKENS,
 } from './er-diagram.prompt';
+import { isDataScopePending, normalizeDataScopeBinding } from './er-data-scope.util';
+
+/** LLM 误填的嵌入参数名，不能作为物理列 */
+const RESERVED_EMBED_PARAM_ALIASES = new Set([
+  'scopelist',
+  'scope_list',
+  'externaluserid',
+  'external_user_id',
+]);
+
+function isReservedEmbedParamAlias(column: string): boolean {
+  return RESERVED_EMBED_PARAM_ALIASES.has(column.trim().toLowerCase());
+}
 
 /** LLM 仅返回表显示名与关系；列由 merge 补全 */
 interface ErDiagramLlmPayload {
@@ -168,6 +181,9 @@ export class ErDiagramService {
       });
     }
     this.validateTablesInSchema(diagram, introspectedSchema);
+    diagram = this.sanitizeDataScopeColumns(diagram, introspectedSchema).diagram;
+    diagram = this.normalizeDiagramDataScope(diagram);
+    this.validateDataScopeColumns(diagram, introspectedSchema);
 
     const row = await this.prisma.connectorDbMetadata.findUnique({
       where: { connectorId },
@@ -201,11 +217,14 @@ export class ErDiagramService {
       });
     }
 
-    const draft = row.erDiagramDraft as unknown as ErDiagram;
+    let draft = row.erDiagramDraft as unknown as ErDiagram;
+    draft = this.normalizeDiagramDataScope(draft);
     const { introspectedSchema } = await this.introspection.getSchema(connectorId);
     if (introspectedSchema) {
       this.validateTablesInSchema(draft, introspectedSchema);
+      this.validateDataScopeColumns(draft, introspectedSchema);
     }
+    this.assertDataScopeConfirmed(draft);
 
     const version = (row.erPublishedVersion ?? 0) + 1;
     const publishedAt = new Date();
@@ -221,6 +240,139 @@ export class ErDiagramService {
     });
 
     return { published, version, publishedAt };
+  }
+
+  private buildColumnsByTable(
+    schema: IntrospectedSchema,
+  ): Map<string, Set<string>> {
+    return new Map(
+      schema.tables.map((t) => [
+        t.name.toLowerCase(),
+        new Set(t.columns.map((c) => c.name.toLowerCase())),
+      ]),
+    );
+  }
+
+  /**
+   * 配置期 LLM 建议：丢弃不在表结构中的列名，避免整批失败。
+   * 保存/发布仍走 validateDataScopeColumns 严格校验。
+   */
+  sanitizeDataScopeColumns(
+    diagram: ErDiagram,
+    schema: IntrospectedSchema,
+  ): { diagram: ErDiagram; dropped: string[] } {
+    const columnsByTable = this.buildColumnsByTable(schema);
+    const dropped: string[] = [];
+    const tables = (diagram.tables ?? []).map((table) => {
+      const ds = table.dataScope;
+      if (!ds) return table;
+      const allowed = columnsByTable.get(table.name.toLowerCase());
+      if (!allowed) return table;
+
+      let scopeColumn = ds.scopeColumn?.trim() || undefined;
+      let userColumn = ds.userColumn?.trim() || undefined;
+      if (scopeColumn && isReservedEmbedParamAlias(scopeColumn)) {
+        dropped.push(`${table.name}.scopeColumn=${scopeColumn}（嵌入参数名，非物理列）`);
+        scopeColumn = undefined;
+      }
+      if (userColumn && isReservedEmbedParamAlias(userColumn)) {
+        dropped.push(`${table.name}.userColumn=${userColumn}（嵌入参数名，非物理列）`);
+        userColumn = undefined;
+      }
+      if (scopeColumn && !allowed.has(scopeColumn.toLowerCase())) {
+        dropped.push(`${table.name}.scopeColumn=${scopeColumn}`);
+        scopeColumn = undefined;
+      }
+      if (userColumn && !allowed.has(userColumn.toLowerCase())) {
+        dropped.push(`${table.name}.userColumn=${userColumn}`);
+        userColumn = undefined;
+      }
+      if (!scopeColumn && !userColumn) {
+        const keep =
+          ds.scopeConfigured === true ||
+          ds.userConfigured === true ||
+          ds.inferred === true ||
+          !!ds.reason?.trim();
+        if (!keep) {
+          return { ...table, dataScope: undefined };
+        }
+        return {
+          ...table,
+          dataScope: {
+            ...ds,
+            scopeColumn,
+            userColumn,
+          },
+        };
+      }
+      return {
+        ...table,
+        dataScope: {
+          ...ds,
+          scopeColumn,
+          userColumn,
+          scopeConfigured: ds.scopeConfigured === true || !!scopeColumn,
+          userConfigured: ds.userConfigured === true || !!userColumn,
+        },
+      };
+    });
+    return {
+      diagram: { ...diagram, tables },
+      dropped,
+    };
+  }
+
+  /** 发布前：限制字段列名须属于 introspected 列集合 */
+  validateDataScopeColumns(
+    diagram: ErDiagram,
+    schema: IntrospectedSchema,
+  ): void {
+    const columnsByTable = this.buildColumnsByTable(schema);
+    const errors: string[] = [];
+    for (const table of diagram.tables ?? []) {
+      const ds = table.dataScope;
+      if (!ds) continue;
+      const allowed = columnsByTable.get(table.name.toLowerCase());
+      if (!allowed) continue;
+      if (ds.scopeColumn && !allowed.has(ds.scopeColumn.toLowerCase())) {
+        errors.push(`${table.name}.scopeColumn=${ds.scopeColumn}`);
+      }
+      if (ds.userColumn && !allowed.has(ds.userColumn.toLowerCase())) {
+        errors.push(`${table.name}.userColumn=${ds.userColumn}`);
+      }
+    }
+    if (errors.length > 0) {
+      throw new BadRequestException({
+        code: 'ER_DATA_SCOPE_INVALID_COLUMN',
+        message: `限制字段列名不在表结构中：${errors.join('；')}`,
+        details: { invalidBindings: errors },
+      });
+    }
+  }
+
+  /** 保存/发布前：已分维度确认但遗留 inferred=true 时自动纠正 */
+  normalizeDiagramDataScope(diagram: ErDiagram): ErDiagram {
+    const tables = (diagram.tables ?? []).map((table) => {
+      if (!table.dataScope) return table;
+      return { ...table, dataScope: normalizeDataScopeBinding(table.dataScope) };
+    });
+    return { ...diagram, tables };
+  }
+
+  /** 发布前阻断：范围/用户列映射未确认或列未选全 */
+  assertDataScopeConfirmed(diagram: ErDiagram): void {
+    const pending = (diagram.tables ?? []).filter(
+      (t) => t.dataScope && isDataScopePending(t.dataScope),
+    );
+    if (pending.length > 0) {
+      throw new BadRequestException({
+        code: 'ER_DATA_SCOPE_UNCONFIRMED',
+        message: `仍有 ${pending.length} 张表数据范围列映射未就绪，请在「数据范围列映射」中确认或补全物理列后再发布`,
+        details: {
+          tables: pending.map((t) => t.name),
+        },
+      });
+    }
   }
 
   validateTablesInSchema(
@@ -263,10 +415,17 @@ export class ErDiagramService {
         t.displayName?.trim() || undefined,
       ]),
     );
+    const existingDataScopeByName = new Map(
+      (existingDraft?.tables ?? []).map((t) => [
+        t.name.toLowerCase(),
+        t.dataScope,
+      ]),
+    );
     const tables = schema.tables.map((t) => {
       const key = t.name.toLowerCase();
       const llmDisplay = llmDisplayByName.get(key);
       const existingDisplay = existingDisplayByName.get(key);
+      const dataScope = existingDataScopeByName.get(key);
       return {
         name: t.name,
         displayName: this.resolveDisplayName(
@@ -276,6 +435,7 @@ export class ErDiagramService {
           llmDisplay,
         ),
         columns: this.columnsFromIntrospected(t),
+        ...(dataScope ? { dataScope } : {}),
       };
     });
     return {
