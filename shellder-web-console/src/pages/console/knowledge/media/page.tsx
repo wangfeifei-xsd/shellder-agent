@@ -23,7 +23,6 @@ import {
   Modal,
   Popconfirm,
   Row,
-  Select,
   Space,
   Table,
   TreeSelect,
@@ -48,6 +47,7 @@ import {
   deleteMedia,
   exportMediaZip,
   getDataTree,
+  DATA_TREE_DEFAULT_OPTS,
   getMediaBackrefs,
   fetchMediaObjectUrl,
   importMediaZip,
@@ -63,7 +63,6 @@ import { ApiError } from '@/lib/api';
 const { Paragraph, Text } = Typography;
 
 const FOLDER_FILTER_ALL = '__all__';
-const FOLDER_FILTER_EMPTY = '__empty__';
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -101,6 +100,15 @@ function mediaFolder(item: MediaItem): string {
   return item.folder ?? item.target_folder ?? '';
 }
 
+function mediaItemUnderFolderPrefix(item: MediaItem, filterKey: string): boolean {
+  if (filterKey === FOLDER_FILTER_ALL || filterKey === MEDIA_ROOT_FOLDER_VALUE) return true;
+  const folder = mediaFolder(item).replace(/\/$/, '');
+  const prefix = filterKey.replace(/\/$/, '');
+  if (!prefix) return !folder;
+  if (!folder) return false;
+  return folder === prefix || folder.startsWith(`${prefix}/`);
+}
+
 export default function KnowledgeMediaPage() {
   const { message } = App.useApp();
   const { activeTenantId, tenants } = useActiveTenant();
@@ -130,6 +138,7 @@ export default function KnowledgeMediaPage() {
   const [batchDeleteBusy, setBatchDeleteBusy] = useState(false);
   const [folderTree, setFolderTree] = useState<Awaited<ReturnType<typeof getDataTree>> | null>(null);
   const [folderFilter, setFolderFilter] = useState<string>(FOLDER_FILTER_ALL);
+  const [tenantWikiPrefixes, setTenantWikiPrefixes] = useState<string[]>([]);
   const [mediaTablePage, setMediaTablePage] = useState({ current: 1, pageSize: 20 });
 
   const activeTenantName = useMemo(
@@ -140,6 +149,7 @@ export default function KnowledgeMediaPage() {
   const loadList = useCallback(async () => {
     if (!activeTenantId) {
       setList(null);
+      setTenantWikiPrefixes([]);
       return;
     }
     setLoading(true);
@@ -147,10 +157,12 @@ export default function KnowledgeMediaPage() {
     try {
       const data = await listMediaItems(activeTenantId);
       setList(data);
+      setTenantWikiPrefixes(data.tenant_wiki_prefixes ?? []);
     } catch (err) {
       if (isKnowledgeProxyError(err)) setProxyError(err);
       else message.error(knowledgeProxyErrorMessage(err));
       setList(null);
+      setTenantWikiPrefixes([]);
     } finally {
       setLoading(false);
     }
@@ -163,7 +175,7 @@ export default function KnowledgeMediaPage() {
     }
     try {
       setFolderTree(
-        await getDataTree(activeTenantId, 'media', { max_depth: 32, max_nodes: 2000 }),
+        await getDataTree(activeTenantId, 'media', DATA_TREE_DEFAULT_OPTS),
       );
     } catch {
       setFolderTree(null);
@@ -208,29 +220,26 @@ export default function KnowledgeMediaPage() {
     [folderTree],
   );
 
-  const folderFilterOptions = useMemo(() => {
-    const items = list?.items ?? [];
-    const counts = new Map<string, number>();
-    for (const it of items) {
-      const key = mediaFolder(it);
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+  /** 多知识库绑定时上传/导入须选具体库目录，不提供层根 objects/ */
+  const scopedFolderTreeData = useMemo(() => {
+    if (tenantWikiPrefixes.length <= 1 || !folderTree?.children?.length) {
+      return folderTreeData;
     }
-    const opts: { value: string; label: string }[] = [
-      { value: FOLDER_FILTER_ALL, label: `全部（${items.length}）` },
-    ];
-    Array.from(counts.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .forEach(([k, n]) => {
-        opts.push({ value: k || FOLDER_FILTER_EMPTY, label: `${k || '(未归类)'}（${n}）` });
-      });
-    return opts;
-  }, [list]);
+    return folderTree.children.map(mapMediaFolderToTreeSelect);
+  }, [folderTree, folderTreeData, tenantWikiPrefixes.length]);
+
+  useEffect(() => {
+    if (tenantWikiPrefixes.length <= 1 || !folderTree?.children?.length) return;
+    const firstPath = folderTree.children[0]?.path?.replace(/\/$/, '');
+    if (!firstPath) return;
+    setUploadTargetFolder(firstPath);
+    setImportTargetFolder(firstPath);
+  }, [folderTree, tenantWikiPrefixes.length]);
 
   const filteredItems = useMemo<MediaItem[]>(() => {
     const items = list?.items ?? [];
     if (folderFilter === FOLDER_FILTER_ALL) return items;
-    if (folderFilter === FOLDER_FILTER_EMPTY) return items.filter((it) => !mediaFolder(it));
-    return items.filter((it) => mediaFolder(it) === folderFilter);
+    return items.filter((it) => mediaItemUnderFolderPrefix(it, folderFilter));
   }, [folderFilter, list]);
 
   const mediaTotalRows = filteredItems.length;
@@ -642,6 +651,24 @@ export default function KnowledgeMediaPage() {
         媒体库
       </Typography.Title>
       <Alert type="info" showIcon message={`当前租户：${activeTenantName ?? activeTenantId}`} />
+      {tenantWikiPrefixes.length > 0 ? (
+        <Alert
+          type="info"
+          showIcon
+          message="知识库可见范围"
+          description={
+            <>
+              当前租户共有 <strong>{tenantWikiPrefixes.length}</strong> 个生效的 wiki 路径前缀，媒体列表与目录树按<strong>全部前缀联合</strong>过滤：
+              <Text code>{tenantWikiPrefixes.join('、')}</Text>
+              {tenantWikiPrefixes.length > 1 ? (
+                <span>
+                  。绑定多个知识库时，上传/导入须选择具体库目录（不可使用层根默认 <Text code>objects/</Text>）。
+                </span>
+              ) : null}
+            </>
+          }
+        />
+      ) : null}
       {proxyError != null ? <KnowledgeProxyErrorAlert error={proxyError} /> : null}
 
       <Card title="多媒体存储">
@@ -687,7 +714,7 @@ export default function KnowledgeMediaPage() {
                   <TreeSelect
                     value={uploadTargetFolder}
                     onChange={(v) => setUploadTargetFolder(v ?? MEDIA_ROOT_FOLDER_VALUE)}
-                    treeData={folderTreeData}
+                    treeData={scopedFolderTreeData}
                     treeDefaultExpandAll
                     showSearch
                     treeNodeFilterProp="title"
@@ -724,18 +751,21 @@ export default function KnowledgeMediaPage() {
           </Form>
         </Card>
         <Space wrap style={{ marginBottom: 8 }}>
-          <Text type="secondary">菜单筛选</Text>
-          <Select
+          <Text type="secondary">目录筛选</Text>
+          <TreeSelect
             size="small"
             style={{ minWidth: 220 }}
-            value={folderFilter}
+            placeholder={`全部（${list?.items.length ?? 0}）`}
+            allowClear
+            showSearch
+            treeDefaultExpandAll
+            value={folderFilter === FOLDER_FILTER_ALL ? undefined : folderFilter}
             onChange={(v) => {
-              setFolderFilter(v);
+              setFolderFilter(v == null ? FOLDER_FILTER_ALL : String(v));
               setMediaTablePage((p) => ({ ...p, current: 1 }));
             }}
-            options={folderFilterOptions}
-            showSearch
-            optionFilterProp="label"
+            treeData={folderTreeData}
+            treeNodeFilterProp="title"
           />
           <Text type="secondary">已选 {selectedRowKeys.length} 条</Text>
           <Button
@@ -875,7 +905,7 @@ export default function KnowledgeMediaPage() {
               <TreeSelect
                 value={importTargetFolder}
                 onChange={(v) => setImportTargetFolder(v ?? MEDIA_ROOT_FOLDER_VALUE)}
-                treeData={folderTreeData}
+                treeData={scopedFolderTreeData}
                 treeDefaultExpandAll
                 showSearch
                 treeNodeFilterProp="title"

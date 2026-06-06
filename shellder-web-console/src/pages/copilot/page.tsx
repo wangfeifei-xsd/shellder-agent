@@ -46,7 +46,13 @@ import {
   hasSubstantiveStreamText,
   shouldIgnoreInterimStreamDelta,
 } from '@/lib/copilot-thinking-status';
-import { parseScopeListFromQuery } from '@/lib/scope-list';
+import {
+  COPILOT_INIT_MESSAGE_TYPE,
+  COPILOT_READY_MESSAGE_TYPE,
+  pickCopilotTokenExchangeParams,
+  pickCopilotTokenExchangeParamsFromSearchParams,
+  type CopilotTokenExchangeParams,
+} from '@/lib/copilot-init';
 
 const { TextArea } = Input;
 const STREAMING_MSG_ID = '__streaming__';
@@ -123,48 +129,46 @@ export default function CopilotPage() {
   }, [token]);
 
   useEffect(() => {
-    const clientId = searchParams.get('clientId');
-    const clientSecret = searchParams.get('clientSecret');
-    const tenantId = searchParams.get('tenantId') ?? undefined;
-    const externalTenantId = searchParams.get('externalTenantId') ?? undefined;
-    const externalUserId = searchParams.get('externalUserId') ?? undefined;
-    const scopeList = parseScopeListFromQuery(searchParams.get('scopeList'));
-
-    if (clientId && clientSecret) {
-      void doExchangeToken({
-        clientId,
-        clientSecret,
-        tenantId,
-        externalTenantId,
-        externalUserId,
-        scopeList,
-      });
-    } else {
-      const handler = (event: MessageEvent) => {
-        if (event.data?.type === 'copilot:init' && event.data.clientId) {
-          void doExchangeToken(event.data);
-        }
-      };
-      window.addEventListener('message', handler);
-      setLoading(false);
-      return () => window.removeEventListener('message', handler);
+    const fromUrl = pickCopilotTokenExchangeParamsFromSearchParams(searchParams);
+    if (fromUrl) {
+      void doExchangeToken(fromUrl);
     }
+
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== COPILOT_INIT_MESSAGE_TYPE) return;
+      const params = pickCopilotTokenExchangeParams(
+        event.data as Record<string, unknown>,
+      );
+      if (params) {
+        void doExchangeToken(params);
+      }
+    };
+    window.addEventListener('message', handler);
+    if (!fromUrl) {
+      setLoading(false);
+      if (window.parent !== window) {
+        window.parent.postMessage(
+          { type: COPILOT_READY_MESSAGE_TYPE },
+          window.location.origin,
+        );
+      }
+    }
+    return () => window.removeEventListener('message', handler);
   }, [searchParams]);
 
-  const doExchangeToken = async (params: {
-    clientId: string;
-    clientSecret: string;
-    tenantId?: string;
-    externalTenantId?: string;
-    externalUserId?: string;
-    scopeList?: string[];
-  }) => {
+  const doExchangeToken = async (params: CopilotTokenExchangeParams) => {
     try {
       setLoading(true);
       const result = await copilotExchangeToken(params);
       setToken(result.accessToken);
       setConfig(result.config);
       setError(null);
+      setSessionId(null);
+      setMessages([]);
+      setSessionTasks([]);
+      setInlineConfirm(null);
+      setSelectedCapabilityType(null);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : '换票失败');
     } finally {
@@ -468,6 +472,14 @@ export default function CopilotPage() {
   }
 
   if (!token) {
+    const isEmbedded = typeof window !== 'undefined' && window.parent !== window;
+    if (isEmbedded) {
+      return (
+        <div className="flex h-full items-center justify-center">
+          <Spin tip="正在等待父页面传入凭证…" />
+        </div>
+      );
+    }
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-8">
         <RobotOutlined className="text-5xl text-gray-400" />

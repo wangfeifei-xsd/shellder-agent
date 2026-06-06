@@ -35,6 +35,8 @@ export async function fetchCapabilityDemoCopilotToken(params: {
   copilotConfigId: string;
   externalUserId?: string;
   scopeList?: string[];
+  /** 问答型 wiki 子目录范围（层内相对路径）；空或未传表示租户 wiki 全目录 */
+  wikiPrefixes?: string[];
 }): Promise<CopilotTokenResponse> {
   return apiFetch<CopilotTokenResponse>('/api/v1/capabilities/demo/copilot-token', {
     method: 'POST',

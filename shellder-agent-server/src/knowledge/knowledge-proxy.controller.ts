@@ -159,9 +159,9 @@ export class KnowledgeProxyController {
     form.append('file', blob, file.originalname);
     if (path) form.append('path', path);
     const result = await this.proxy.uploadLayerFile(user, tenantId, layer, form);
-    const wikiPrefix = await this.tenantScope.resolveWikiPrefix(tenantId);
+    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
     const scopedPath = path
-      ? this.tenantScope.scopeLayerPath(wikiPrefix, path)
+      ? this.tenantScope.scopeLayerPath(wikiPrefixes, path)
       : typeof (result as { path?: string })?.path === 'string'
         ? (result as { path: string }).path
         : null;
@@ -243,7 +243,7 @@ export class KnowledgeProxyController {
   createFolder(
     @CurrentUser() user: AuthUser,
     @Query('tenantId') tenantId: string,
-    @Body() body: { layer: string; name: string },
+    @Body() body: { layer: string; name: string; parent?: string },
   ) {
     return this.proxy.createFolder(user, tenantId, body);
   }

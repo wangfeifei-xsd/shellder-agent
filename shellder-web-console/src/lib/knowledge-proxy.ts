@@ -198,6 +198,8 @@ export interface MediaListResponse {
   items: MediaItem[];
   count: number;
   bytes_total: number;
+  /** 当前租户生效的全部 wiki 路径前缀（层内绝对路径，无尾斜杠） */
+  tenant_wiki_prefixes?: string[];
 }
 
 export interface MediaSummary {
@@ -419,20 +421,32 @@ export function triggerLayerEmbed(tenantId: string, layer: string, path: string)
 
 // ── data-structure ──────────────────────────────────────────
 
+export const DATA_TREE_DEFAULT_OPTS = { max_depth: 32, max_nodes: 2000 } as const;
+
 export function getDataTree(
   tenantId: string,
   layer: string,
   opts?: { max_depth?: number; max_nodes?: number },
 ) {
   return proxyFetch<DataFolderTreeNode>(`/data-structure/tree/${layer}`, tenantId, {
-    query: opts,
+    query: { ...DATA_TREE_DEFAULT_OPTS, ...opts },
   });
 }
 
-export function createFolder(tenantId: string, layer: string, name: string) {
+export function createFolder(
+  tenantId: string,
+  layer: string,
+  name: string,
+  parent?: string,
+) {
+  const parentRel = (parent ?? '').trim().replace(/^\//, '');
   return proxyFetch<{ ok: boolean }>('/data-structure/folders', tenantId, {
     method: 'POST',
-    body: { layer, name },
+    body: {
+      layer,
+      name,
+      ...(parentRel ? { parent: parentRel } : {}),
+    },
   });
 }
 
@@ -456,7 +470,7 @@ export function dialogueRecall(
   tenantId: string,
   body: {
     query: string;
-    wiki_prefix?: string;
+    wiki_prefixes?: string[];
     max_files?: number;
     bm25_top_n?: number;
     vector_top_n?: number;
@@ -475,7 +489,7 @@ export function dialogueRecallTest(
   tenantId: string,
   body: {
     query: string;
-    wiki_prefix?: string;
+    wiki_prefixes?: string[];
     max_files?: number;
     bm25_top_n?: number;
     vector_top_n?: number;
@@ -506,7 +520,7 @@ export function dialogueQaPreview(
   tenantId: string,
   body: {
     query: string;
-    wiki_prefix?: string;
+    wiki_prefixes?: string[];
     top_k_chunks?: number;
     bm25_top_n?: number;
     vector_top_n?: number;

@@ -38,7 +38,7 @@ export class QaPreviewController {
       top_k_chunks?: number;
       bm25_top_n?: number;
       vector_top_n?: number;
-      wiki_prefix?: string;
+      wiki_prefixes?: string[];
     },
     @Query('channel') channel?: 'published' | 'draft',
     @Query('prompt_key') promptKey?: string,
@@ -66,7 +66,7 @@ export class QaPreviewController {
       recallBody: {
         bm25_top_n: body.bm25_top_n,
         vector_top_n: body.vector_top_n,
-        wiki_prefix: body.wiki_prefix,
+        wiki_prefixes: body.wiki_prefixes,
       },
       promptChannel: resolvedChannel,
       promptKey: promptKey ?? PROMPT_KEYS.QA_DIALOGUE_SYSTEM,

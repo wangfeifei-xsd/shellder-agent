@@ -6,25 +6,58 @@ import { PrismaService } from '../prisma/prisma.service';
 export class TenantScopeService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async resolveWikiPrefix(tenantId: string): Promise<string> {
-    const kb = await this.prisma.knowledgeBase.findFirst({
+  async resolveWikiPrefixes(tenantId: string): Promise<string[]> {
+    const rows = await this.prisma.knowledgeBase.findMany({
       where: { tenantId, status: 'active', deletedAt: null },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ createdAt: 'asc' }, { name: 'asc' }],
       select: { wikiPrefix: true },
     });
-    if (kb?.wikiPrefix != null && kb.wikiPrefix !== '') {
-      return this.normalizePrefix(kb.wikiPrefix);
+
+    const seen = new Set<string>();
+    const out: string[] = [];
+    const push = (raw: string) => {
+      const norm = this.normalizePrefix(raw);
+      if (!norm || seen.has(norm)) return;
+      seen.add(norm);
+      out.push(norm);
+    };
+
+    for (const row of rows) {
+      if (row.wikiPrefix != null && row.wikiPrefix.trim() !== '') {
+        push(row.wikiPrefix);
+      } else {
+        push(`tenants/${tenantId}/`);
+      }
     }
-    return `tenants/${tenantId}/`;
+
+    if (out.length === 0) {
+      push(`tenants/${tenantId}/`);
+    }
+    return out;
   }
 
-  scopeLayerPath(wikiPrefix: string, relativePath: string): string {
-    if (!wikiPrefix) return relativePath.replace(/^\//, '');
-    const base = this.normalizePrefix(wikiPrefix);
+  async resolveWikiPrefix(tenantId: string): Promise<string> {
+    const prefixes = await this.resolveWikiPrefixes(tenantId);
+    return prefixes[0] ?? `tenants/${tenantId}/`;
+  }
+
+  scopeLayerPath(wikiPrefixes: string | string[], relativePath: string): string {
+    const list = Array.isArray(wikiPrefixes) ? wikiPrefixes : [wikiPrefixes];
     const rel = (relativePath ?? '').replace(/^\//, '');
-    if (!rel) return base;
-    if (rel === base || rel.startsWith(base)) return rel;
-    return `${base}${rel}`;
+    if (!rel) {
+      return list.length === 1 ? this.normalizePrefix(list[0]) : '';
+    }
+    for (const raw of list) {
+      const base = this.normalizePrefix(raw);
+      const baseNoSlash = base.replace(/\/$/, '');
+      if (rel === baseNoSlash || rel.startsWith(base)) return rel;
+    }
+    if (list.length === 1) {
+      const base = this.normalizePrefix(list[0]);
+      if (!base) return rel;
+      return `${base}${rel}`;
+    }
+    return rel;
   }
 
   normalizePrefix(prefix: string): string {

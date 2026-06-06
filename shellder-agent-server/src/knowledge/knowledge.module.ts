@@ -26,6 +26,11 @@ import { KnowledgeTenantScopeService } from './knowledge-tenant-scope.service';
     KnowledgeProxyService,
     KnowledgeTenantScopeService,
   ],
-  exports: [KnowledgeService, KnowledgeProxyService, KnowledgeConnectionService],
+  exports: [
+    KnowledgeService,
+    KnowledgeProxyService,
+    KnowledgeConnectionService,
+    KnowledgeTenantScopeService,
+  ],
 })
 export class KnowledgeModule {}

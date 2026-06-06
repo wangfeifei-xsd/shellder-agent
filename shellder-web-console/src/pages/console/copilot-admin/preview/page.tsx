@@ -1,12 +1,22 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Form, Input, Select, Space, Typography, message } from 'antd';
 import { PlayCircleOutlined, CopyOutlined } from '@ant-design/icons';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
+import {
+  useWikiPrefixTree,
+  WikiPrefixFormItem,
+} from '@/components/console/knowledge/WikiPrefixFormItem';
+import {
+  buildCopilotInitMessage,
+  COPILOT_READY_MESSAGE_TYPE,
+  pickCopilotTokenExchangeParams,
+  type CopilotTokenExchangeParams,
+} from '@/lib/copilot-init';
 import { buildHashRouteUrl } from '@/lib/navigation';
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Paragraph } = Typography;
 
 /**
  * Copilot 嵌入预览 — 管理员可在此页面测试嵌入效果，
@@ -16,6 +26,12 @@ export default function CopilotPreviewPage() {
   const { tenants } = useActiveTenant();
   const [form] = Form.useForm();
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
+  const [previewKey, setPreviewKey] = useState(0);
+  const pendingInitRef = useRef<CopilotTokenExchangeParams | null>(null);
+  const selectedTenantId = Form.useWatch('tenantId', form) as string | undefined;
+  const { treeData: wikiPrefixTreeData, loading: wikiPrefixTreeLoading } =
+    useWikiPrefixTree(selectedTenantId);
+
   const resolveCopilotPath = () => buildHashRouteUrl('/copilot');
   const tenantOptions = useMemo(
     () =>
@@ -26,19 +42,65 @@ export default function CopilotPreviewPage() {
     [tenants],
   );
 
+  const buildInitParamsFromForm = (
+    values: Record<string, unknown>,
+  ): CopilotTokenExchangeParams | null => {
+    const wikiPrefixes = (values.wikiPrefixes as string[] | undefined)?.filter(Boolean);
+    const scopeList = (values.scopeList as string[] | undefined)?.filter(Boolean);
+    return pickCopilotTokenExchangeParams({
+      clientId: values.clientId,
+      clientSecret: values.clientSecret,
+      tenantId: values.tenantId,
+      externalTenantId: values.externalTenantId,
+      externalUserId: values.externalUserId,
+      scopeList,
+      wikiPrefixes,
+    });
+  };
+
+  const postInitToPreviewFrame = useCallback((init: CopilotTokenExchangeParams) => {
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      'iframe[title="Copilot Preview"]',
+    );
+    iframe?.contentWindow?.postMessage(
+      buildCopilotInitMessage(init),
+      window.location.origin,
+    );
+  }, []);
+
+  const deliverInitToPreviewFrame = useCallback(
+    (init: CopilotTokenExchangeParams, withRetry = false) => {
+      pendingInitRef.current = init;
+      postInitToPreviewFrame(init);
+      if (!withRetry) return;
+      window.setTimeout(() => postInitToPreviewFrame(init), 80);
+      window.setTimeout(() => postInitToPreviewFrame(init), 300);
+    },
+    [postInitToPreviewFrame],
+  );
+
+  useEffect(() => {
+    const onChildReady = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== COPILOT_READY_MESSAGE_TYPE) return;
+      const init =
+        pendingInitRef.current ?? buildInitParamsFromForm(form.getFieldsValue());
+      if (init) postInitToPreviewFrame(init);
+    };
+    window.addEventListener('message', onChildReady);
+    return () => window.removeEventListener('message', onChildReady);
+  }, [form, postInitToPreviewFrame]);
+
   const handlePreview = async () => {
     const values = await form.validateFields();
-    const params = new URLSearchParams();
-    params.set('clientId', values.clientId);
-    params.set('clientSecret', values.clientSecret);
-    if (values.tenantId) params.set('tenantId', values.tenantId);
-    if (values.externalTenantId) params.set('externalTenantId', values.externalTenantId);
-    if (values.externalUserId) params.set('externalUserId', values.externalUserId);
-    const scopeList = (values.scopeList as string[] | undefined)?.filter(Boolean);
-    if (scopeList?.length) {
-      params.set('scopeList', scopeList.join(','));
+    const init = buildInitParamsFromForm(values);
+    if (!init) {
+      message.warning('请先填写凭证');
+      return;
     }
-    setIframeSrc(buildHashRouteUrl('/copilot', params));
+    pendingInitRef.current = init;
+    setPreviewKey((k) => k + 1);
+    setIframeSrc(buildHashRouteUrl('/copilot'));
   };
 
   const generateEmbedCode = () => {
@@ -47,6 +109,12 @@ export default function CopilotPreviewPage() {
       message.warning('请先填写凭证');
       return;
     }
+    const init = buildInitParamsFromForm(values);
+    if (!init) {
+      message.warning('请先填写凭证');
+      return;
+    }
+    const initPayload = JSON.stringify(buildCopilotInitMessage(init));
     const code = `<!-- shellder-agent Copilot 嵌入代码 -->
 <iframe
   id="shellder-copilot"
@@ -55,18 +123,21 @@ export default function CopilotPreviewPage() {
   allow="clipboard-write"
 ></iframe>
 <script>
-  // 通过 postMessage 传入凭证（推荐，避免 URL 暴露密钥）
+  // 通过 postMessage 传入凭证与目录范围（推荐，避免 URL 暴露密钥）
   const copilotFrame = document.getElementById('shellder-copilot');
+  const copilotInit = ${initPayload};
+  const copilotOrigin = '${window.location.origin}';
+  function sendCopilotInit() {
+    copilotFrame.contentWindow.postMessage(copilotInit, copilotOrigin);
+  }
+  window.addEventListener('message', (event) => {
+    if (event.origin !== copilotOrigin) return;
+    if (event.data && event.data.type === 'copilot:ready') sendCopilotInit();
+  });
   copilotFrame.addEventListener('load', () => {
-    copilotFrame.contentWindow.postMessage({
-      type: 'copilot:init',
-      clientId: '${values.clientId}',
-      clientSecret: '${values.clientSecret}',
-      ${values.tenantId ? `tenantId: '${values.tenantId}',` : ''}
-      ${values.externalTenantId ? `externalTenantId: '${values.externalTenantId}',` : ''}
-      ${values.externalUserId ? `externalUserId: '${values.externalUserId}',` : ''}
-      ${(values.scopeList as string[] | undefined)?.length ? `scopeList: ${JSON.stringify(values.scopeList)},` : ''}
-    }, '${window.location.origin}');
+    sendCopilotInit();
+    setTimeout(sendCopilotInit, 80);
+    setTimeout(sendCopilotInit, 300);
   });
 </script>`;
 
@@ -85,7 +156,7 @@ export default function CopilotPreviewPage() {
       <div className="flex gap-6">
         {/* 左侧：配置表单 */}
         <Card className="w-[400px]" title="嵌入参数">
-          <Form form={form} layout="vertical">
+          <Form form={form} layout="vertical" initialValues={{ wikiPrefixes: [] }}>
             <Form.Item name="clientId" label="Client ID" rules={[{ required: true }]}>
               <Input placeholder="OpenAPI 应用的 Client ID" />
             </Form.Item>
@@ -118,6 +189,16 @@ export default function CopilotPreviewPage() {
                 tokenSeparators={[',']}
               />
             </Form.Item>
+            <WikiPrefixFormItem
+              tenantId={selectedTenantId}
+              fieldName="wikiPrefixes"
+              label="目录范围"
+              treeData={wikiPrefixTreeData}
+              treeLoading={wikiPrefixTreeLoading}
+            />
+            <Paragraph type="secondary" className="!mb-4 !-mt-2 text-xs">
+              仅问答型能力生效；须先选择租户。选项受知识库「wiki 路径前缀」约束，换票时服务端会校验。
+            </Paragraph>
             <Space>
               <Button type="primary" icon={<PlayCircleOutlined />} onClick={handlePreview}>
                 预览
@@ -137,9 +218,16 @@ export default function CopilotPreviewPage() {
         >
           {iframeSrc ? (
             <iframe
+              key={previewKey}
               src={iframeSrc}
               className="h-full w-full border-none"
               title="Copilot Preview"
+              onLoad={() => {
+                const init =
+                  pendingInitRef.current ??
+                  buildInitParamsFromForm(form.getFieldsValue());
+                if (init) deliverInitToPreviewFrame(init, true);
+              }}
             />
           ) : (
             <div className="flex h-full items-center justify-center text-gray-400">

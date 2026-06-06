@@ -69,10 +69,12 @@ export interface SseErrorEvent extends SseEvent {
 
 // ── Runtime 上下文 ────────────────────────────────────────
 
-/** 嵌入主体：问数行级范围（Copilot Session 快照） */
+/** 嵌入主体：问数行级范围 + 问答型 wiki 目录范围（Copilot Session 快照） */
 export interface PrincipalContext {
   externalUserId?: string;
   scopeList?: string[];
+  /** 问答型 wiki 子目录范围（层内相对路径） */
+  wikiPrefixes?: string[];
 }
 
 export interface RuntimeContext {

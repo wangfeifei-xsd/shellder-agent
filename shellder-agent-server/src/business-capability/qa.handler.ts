@@ -56,6 +56,9 @@ export class QaCapabilityHandler implements CapabilityHandler {
         {
           tenantId: ctx.tenantId,
           userMessage: ctx.userMessage,
+          recallBody: ctx.principalContext?.wikiPrefixes?.length
+            ? { wiki_prefixes: ctx.principalContext.wikiPrefixes }
+            : undefined,
         },
         async (delta) => {
           textChunks.push(delta);

@@ -43,7 +43,7 @@ const QA_DIALOGUE_SYSTEM_KEY = 'qa.dialogue.system';
 type TestTab = 'recall' | 'qa';
 
 const SCAN_DEFAULTS = {
-  wiki_prefix: '',
+  wiki_prefixes: [] as string[],
   max_files: 80,
   bm25_top_n: 10,
   vector_top_n: 10,
@@ -284,7 +284,9 @@ export default function KnowledgeRecallTestPage() {
     try {
       const data = await dialogueRecall(activeTenantId, {
         query: v.query as string,
-        wiki_prefix: v.wiki_prefix || undefined,
+        wiki_prefixes: (v.wiki_prefixes as string[] | undefined)?.length
+          ? (v.wiki_prefixes as string[])
+          : undefined,
         max_files: v.max_files,
         bm25_top_n: v.bm25_top_n,
         vector_top_n: v.vector_top_n,
@@ -314,7 +316,9 @@ export default function KnowledgeRecallTestPage() {
     try {
       const data = await dialogueQaPreview(activeTenantId, {
         query: v.query as string,
-        wiki_prefix: v.wiki_prefix || undefined,
+        wiki_prefixes: (v.wiki_prefixes as string[] | undefined)?.length
+          ? (v.wiki_prefixes as string[])
+          : undefined,
         top_k_chunks: v.top_k_chunks,
         bm25_top_n: v.bm25_top_n,
         vector_top_n: v.vector_top_n,

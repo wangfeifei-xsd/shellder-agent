@@ -12,7 +12,9 @@ import { CopilotTokenExchangeDto } from './dto/copilot-config.dto';
 import {
   buildPrincipalContextSnapshot,
   normalizeScopeList,
+  normalizeWikiPrefixes,
 } from './principal-context.types';
+import { KnowledgeTenantScopeService } from '../knowledge/knowledge-tenant-scope.service';
 
 export const COPILOT_JWT_ISSUER = 'shellder-copilot';
 
@@ -24,6 +26,8 @@ export interface CopilotJwtPayload {
   externalUserId?: string;
   /** 数据可见范围；空或未传表示不按范围过滤 */
   scopeList?: string[];
+  /** 问答型 wiki 子目录范围（层内相对路径）；空或未传表示租户 wiki 全目录 */
+  wikiPrefixes?: string[];
   /** 由 sign({ issuer }) 写入，勿在 payload 中重复设置 iss */
   iss?: string;
   iat?: number;
@@ -37,6 +41,7 @@ export class CopilotAuthService {
     private readonly jwtService: JwtService,
     private readonly appService: OpenApiAppService,
     private readonly openApiAuthService: OpenApiAuthService,
+    private readonly tenantScope: KnowledgeTenantScopeService,
   ) {}
 
   /**
@@ -85,6 +90,13 @@ export class CopilotAuthService {
     const tokenTtl = copilotConfig.tokenTtlSeconds ?? 3600;
 
     const scopeList = normalizeScopeList(dto.scopeList);
+    const wikiPrefixesRaw = normalizeWikiPrefixes(dto.wikiPrefixes);
+    const tenantWikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
+    const wikiPrefixes = this.tenantScope.assertRelativeWikiPrefixesInTenantScope(
+      tenantWikiPrefixes,
+      wikiPrefixesRaw,
+    );
+
     const payload: Omit<CopilotJwtPayload, 'iss' | 'iat' | 'exp'> = {
       sub: `copilot:${app.id}:${dto.externalUserId ?? 'anonymous'}`,
       appId: app.id,
@@ -92,6 +104,7 @@ export class CopilotAuthService {
       tenantId,
       externalUserId: dto.externalUserId,
       ...(scopeList.length > 0 ? { scopeList } : {}),
+      ...(wikiPrefixes.length > 0 ? { wikiPrefixes } : {}),
     };
 
     const accessToken = this.jwtService.sign(payload, {
@@ -123,6 +136,7 @@ export class CopilotAuthService {
     adminUserId: string;
     externalUserId?: string;
     scopeList?: string[];
+    wikiPrefixes?: string[];
   }) {
     const copilotConfig = await this.prisma.copilotConfig.findUnique({
       where: { id: params.copilotConfigId },
@@ -164,6 +178,13 @@ export class CopilotAuthService {
       params.externalUserId ?? `demo-${params.adminUserId}`;
 
     const scopeList = normalizeScopeList(params.scopeList);
+    const wikiPrefixesRaw = normalizeWikiPrefixes(params.wikiPrefixes);
+    const tenantWikiPrefixes = await this.tenantScope.resolveWikiPrefixes(params.tenantId);
+    const wikiPrefixes = this.tenantScope.assertRelativeWikiPrefixesInTenantScope(
+      tenantWikiPrefixes,
+      wikiPrefixesRaw,
+    );
+
     const payload: Omit<CopilotJwtPayload, 'iss' | 'iat' | 'exp'> = {
       sub: `copilot:${app.id}:demo-${params.adminUserId}`,
       appId: app.id,
@@ -171,6 +192,7 @@ export class CopilotAuthService {
       tenantId: params.tenantId,
       externalUserId,
       ...(scopeList.length > 0 ? { scopeList } : {}),
+      ...(wikiPrefixes.length > 0 ? { wikiPrefixes } : {}),
     };
 
     const accessToken = this.jwtService.sign(payload, {
@@ -195,11 +217,12 @@ export class CopilotAuthService {
 
   /** 从 JWT 载荷构建会话 principalContext 快照 */
   snapshotPrincipalContext(
-    payload: Pick<CopilotJwtPayload, 'externalUserId' | 'scopeList'>,
+    payload: Pick<CopilotJwtPayload, 'externalUserId' | 'scopeList' | 'wikiPrefixes'>,
   ) {
     return buildPrincipalContextSnapshot({
       externalUserId: payload.externalUserId,
       scopeList: payload.scopeList,
+      wikiPrefixes: payload.wikiPrefixes,
     });
   }
 

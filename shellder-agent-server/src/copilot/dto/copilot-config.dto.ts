@@ -115,4 +115,11 @@ export class CopilotTokenExchangeDto {
   @IsString({ each: true })
   @ArrayMaxSize(50)
   scopeList?: string[];
+
+  /** 问答型 wiki 子目录范围（层内相对路径，可多选）；空或未传 → 租户 wiki 全目录 */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(50)
+  wikiPrefixes?: string[];
 }

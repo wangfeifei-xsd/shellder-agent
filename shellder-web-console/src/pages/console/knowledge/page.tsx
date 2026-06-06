@@ -110,6 +110,18 @@ export default function KnowledgePage() {
 
   const defaultWikiPrefix = activeTenantId ? `tenants/${activeTenantId}/` : '';
 
+  const activeKbBindings = useMemo(
+    () => data.filter((kb) => kb.status === 'active'),
+    [data],
+  );
+
+  const activeWikiPrefixSummary = useMemo(() => {
+    if (activeKbBindings.length === 0) return null;
+    return activeKbBindings
+      .map((kb) => kb.wikiPrefix?.trim() || `tenants/${kb.tenantId}/`)
+      .join('、');
+  }, [activeKbBindings]);
+
   const load = useCallback(async () => {
     if (!activeTenantId) { setData([]); return; }
     setLoading(true);
@@ -419,6 +431,18 @@ export default function KnowledgePage() {
             description={
               <>
                 上方配置全平台 wiki 服务地址；本区维护各租户与 wiki 的 wiki 路径绑定。文档存储、分块与召回由 wiki 知识库服务 提供。
+                {activeKbBindings.length > 0 ? (
+                  <>
+                    {' '}
+                    当前租户共有 <strong>{activeKbBindings.length}</strong> 条
+                    <Tag color="success" className="!mx-1">正常</Tag>
+                    绑定，运行时<strong>全部生效</strong>（路径前缀：
+                    <Typography.Text code>{activeWikiPrefixSummary}</Typography.Text>）。
+                    停用/删除的绑定不参与隔离与召回。
+                  </>
+                ) : (
+                  <> 尚无「正常」状态的绑定，运行时将回落默认前缀 tenants/&#123;租户ID&#125;/。</>
+                )}
                 请使用：
                 {WIKI_GUIDE_LINKS.map((item, i) => (
                   <span key={item.href}>
@@ -470,7 +494,7 @@ export default function KnowledgePage() {
           <Form.Item
             label="wiki 路径前缀"
             name="wikiPrefix"
-            extra="留空则运行时使用 tenants/{租户ID}/；需与 wiki DATA_ROOT 下目录一致。"
+            extra="留空则本绑定使用 tenants/{租户ID}/。同租户下所有「正常」状态的绑定会同时生效，各自 wiki 路径前缀需互不重叠。"
           >
             <Input placeholder={defaultWikiPrefix || 'tenants/<tenantId>/'} />
           </Form.Item>

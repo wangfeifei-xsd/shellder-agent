@@ -28,6 +28,7 @@ export class CapabilityDemoController {
       adminUserId: user.id,
       externalUserId: dto.externalUserId,
       scopeList: dto.scopeList,
+      wikiPrefixes: dto.wikiPrefixes,
     });
   }
 

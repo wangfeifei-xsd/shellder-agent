@@ -27,4 +27,11 @@ export class CapabilityDemoCopilotTokenDto {
   @IsString({ each: true })
   @ArrayMaxSize(50)
   scopeList?: string[];
+
+  /** 问答型 wiki 子目录范围（层内相对路径）；空或未传表示租户 wiki 全目录 */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayMaxSize(50)
+  wikiPrefixes?: string[];
 }

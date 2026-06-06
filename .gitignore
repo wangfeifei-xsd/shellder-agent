@@ -3,6 +3,7 @@ node_modules/
 
 # Build
 dist/
+shellder-web-console/shellder/
 .next/
 out/
 build/

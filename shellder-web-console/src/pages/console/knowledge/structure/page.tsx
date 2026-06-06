@@ -10,6 +10,7 @@ import {
   KnowledgeLayer,
   createFolder,
   deleteFolder,
+  DATA_TREE_DEFAULT_OPTS,
   getDataTree,
   isKnowledgeProxyError,
   knowledgeProxyErrorMessage,
@@ -67,7 +68,7 @@ export default function KnowledgeStructurePage() {
     setLoading(true);
     setProxyError(undefined);
     try {
-      setTreeRoot(await getDataTree(activeTenantId, tab));
+      setTreeRoot(await getDataTree(activeTenantId, tab, DATA_TREE_DEFAULT_OPTS));
       setSelectedKey(undefined);
     } catch (err) {
       if (isKnowledgeProxyError(err)) setProxyError(err);
@@ -84,6 +85,24 @@ export default function KnowledgeStructurePage() {
 
   const treeData = useMemo(() => (treeRoot ? [toTreeData(treeRoot)] : []), [treeRoot]);
 
+  /** 多知识库绑定时 filterDataTreeToTenantScope 会合成虚拟根「租户知识库」 */
+  const isMultiKbVirtualRoot = useMemo(
+    () => treeRoot?.path === '' && treeRoot?.title === '租户知识库',
+    [treeRoot],
+  );
+
+  const isVirtualRootSelected =
+    isMultiKbVirtualRoot &&
+    (selectedKey === ROOT_TREE_KEY || selectedPath === '' || selectedPath == null);
+
+  const canAddSubfolder = selectedKey != null && !isVirtualRootSelected;
+
+  const createParentPath = useMemo(() => {
+    if (selectedKey == null) return undefined;
+    if (isVirtualRootSelected) return undefined;
+    return selectedPath ?? '';
+  }, [isVirtualRootSelected, selectedKey, selectedPath]);
+
   const [addOpen, setAddOpen] = useState(false);
   const [addName, setAddName] = useState('');
   const [addSubmitting, setAddSubmitting] = useState(false);
@@ -92,8 +111,22 @@ export default function KnowledgeStructurePage() {
   const [renameTo, setRenameTo] = useState('');
   const [renameSubmitting, setRenameSubmitting] = useState(false);
 
+  const openAdd = useCallback(() => {
+    if (isVirtualRootSelected) {
+      message.warning(
+        '「租户知识库」根下为知识库绑定目录，不可在此新建；请先选择某一知识库目录，再在其下创建子目录',
+      );
+      return;
+    }
+    if (selectedKey == null) {
+      message.warning('请先选择要在其下创建子目录的父目录');
+      return;
+    }
+    setAddOpen(true);
+  }, [isVirtualRootSelected, message, selectedKey]);
+
   const submitAdd = useCallback(async () => {
-    if (!activeTenantId) return;
+    if (!activeTenantId || createParentPath === undefined) return;
     const name = addName.trim();
     if (!name) {
       message.warning('请输入目录名');
@@ -101,8 +134,9 @@ export default function KnowledgeStructurePage() {
     }
     setAddSubmitting(true);
     try {
-      await createFolder(activeTenantId, tab, name);
-      message.success(`已创建：${tab}/${name}/`);
+      await createFolder(activeTenantId, tab, name, createParentPath);
+      const parentLabel = createParentPath ? `${createParentPath}/` : `${tab}/（知识库根）/`;
+      message.success(`已创建：${parentLabel}${name}/`);
       setAddOpen(false);
       setAddName('');
       void loadTree();
@@ -111,7 +145,7 @@ export default function KnowledgeStructurePage() {
     } finally {
       setAddSubmitting(false);
     }
-  }, [activeTenantId, addName, loadTree, message, tab]);
+  }, [activeTenantId, addName, createParentPath, loadTree, message, tab]);
 
   const submitRename = useCallback(async () => {
     if (!activeTenantId || selectedPath == null || selectedPath === '') {
@@ -175,7 +209,7 @@ export default function KnowledgeStructurePage() {
           type="warning"
           showIcon
           message="请先在顶栏选择「当前操作租户」"
-          description="存储结构按租户隔离，展示 raw / wiki / schema / media 四层目录树。"
+          description="按当前租户在知识库管理中配置的 wiki 路径前缀隔离；仅展示本租户绑定范围内的目录树（raw / wiki / schema / media）。"
         />
       </>
     );
@@ -195,9 +229,10 @@ export default function KnowledgeStructurePage() {
         description={
           <Paragraph style={{ marginBottom: 0 }}>
             与服务器 <Text code>data/</Text> 下 <Text code>raw</Text>、<Text code>wiki</Text>、
-            <Text code>schema</Text>、<Text code>media</Text> 目录对应。<strong>新增</strong>仅允许在
-            <strong>各层根下再挂一层</strong>子目录（例如 <Text code>raw/reef</Text>、
-            <Text code>wiki/reef</Text>、<Text code>media/albums</Text>）。<strong>重命名</strong>与
+            <Text code>schema</Text>、<Text code>media</Text> 目录对应。<strong>新增</strong>须先选中
+            <strong>父目录</strong>，再在其下创建单层子目录。绑定多个知识库时，树顶「租户知识库」为虚拟根
+            （其下各节点为知识库管理中绑定的目录），<strong>不可在虚拟根下新建</strong>，但可在各绑定目录下新建。
+            <strong>重命名</strong>与
             <strong>删除</strong>仅当该目录<strong>为空</strong>时允许。
             <Text code>media</Text> 层内文件与 manifest 请用「媒体库」维护；本页勿删{' '}
             <Text code>objects/</Text> 或 <Text code>manifest.json</Text>。
@@ -217,7 +252,7 @@ export default function KnowledgeStructurePage() {
                   <Button onClick={() => void loadTree()} loading={loading}>
                     刷新
                   </Button>
-                  <Button type="primary" onClick={() => setAddOpen(true)}>
+                  <Button type="primary" onClick={openAdd} disabled={!canAddSubfolder}>
                     新增子目录
                   </Button>
                   <Button onClick={openRename} disabled={!selectedPath || selectedPath === ''}>
@@ -267,7 +302,11 @@ export default function KnowledgeStructurePage() {
       </Card>
 
       <Modal
-        title={`在 ${tab} 层根下新增子目录`}
+        title={
+          createParentPath
+            ? `在 ${createParentPath.replace(/\/$/, '')}/ 下新增子目录`
+            : `在知识库根目录下新增子目录`
+        }
         open={addOpen}
         onCancel={() => setAddOpen(false)}
         okText="创建"

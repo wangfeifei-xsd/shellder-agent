@@ -17,7 +17,6 @@ import {
   Space,
   Table,
   Tag,
-  TreeSelect,
   Typography,
   Upload,
 } from 'antd';
@@ -44,6 +43,7 @@ import {
   lineCharRange,
   splitTextByMaxChars,
 } from '@/lib/knowledge-layers-utils';
+import { WikiBrowseTreeSelect } from '@/components/console/knowledge/WikiPrefixFormItem';
 import {
   DialogueRecallHit,
   FileContentResponse,
@@ -51,6 +51,7 @@ import {
   LayerEntry,
   TEXT_LAYERS,
   WikiEmbedResponse,
+  DATA_TREE_DEFAULT_OPTS,
   deleteLayerFile,
   dialogueRecall,
   getDataTree,
@@ -158,7 +159,7 @@ export default function KnowledgeLayersPage() {
     }
     setFolderTreeLoading(true);
     try {
-      setFolderTree(await getDataTree(activeTenantId, layer));
+      setFolderTree(await getDataTree(activeTenantId, layer, DATA_TREE_DEFAULT_OPTS));
     } catch (err) {
       if (!isKnowledgeProxyError(err)) {
         message.error(knowledgeProxyErrorMessage(err));
@@ -314,11 +315,11 @@ export default function KnowledgeLayersPage() {
     }
     setWikiLocateLoading(true);
     try {
-      const wiki_prefix =
-        wikiLocateOnlyCurrentDir && browseDirKey ? browseDirKey : undefined;
+      const wiki_prefixes =
+        wikiLocateOnlyCurrentDir && browseDirKey ? [browseDirKey] : undefined;
       const data = await dialogueRecall(activeTenantId, {
         query: q,
-        wiki_prefix: wiki_prefix || undefined,
+        wiki_prefixes,
         max_files: 120,
         bm25_top_n: 20,
         vector_top_n: 20,
@@ -734,13 +735,9 @@ export default function KnowledgeLayersPage() {
                   ]}
                 />
                 {layer !== 'schema' ? (
-                  <TreeSelect
+                  <WikiBrowseTreeSelect
                     size="middle"
                     style={{ width: 220, minWidth: 140, flexShrink: 1, maxWidth: '100%' }}
-                    placeholder="目录（查询/上传）"
-                    allowClear
-                    showSearch
-                    treeDefaultExpandAll
                     loading={folderTreeLoading}
                     disabled={uploading}
                     value={browseDirKey}
@@ -750,7 +747,6 @@ export default function KnowledgeLayersPage() {
                       closeFileEditor();
                     }}
                     treeData={uploadTreeSelectData}
-                    treeNodeFilterProp="title"
                   />
                 ) : null}
               </div>

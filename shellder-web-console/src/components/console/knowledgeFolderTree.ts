@@ -4,6 +4,8 @@ export interface FolderTreeSelectNode {
   value: string;
   title: string;
   children?: FolderTreeSelectNode[];
+  disableCheckbox?: boolean;
+  selectable?: boolean;
 }
 
 /** 媒体层根：走默认 objects/aa/bb/… 落盘 */
@@ -35,6 +37,17 @@ export function mapDataFolderToTreeSelect(node: DataFolderTreeNode): FolderTreeS
   };
 }
 
+/** wiki 目录范围多选：与 getDataTree 租户裁剪树一致，根节点仅作分组不可选 */
+export function mapWikiPrefixTreeForMultiSelect(node: DataFolderTreeNode): FolderTreeSelectNode {
+  const mapped = mapDataFolderToTreeSelect(node);
+  if (node.path !== '') return mapped;
+  return {
+    ...mapped,
+    disableCheckbox: true,
+    selectable: false,
+  };
+}
+
 export function mapMediaFolderToTreeSelect(node: DataFolderTreeNode): FolderTreeSelectNode {
   const isRoot = node.path === '';
   const value = isRoot ? MEDIA_ROOT_FOLDER_VALUE : node.path.replace(/\/$/, '');
@@ -43,7 +56,7 @@ export function mapMediaFolderToTreeSelect(node: DataFolderTreeNode): FolderTree
     .map(mapMediaFolderToTreeSelect);
   return {
     value,
-    title: isRoot ? `${node.title}（默认 objects/aa/bb/…）` : node.path.replace(/\/$/, ''),
+    title: isRoot ? node.title || '(根)' : node.path.replace(/\/$/, ''),
     children: visibleChildren.length ? visibleChildren : undefined,
   };
 }

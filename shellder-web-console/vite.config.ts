@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    base: '/shellder/', // 静态资源公共路径前缀（与 agent-plant-ui /agentplatform/ 一致）
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
@@ -28,7 +29,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
-      outDir: 'dist',
+      outDir: 'shellder',
       sourcemap: false,
     },
   };

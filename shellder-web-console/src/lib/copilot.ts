@@ -191,6 +191,8 @@ export async function copilotExchangeToken(params: {
   externalUserId?: string;
   /** 数据可见范围；空或未传表示不按范围过滤 */
   scopeList?: string[];
+  /** 问答型 wiki 子目录范围（层内相对路径）；空或未传表示租户 wiki 全目录 */
+  wikiPrefixes?: string[];
 }): Promise<CopilotTokenResponse> {
   const res = await fetch(`${COPILOT_BASE}/auth/token`, {
     method: 'POST',

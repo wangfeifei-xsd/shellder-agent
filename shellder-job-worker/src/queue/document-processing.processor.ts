@@ -59,13 +59,13 @@ export class DocumentProcessingProcessor extends WorkerHost {
     });
 
     try {
-      const wikiPrefix = await this.tenantScope.resolveWikiPrefix(tenantId);
-      const scopedInput = this.tenantScope.scopeLayerPath(wikiPrefix, inputPath);
+      const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
+      const scopedInput = this.tenantScope.scopeLayerPath(wikiPrefixes, inputPath);
       const results: Record<string, unknown> = {};
 
       if (operation === 'compile_and_embed') {
         const out = outputPath ?? inputPath;
-        const scopedOutput = this.tenantScope.scopeLayerPath(wikiPrefix, out);
+        const scopedOutput = this.tenantScope.scopeLayerPath(wikiPrefixes, out);
         results.compile = await this.wiki.compile([scopedInput], scopedOutput);
         results.embed = await this.wiki.embedWiki(scopedOutput);
       } else {
