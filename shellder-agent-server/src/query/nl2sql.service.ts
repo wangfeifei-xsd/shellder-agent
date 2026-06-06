@@ -8,6 +8,7 @@ import { PromptResolverService } from '../prompt/prompt-resolver.service';
 import { SqlToolService } from '../tool/sql-tool.service';
 import { LegacySqlToolConfig, SqlTemplate, SqlToolConfig } from '../tool/tool.types';
 import { buildNl2SqlUserVariables } from './nl2sql.variables';
+import { assertNl2SqlSemantics } from './nl2sql.validation';
 
 export interface Nl2SqlGenerateResult {
   sql: string;
@@ -105,6 +106,12 @@ export class Nl2SqlService {
       try {
         this.sqlTool.assertReadonlySql(parsed.sql, input.sqlConfig);
         this.assertTablesInEr(parsed, clipped, input.sqlConfig);
+        assertNl2SqlSemantics({
+          parsed,
+          er: clipped,
+          scopeContext: input.scopeContext,
+          userMessage: input.userMessage,
+        });
         return {
           sql: parsed.sql,
           explanation: parsed.explanation,

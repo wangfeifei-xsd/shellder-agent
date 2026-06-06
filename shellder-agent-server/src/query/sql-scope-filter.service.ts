@@ -60,7 +60,8 @@ export class SqlScopeFilterService {
 
       this.assertNoScopeConflict(sql, active, referencedTables);
 
-      const tableRef = this.quoteIdent(tableName);
+      // SQL 使用表别名时须用别名引用列（MySQL 不接受 `employee`.col 当 FROM employee e）
+      const tableRef = this.resolveTableRef(sql, tableName);
 
       if (active.scopeColumn && active.scopeValues?.length) {
         const placeholders: string[] = [];
@@ -181,6 +182,15 @@ export class SqlScopeFilterService {
       return new RegExp(`\\b${col}\\b`, 'i').test(afterWhereSql);
     }
     return false;
+  }
+
+  /** 优先返回 SQL 中该表的别名，无别名时退回物理表名。 */
+  private resolveTableRef(sql: string, tableName: string): string {
+    const aliases = this.extractTableAliases(sql, tableName);
+    if (aliases.length > 0) {
+      return this.quoteIdent(aliases[0]);
+    }
+    return this.quoteIdent(tableName);
   }
 
   private extractTableAliases(sql: string, tableName: string): string[] {
