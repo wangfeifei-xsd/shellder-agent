@@ -19,5 +19,5 @@ RUN npm run build
 FROM nginx:1.27-alpine AS runner
 COPY shellder-web-console/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/shellder-web-console/shellder /usr/share/nginx/html/shellder
-EXPOSE 80
+EXPOSE 3000
 CMD ["nginx", "-g", "daemon off;"]

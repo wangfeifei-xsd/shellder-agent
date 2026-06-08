@@ -1,9 +1,7 @@
 import { redirectToLoginPage } from './navigation';
 
-/** 开发环境走 Vite 代理（/api → 后端）；生产可通过 VITE_API_BASE_URL 指定绝对地址。 */
-export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ??
-  (import.meta.env.DEV ? '' : 'http://localhost:3001');
+/** 开发/生产均优先走同源 /api（Vite 或 nginx 反代）；仅显式配置 VITE_API_BASE_URL 时用绝对地址 */
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
 
 export function resolveApiOrigin(): string {
   if (API_BASE_URL) return API_BASE_URL.replace(/\/$/, '');
