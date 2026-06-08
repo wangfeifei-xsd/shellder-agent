@@ -25,16 +25,17 @@ Monorepo 包含 Web 管理后台（`shellder-web-console`）、主后端（`shel
 
 ## 本地启动流程
 
-### 方式一：Docker 一键（三端 + MySQL + Redis）
+### 方式一：Docker 部署（外置 MySQL / Redis）
 
-适合：不想本地装 Node 依赖、快速验收环境。
+**默认行为**：`docker compose up` 只启动 `shellder-agent-server`、`shellder-job-worker`、`shellder-web-console`，**不会**创建 mysql/redis 容器。连接地址全部来自 `.env`。
 
 ```bash
-cp .env.example .env          # 首次；按需改密码
+cp .env.example .env          # 填写 DATABASE_URL、REDIS_HOST 等外置地址
 docker compose up --build -d
+# 或 Jenkins：bash scripts/deploy.sh
 ```
 
-`shellder-agent-server` 启动顺序：**Prisma 迁移** → **`project-sql/00-all-seed.sql`（幂等）** → 应用进程。默认写入默认租户、管理员（`admin / admin123`）、Prompt 等种子数据。不需要 seed 时可在 `.env` 设置 `SEED_ON_STARTUP=false`。
+`shellder-agent-server` 启动顺序：**Prisma 迁移** → **可选 seed**（`SEED_ON_STARTUP=true` 时）→ 应用进程。生产环境请保持 `SEED_ON_STARTUP=false`。
 
 验证：
 
@@ -46,27 +47,30 @@ open http://localhost:3000/login
 
 停止：`docker compose down`
 
----
-
-### 内网 Jenkins（外置 MySQL / Redis）
-
-目标机需有 `/data/shellder-agent/.env`（从 `.env.example` 复制并填写外置库段）。**生产环境请设置 `SEED_ON_STARTUP=false`**，避免每次发布重跑 seed。
-
-Jenkins 远程脚本建议（替换原先裸 `docker-compose up`）：
+Jenkins 远程脚本：
 
 ```bash
 scp -r ./ 10.30.20.222:/data/shellder-agent
-ssh 10.30.20.222 'cd /data/shellder-agent && bash scripts/deploy-intranet.sh'
+ssh 10.30.20.222 'cd /data/shellder-agent && bash scripts/deploy.sh'
 ```
-
-`deploy-intranet.sh` 会使用 `docker-compose.intranet.yml`（不启动内置 mysql/redis），失败时自动打印 `shellder-agent-server` 容器日志。
 
 故障排查：
 
 ```bash
-docker logs --tail 200 shellder-agent-server   # 看 migrate / seed 是否 exit 1
-curl http://localhost:3001/health/live        # 进程是否起来
-curl http://localhost:3001/health             # 含数据库连通性
+docker logs --tail 200 shellder-agent-server
+curl http://localhost:3001/health/live
+curl http://localhost:3001/health
+```
+
+---
+
+### 方式一（可选）：Compose 内置 mysql / redis（仅本地验收）
+
+需要本机没有占用 3306/6379，且 `.env` 中 `DATABASE_URL` 指向 `@mysql:3306`、`REDIS_HOST=redis`：
+
+```bash
+docker compose --profile bundled-infra \
+  -f docker-compose.yml -f docker-compose.bundled-infra.yml up --build -d
 ```
 
 ---
@@ -79,7 +83,9 @@ curl http://localhost:3001/health             # 含数据库连通性
 
 ```bash
 cp .env.example .env
-docker compose up -d mysql redis    # 等 MySQL healthy（约 30s）
+# DATABASE_URL 指向 localhost:3306（见 .env.example 底部 bundled-infra 注释）
+docker compose --profile bundled-infra \
+  -f docker-compose.yml -f docker-compose.bundled-infra.yml up -d mysql redis
 
 npm install
 npm run prisma:generate

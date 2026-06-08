@@ -1,67 +1,28 @@
+# 默认只启动应用三端，MySQL / Redis 通过 .env 中的地址连接（不自带数据库容器）。
+# 本地如需 Compose 内置 mysql/redis：见 docker-compose.bundled-infra.yml
 name: shellder-agent
 
 services:
-  mysql:
-    image: mysql:8.0
-    container_name: shellder-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme_root}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-agent_platform}
-      MYSQL_USER: ${MYSQL_USER:-agent}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme_agent}
-    ports:
-      - '3306:3306'
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ['CMD-SHELL', 'mysqladmin ping -h localhost -uroot -p"$$MYSQL_ROOT_PASSWORD" || exit 1']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  redis:
-    image: redis:7-alpine
-    container_name: shellder-redis
-    restart: unless-stopped
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   shellder-agent-server:
     build:
       context: .
       dockerfile: shellder-agent-server/Dockerfile
     container_name: shellder-agent-server
     restart: unless-stopped
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    env_file: .env
     environment:
       NODE_ENV: production
       PORT: 3001
-      # 优先使用 .env 中的 DATABASE_URL（内网外置库）；未设置时回退到 Compose 内置 mysql
-      DATABASE_URL: ${DATABASE_URL:-mysql://${MYSQL_USER:-agent}:${MYSQL_PASSWORD:-changeme_agent}@mysql:3306/${MYSQL_DATABASE:-agent_platform}}
-      REDIS_HOST: ${REDIS_HOST:-redis}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      REDIS_HOST: ${REDIS_HOST:?set REDIS_HOST in .env}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
       CONNECTOR_SECRET_KEY: ${CONNECTOR_SECRET_KEY:-}
-      # 启动时幂等执行 project-sql/00-all-seed.sql；设为 false 可关闭
-      SEED_ON_STARTUP: ${SEED_ON_STARTUP:-true}
+      SEED_ON_STARTUP: ${SEED_ON_STARTUP:-false}
     ports:
       - '3001:3001'
     healthcheck:
-      # /health/live 不查库；完整就绪请 curl /health
       test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/health/live']
       interval: 15s
       timeout: 5s
@@ -74,16 +35,12 @@ services:
       dockerfile: shellder-job-worker/Dockerfile
     container_name: shellder-job-worker
     restart: unless-stopped
-    depends_on:
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    env_file: .env
     environment:
       NODE_ENV: production
       PORT: 3002
-      DATABASE_URL: ${DATABASE_URL:-mysql://${MYSQL_USER:-agent}:${MYSQL_PASSWORD:-changeme_agent}@mysql:3306/${MYSQL_DATABASE:-agent_platform}}
-      REDIS_HOST: ${REDIS_HOST:-redis}
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      REDIS_HOST: ${REDIS_HOST:?set REDIS_HOST in .env}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       CONNECTOR_SECRET_KEY: ${CONNECTOR_SECRET_KEY:-}
@@ -109,7 +66,3 @@ services:
         condition: service_healthy
     ports:
       - '${WEB_CONSOLE_PORT:-3000}:80'
-
-volumes:
-  mysql_data:
-  redis_data:

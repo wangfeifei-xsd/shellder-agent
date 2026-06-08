@@ -1,0 +1,59 @@
+# 可选：本地开发时在 Compose 内启动 mysql / redis（profile bundled-infra）。
+# 用法：docker compose --profile bundled-infra -f docker-compose.yml -f docker-compose.bundled-infra.yml up -d
+name: shellder-agent
+
+services:
+  mysql:
+    profiles: ['bundled-infra']
+    image: mysql:8.0
+    container_name: shellder-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-changeme_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-agent_platform}
+      MYSQL_USER: ${MYSQL_USER:-agent}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme_agent}
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h localhost -uroot -p"$$MYSQL_ROOT_PASSWORD" || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  redis:
+    profiles: ['bundled-infra']
+    image: redis:7-alpine
+    container_name: shellder-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 仅在使用 bundled-infra 时等待内置库就绪；外置库部署时不加载本文件即可
+  shellder-agent-server:
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  shellder-job-worker:
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
+  redis_data:

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# 内网 Jenkins / 手动部署：外置 MySQL/Redis，不启动 Compose 内置 mysql/redis。
-# 在目标机 /data/shellder-agent 执行；需事先 cp .env.example .env 并按内网段填写。
+# Jenkins / 生产部署：只启动应用容器，MySQL/Redis 由 .env 指定外置地址。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,13 +11,13 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 if [[ ! -f .env ]]; then
-  echo "ERROR: missing .env — copy .env.example and configure intranet DATABASE_URL / REDIS_*" >&2
+  echo "ERROR: missing .env — copy .env.example and set DATABASE_URL / REDIS_*" >&2
   exit 1
 fi
 
-echo "[deploy] compose: ${COMPOSE[*]} -f docker-compose.yml -f docker-compose.intranet.yml"
-"${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.intranet.yml build
-"${COMPOSE[@]}" -f docker-compose.yml -f docker-compose.intranet.yml up -d --force-recreate
+echo "[deploy] ${COMPOSE[*]} up (external MySQL/Redis via .env)"
+"${COMPOSE[@]}" build
+"${COMPOSE[@]}" up -d --force-recreate
 
 echo "[deploy] waiting for shellder-agent-server health (max 300s)..."
 deadline=$((SECONDS + 300))
