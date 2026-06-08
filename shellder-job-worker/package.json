@@ -4,7 +4,8 @@
   "private": true,
   "description": "shellder-agent 异步 Worker — BullMQ",
   "scripts": {
-    "build": "nest build",
+    "prisma:generate": "prisma generate --schema=../shellder-agent-server/prisma/schema.prisma",
+    "build": "npm run prisma:generate && nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
@@ -24,6 +25,7 @@
     "uuid": "^11.0.3"
   },
   "devDependencies": {
+    "prisma": "^6.19.3",
     "@nestjs/cli": "^10.4.9",
     "@nestjs/schematics": "^10.2.3",
     "@types/express": "^5.0.0",
