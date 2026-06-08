@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Jenkins / 生产部署：只启动应用容器，MySQL/Redis 由 .env.example 指定外置地址。
+# Jenkins / 生产部署：只启动应用容器，连接信息仅来自 .env.example
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,27 +17,29 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
+# 宿主机 .env 会被 docker compose 用于 ${VAR} 插值，覆盖 env_file；生产只用 .env.example
 if [[ -f .env ]]; then
-  echo "WARN: found .env — deploy uses $ENV_FILE only; remove or rename .env to avoid docker compose reading stale localhost settings." >&2
+  backup=".env.bak.$(date +%s)"
+  echo "WARN: moving stale .env -> $backup (config is $ENV_FILE only)" >&2
+  mv .env "$backup"
 fi
 
 # shellcheck disable=SC1091
 set -a && source "$ENV_FILE" && set +a
 
 if [[ "${DATABASE_URL:-}" =~ @localhost[:/] ]] || [[ "${DATABASE_URL:-}" =~ @127\.0\.0\.1[:/] ]]; then
-  echo "ERROR: DATABASE_URL points to localhost — Docker containers cannot reach host MySQL via localhost." >&2
-  echo "Edit $ENV_FILE and use the real MySQL IP (e.g. 192.168.109.211:3306)." >&2
+  echo "ERROR: $ENV_FILE has DATABASE_URL=localhost — use real MySQL IP (e.g. 192.168.109.211)." >&2
   exit 1
 fi
 
 if [[ "${REDIS_HOST:-}" == "localhost" || "${REDIS_HOST:-}" == "127.0.0.1" ]]; then
-  echo "ERROR: REDIS_HOST is localhost — use the real Redis IP in $ENV_FILE." >&2
+  echo "ERROR: $ENV_FILE has REDIS_HOST=localhost — use real Redis IP." >&2
   exit 1
 fi
 
-echo "[deploy] ${COMPOSE[*]} --env-file $ENV_FILE up (external MySQL/Redis)"
-"${COMPOSE[@]}" --env-file "$ENV_FILE" build
-"${COMPOSE[@]}" --env-file "$ENV_FILE" up -d --force-recreate
+echo "[deploy] ${COMPOSE[*]} up — $(grep -E '^DATABASE_URL=' "$ENV_FILE" | head -1)"
+"${COMPOSE[@]}" build
+"${COMPOSE[@]}" up -d --force-recreate
 
 echo "[deploy] waiting for shellder-agent-server health (max 300s)..."
 deadline=$((SECONDS + 300))

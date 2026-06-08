@@ -1,5 +1,6 @@
-# 默认只启动应用三端，MySQL / Redis 通过 .env.example 中的地址连接（不自带数据库容器）。
-# 本地如需 Compose 内置 mysql/redis：见 docker-compose.bundled-infra.yml
+# 默认只启动应用三端，MySQL / Redis 通过 .env.example 连接（不自带数据库容器）。
+# 注意：勿在 environment 里写 ${DATABASE_URL}，否则会被宿主机 .env 覆盖 .env.example。
+# 本地内置 mysql/redis：docker-compose.bundled-infra.yml
 name: shellder-agent
 
 services:
@@ -13,13 +14,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env.example}
-      REDIS_HOST: ${REDIS_HOST:?set REDIS_HOST in .env.example}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
-      CONNECTOR_SECRET_KEY: ${CONNECTOR_SECRET_KEY:-}
-      SEED_ON_STARTUP: ${SEED_ON_STARTUP:-false}
     ports:
       - '3001:3001'
     healthcheck:
@@ -39,11 +33,6 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3002
-      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env.example}
-      REDIS_HOST: ${REDIS_HOST:?set REDIS_HOST in .env.example}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      CONNECTOR_SECRET_KEY: ${CONNECTOR_SECRET_KEY:-}
     ports:
       - '3002:3002'
     healthcheck:
@@ -58,11 +47,12 @@ services:
       context: .
       dockerfile: shellder-web-console/Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+        VITE_API_BASE_URL: ''
     container_name: shellder-web-console
     restart: unless-stopped
+    env_file: .env.example
     depends_on:
       shellder-agent-server:
         condition: service_healthy
     ports:
-      - '${WEB_CONSOLE_PORT:-3000}:80'
+      - '3000:80'

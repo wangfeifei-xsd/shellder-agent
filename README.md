@@ -143,12 +143,14 @@ DATABASE_URL=mysql://iot5:密码@192.168.109.211:3306/agent_platform
 REDIS_HOST=10.30.20.220
 ```
 
-改完后：`docker compose --env-file .env.example up -d --force-recreate shellder-agent-server`
-
-若服务器上仍有旧的 `.env`（含 `localhost`），请删除或改名，避免与 `.env.example` 混淆：
+改完后重建容器。**若仍显示 localhost**，多半是宿主机上还有 `.env` 覆盖了 `.env.example`：
 
 ```bash
-mv /data/shellder-agent/.env /data/shellder-agent/.env.bak
+cd /data/shellder-agent
+grep DATABASE_URL .env.example .env 2>/dev/null
+mv .env .env.bak    # 必须移走旧 .env
+docker compose up -d --force-recreate shellder-agent-server
+docker exec shellder-agent-server printenv DATABASE_URL
 ```
 
 ### `Environment variable not found: DATABASE_URL`

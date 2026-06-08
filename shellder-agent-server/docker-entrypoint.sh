@@ -23,7 +23,10 @@ if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
     '[entrypoint] ERROR: DATABASE_URL host is "' + host + '". Inside Docker, localhost is the container itself, not the host or external MySQL.',
   );
   console.error(
-    '[entrypoint] Fix .env.example — use the real MySQL IP/hostname (e.g. 192.168.109.211:3306), then redeploy.',
+    '[entrypoint] Container env comes from env_file .env.example only. If you still see localhost, remove host .env and recreate:',
+  );
+  console.error(
+    '[entrypoint]   mv .env .env.bak && docker compose up -d --force-recreate shellder-agent-server',
   );
   process.exit(1);
 }
