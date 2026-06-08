@@ -1,16 +1,23 @@
 #!/bin/sh
 set -e
 
-echo "[entrypoint] DATABASE_URL host: $(node -e "try{console.log(new URL(process.env.DATABASE_URL.replace(/^mysql:/,'http:')).host)}catch(e){console.log('invalid')}")"
+started_at=$(date +%s)
+log_step() {
+  now=$(date +%s)
+  echo "[entrypoint] $1 (+$((now - started_at))s)"
+}
 
-echo "[entrypoint] Prisma migrate deploy..."
+log_step "DATABASE_URL host: $(node -e "try{console.log(new URL(process.env.DATABASE_URL.replace(/^mysql:/,'http:')).host)}catch(e){console.log('invalid')}")"
+
+log_step "Prisma migrate deploy..."
 if ! npx prisma migrate deploy; then
   echo "[entrypoint] ERROR: prisma migrate deploy failed. Check DATABASE_URL and DB connectivity." >&2
   exit 1
 fi
+log_step "Prisma migrate deploy done"
 
 if [ "${SEED_ON_STARTUP:-true}" != "false" ]; then
-  echo "[entrypoint] Running project-sql seed (00-all-seed.sql)..."
+  log_step "Running project-sql seed (00-all-seed.sql)..."
   eval "$(node <<'NODE'
 const url = new URL(process.env.DATABASE_URL.replace(/^mysql:/, 'http:'));
 const cfg = {
@@ -29,9 +36,10 @@ NODE
     echo "[entrypoint] ERROR: seed failed. Set SEED_ON_STARTUP=false to skip, or fix DB permissions." >&2
     exit 1
   fi
-  echo "[entrypoint] Seed completed."
+  log_step "Seed completed"
 else
-  echo "[entrypoint] Skipping seed (SEED_ON_STARTUP=false)."
+  log_step "Skipping seed (SEED_ON_STARTUP=false)"
 fi
 
+log_step "Starting node dist/main.js"
 exec node dist/main.js

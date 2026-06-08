@@ -48,6 +48,29 @@ open http://localhost:3000/login
 
 ---
 
+### 内网 Jenkins（外置 MySQL / Redis）
+
+目标机需有 `/data/shellder-agent/.env`（从 `.env.example` 复制并填写外置库段）。**生产环境请设置 `SEED_ON_STARTUP=false`**，避免每次发布重跑 seed。
+
+Jenkins 远程脚本建议（替换原先裸 `docker-compose up`）：
+
+```bash
+scp -r ./ 10.30.20.222:/data/shellder-agent
+ssh 10.30.20.222 'cd /data/shellder-agent && bash scripts/deploy-intranet.sh'
+```
+
+`deploy-intranet.sh` 会使用 `docker-compose.intranet.yml`（不启动内置 mysql/redis），失败时自动打印 `shellder-agent-server` 容器日志。
+
+故障排查：
+
+```bash
+docker logs --tail 200 shellder-agent-server   # 看 migrate / seed 是否 exit 1
+curl http://localhost:3001/health/live        # 进程是否起来
+curl http://localhost:3001/health             # 含数据库连通性
+```
+
+---
+
 ### 方式二：本地开发（推荐日常写代码）
 
 适合：热更新调试；仅 MySQL / Redis 用 Docker。

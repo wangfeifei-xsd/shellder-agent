@@ -61,11 +61,12 @@ services:
     ports:
       - '3001:3001'
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/health']
+      # /health/live 不查库；完整就绪请 curl /health
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/health/live']
       interval: 15s
       timeout: 5s
       retries: 8
-      start_period: 120s
+      start_period: 180s
 
   shellder-job-worker:
     build:
