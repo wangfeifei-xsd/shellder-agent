@@ -49,10 +49,13 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: mysql://${MYSQL_USER:-agent}:${MYSQL_PASSWORD:-changeme_agent}@mysql:3306/${MYSQL_DATABASE:-agent_platform}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      # 优先使用 .env 中的 DATABASE_URL（内网外置库）；未设置时回退到 Compose 内置 mysql
+      DATABASE_URL: ${DATABASE_URL:-mysql://${MYSQL_USER:-agent}:${MYSQL_PASSWORD:-changeme_agent}@mysql:3306/${MYSQL_DATABASE:-agent_platform}}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      CONNECTOR_SECRET_KEY: ${CONNECTOR_SECRET_KEY:-}
       # 启动时幂等执行 project-sql/00-all-seed.sql；设为 false 可关闭
       SEED_ON_STARTUP: ${SEED_ON_STARTUP:-true}
     ports:
@@ -61,8 +64,8 @@ services:
       test: ['CMD', 'wget', '-qO-', 'http://localhost:3001/health']
       interval: 15s
       timeout: 5s
-      retries: 5
-      start_period: 40s
+      retries: 8
+      start_period: 120s
 
   shellder-job-worker:
     build:
@@ -78,9 +81,11 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3002
-      DATABASE_URL: mysql://${MYSQL_USER:-agent}:${MYSQL_PASSWORD:-changeme_agent}@mysql:3306/${MYSQL_DATABASE:-agent_platform}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      DATABASE_URL: ${DATABASE_URL:-mysql://${MYSQL_USER:-agent}:${MYSQL_PASSWORD:-changeme_agent}@mysql:3306/${MYSQL_DATABASE:-agent_platform}}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      CONNECTOR_SECRET_KEY: ${CONNECTOR_SECRET_KEY:-}
     ports:
       - '3002:3002'
     healthcheck:

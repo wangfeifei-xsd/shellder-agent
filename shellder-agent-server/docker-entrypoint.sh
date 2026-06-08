@@ -1,8 +1,13 @@
 #!/bin/sh
 set -e
 
+echo "[entrypoint] DATABASE_URL host: $(node -e "try{console.log(new URL(process.env.DATABASE_URL.replace(/^mysql:/,'http:')).host)}catch(e){console.log('invalid')}")"
+
 echo "[entrypoint] Prisma migrate deploy..."
-npx prisma migrate deploy
+if ! npx prisma migrate deploy; then
+  echo "[entrypoint] ERROR: prisma migrate deploy failed. Check DATABASE_URL and DB connectivity." >&2
+  exit 1
+fi
 
 if [ "${SEED_ON_STARTUP:-true}" != "false" ]; then
   echo "[entrypoint] Running project-sql seed (00-all-seed.sql)..."
@@ -20,7 +25,10 @@ for (const [key, value] of Object.entries(cfg)) {
 }
 NODE
 )"
-  mariadb -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" < /app/seed/00-all-seed.sql
+  if ! mariadb -h "$MYSQL_HOST" -P "$MYSQL_PORT" -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" < /app/seed/00-all-seed.sql; then
+    echo "[entrypoint] ERROR: seed failed. Set SEED_ON_STARTUP=false to skip, or fix DB permissions." >&2
+    exit 1
+  fi
   echo "[entrypoint] Seed completed."
 else
   echo "[entrypoint] Skipping seed (SEED_ON_STARTUP=false)."
