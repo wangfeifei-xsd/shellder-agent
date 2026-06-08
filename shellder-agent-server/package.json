@@ -10,9 +10,9 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "check:prompt-constants": "node scripts/check-prompt-constants.mjs",
-    "prisma:generate": "dotenv -e ../.env -- prisma generate",
-    "prisma:migrate": "dotenv -e ../.env -- prisma migrate deploy",
-    "prisma:migrate:dev": "dotenv -e ../.env -- prisma migrate dev"
+    "prisma:generate": "dotenv -e ../.env.example -- prisma generate",
+    "prisma:migrate": "dotenv -e ../.env.example -- prisma migrate deploy",
+    "prisma:migrate:dev": "dotenv -e ../.env.example -- prisma migrate dev"
   },
   "dependencies": {
     "@nestjs/bullmq": "^10.2.3",

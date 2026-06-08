@@ -9,6 +9,29 @@ log_step() {
 
 log_step "DATABASE_URL host: $(node -e "try{console.log(new URL(process.env.DATABASE_URL.replace(/^mysql:/,'http:')).host)}catch(e){console.log('invalid')}")"
 
+if ! node <<'NODE'
+const raw = process.env.DATABASE_URL || '';
+let host = '';
+try {
+  host = new URL(raw.replace(/^mysql:/, 'http:')).hostname.toLowerCase();
+} catch {
+  console.error('[entrypoint] ERROR: DATABASE_URL is missing or invalid.');
+  process.exit(1);
+}
+if (host === 'localhost' || host === '127.0.0.1' || host === '::1') {
+  console.error(
+    '[entrypoint] ERROR: DATABASE_URL host is "' + host + '". Inside Docker, localhost is the container itself, not the host or external MySQL.',
+  );
+  console.error(
+    '[entrypoint] Fix .env.example — use the real MySQL IP/hostname (e.g. 192.168.109.211:3306), then redeploy.',
+  );
+  process.exit(1);
+}
+NODE
+then
+  exit 1
+fi
+
 log_step "Prisma migrate deploy..."
 if ! npx prisma migrate deploy; then
   echo "[entrypoint] ERROR: prisma migrate deploy failed. Check DATABASE_URL and DB connectivity." >&2

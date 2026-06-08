@@ -27,11 +27,11 @@ Monorepo 包含 Web 管理后台（`shellder-web-console`）、主后端（`shel
 
 ### 方式一：Docker 部署（外置 MySQL / Redis）
 
-**默认行为**：`docker compose up` 只启动 `shellder-agent-server`、`shellder-job-worker`、`shellder-web-console`，**不会**创建 mysql/redis 容器。连接地址全部来自 `.env`。
+**默认行为**：`docker compose up` 只启动三个应用容器，**不会**创建 mysql/redis。连接地址来自仓库内的 **`.env.example`**（Jenkins scp 会一并下发，无需再维护单独的 `.env`）。
 
 ```bash
-cp .env.example .env          # 填写 DATABASE_URL、REDIS_HOST 等外置地址
-docker compose up --build -d
+# 按需编辑 .env.example 中的 DATABASE_URL、REDIS_HOST 等
+docker compose --env-file .env.example up --build -d
 # 或 Jenkins：bash scripts/deploy.sh
 ```
 
@@ -66,10 +66,10 @@ curl http://localhost:3001/health
 
 ### 方式一（可选）：Compose 内置 mysql / redis（仅本地验收）
 
-需要本机没有占用 3306/6379，且 `.env` 中 `DATABASE_URL` 指向 `@mysql:3306`、`REDIS_HOST=redis`：
+需要本机没有占用 3306/6379；在 `.env.example` 底部取消 bundled-infra 注释段（`@mysql:3306`、`REDIS_HOST=redis`）后执行：
 
 ```bash
-docker compose --profile bundled-infra \
+docker compose --env-file .env.example --profile bundled-infra \
   -f docker-compose.yml -f docker-compose.bundled-infra.yml up --build -d
 ```
 
@@ -82,9 +82,8 @@ docker compose --profile bundled-infra \
 **首次克隆 / 依赖变更后（初始化一次）：**
 
 ```bash
-cp .env.example .env
-# DATABASE_URL 指向 localhost:3306（见 .env.example 底部 bundled-infra 注释）
-docker compose --profile bundled-infra \
+# 本地开发可新建 .env 覆盖 .env.example（gitignore，仅本机）；或改 .env.example 底部 bundled 段
+docker compose --env-file .env.example --profile bundled-infra \
   -f docker-compose.yml -f docker-compose.bundled-infra.yml up -d mysql redis
 
 npm install
@@ -92,7 +91,7 @@ npm run prisma:generate
 npm run prisma:migrate:dev          # 交互式迁移；无新迁移时可跳过
 ```
 
-确认 **monorepo 根目录** 存在 `.env`（`cp .env.example .env`），且 `DATABASE_URL` 指向 `localhost:3306`。后端会自动向上查找该文件；若仍报 `DATABASE_URL not found`，请确认 `.env` 在 `shellder-agent/` 下而非上级目录。
+本地 npm 开发时，可在 `shellder-agent/` 下新建 `.env`（指向 `localhost:3306`），会优先于 `.env.example` 加载。
 
 **日常启动（开 3 个终端）：**
 
@@ -135,10 +134,27 @@ cd shellder-agent-server && npm run check:prompt-constants
 - 本地开发：`VITE_API_BASE_URL` 留空即可，Vite 将 `/api` 代理到 `VITE_API_PROXY_TARGET`（默认 `http://localhost:3001`）
 - Docker 一键：`shellder-web-console` 由 nginx 同域反代 `/api`，无需单独配置
 
+### `Can't reach database server at localhost:3306`（Docker 部署）
+
+容器里的 **`localhost` 不是宿主机**。请编辑 **`.env.example`**（或目标机 `/data/shellder-agent/.env.example`），把 `DATABASE_URL` 改成 MySQL **真实 IP**：
+
+```env
+DATABASE_URL=mysql://iot5:密码@192.168.109.211:3306/agent_platform
+REDIS_HOST=10.30.20.220
+```
+
+改完后：`docker compose --env-file .env.example up -d --force-recreate shellder-agent-server`
+
+若服务器上仍有旧的 `.env`（含 `localhost`），请删除或改名，避免与 `.env.example` 混淆：
+
+```bash
+mv /data/shellder-agent/.env /data/shellder-agent/.env.bak
+```
+
 ### `Environment variable not found: DATABASE_URL`
 
-- 在 `shellder-agent` 目录执行：`cp .env.example .env`
-- 重新 `npm run dev:server`（已支持自动加载上级 `.env`）
+- 确认 `shellder-agent/.env.example` 存在且含 `DATABASE_URL`
+- `docker compose` 需加 `--env-file .env.example`，或直接使用 `bash scripts/deploy.sh`
 
 ### `docker: command not found`
 
