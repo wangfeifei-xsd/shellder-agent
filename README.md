@@ -34,6 +34,8 @@ cp .env.example .env          # 首次；按需改密码
 docker compose up --build -d
 ```
 
+`shellder-agent-server` 启动顺序：**Prisma 迁移** → **`project-sql/00-all-seed.sql`（幂等）** → 应用进程。默认写入默认租户、管理员（`admin / admin123`）、Prompt 等种子数据。不需要 seed 时可在 `.env` 设置 `SEED_ON_STARTUP=false`。
+
 验证：
 
 ```bash

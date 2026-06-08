@@ -53,6 +53,8 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      # 启动时幂等执行 project-sql/00-all-seed.sql；设为 false 可关闭
+      SEED_ON_STARTUP: ${SEED_ON_STARTUP:-true}
     ports:
       - '3001:3001'
     healthcheck:
