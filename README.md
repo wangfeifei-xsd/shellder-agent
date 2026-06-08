@@ -12,7 +12,6 @@ Monorepo 包含 Web 管理后台（`shellder-web-console`）、主后端（`shel
 | `shellder-agent-server` | NestJS + Prisma 主 API |
 | `shellder-job-worker` | NestJS + BullMQ 异步任务 |
 | `project-sql/` | 按模块交付的 SQL 演进目录 |
-| `monitoring/` | Prometheus / Loki 配置（可选 profile） |
 
 ## 前置要求
 
@@ -75,15 +74,6 @@ npm run prisma:migrate:dev          # 交互式迁移；无新迁移时可跳过
 访问：http://localhost:3000/login → 登录占位进入 http://localhost:3000/
 
 **仅停应用、保留数据：** 关掉三个终端即可；`docker compose stop mysql redis` 可停数据库。
-
----
-
-### 方式三：可选监控栈
-
-```bash
-docker compose --profile monitoring up -d
-# Prometheus :9090  Grafana :3003  Loki :3100
-```
 
 ---
 

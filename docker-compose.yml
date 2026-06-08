@@ -102,50 +102,6 @@ services:
     ports:
       - '${WEB_CONSOLE_PORT:-3000}:80'
 
-  prometheus:
-    profiles: [monitoring]
-    image: prom/prometheus:v2.54.1
-    container_name: shellder-prometheus
-    restart: unless-stopped
-    volumes:
-      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    ports:
-      - '9090:9090'
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-
-  grafana:
-    profiles: [monitoring]
-    image: grafana/grafana:11.2.0
-    container_name: shellder-grafana
-    restart: unless-stopped
-    depends_on:
-      - prometheus
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme_grafana}
-      GF_USERS_ALLOW_SIGN_UP: 'false'
-    ports:
-      - '3003:3000'
-    volumes:
-      - grafana_data:/var/lib/grafana
-
-  loki:
-    profiles: [monitoring]
-    image: grafana/loki:3.2.0
-    container_name: shellder-loki
-    restart: unless-stopped
-    command: -config.file=/etc/loki/local-config.yaml
-    ports:
-      - '3100:3100'
-    volumes:
-      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
-      - loki_data:/loki
-
 volumes:
   mysql_data:
   redis_data:
-  prometheus_data:
-  grafana_data:
-  loki_data:
