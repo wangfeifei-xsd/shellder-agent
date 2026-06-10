@@ -117,6 +117,7 @@ export const consoleMenuItems: MenuProps['items'] = [
     label: 'OpenAPI 管理',
     children: [
       { key: '/openapi/apps', label: <Link to="/openapi/apps">应用接入</Link> },
+      { key: '/openapi/logs', label: <Link to="/openapi/logs">调用日志</Link> },
       { key: '/openapi/docs', label: <Link to="/openapi/docs">接口文档</Link> },
     ],
   },

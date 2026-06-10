@@ -24,6 +24,8 @@ import { ApprovalRuntimeService } from '../approval/approval-runtime.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { KnowledgeProxyService } from '../knowledge/knowledge-proxy.service';
+import { OpenApiAppService } from '../openapi/openapi-app.service';
+import { OpenApiCallLogService } from '../openapi/openapi-call-log.service';
 import { CopilotAuthService, CopilotJwtPayload } from './copilot-auth.service';
 import { CopilotConfigService } from './copilot-config.service';
 import { CreateCopilotSessionDto, UpdateCopilotSessionDto } from './dto/copilot-session.dto';
@@ -84,6 +86,8 @@ export class CopilotWidgetController {
 
   constructor(
     private readonly authService: CopilotAuthService,
+    private readonly appService: OpenApiAppService,
+    private readonly callLogService: OpenApiCallLogService,
     private readonly prisma: PrismaService,
     private readonly approvalRuntime: ApprovalRuntimeService,
     private readonly runtimeService: AgentRuntimeService,
@@ -93,8 +97,37 @@ export class CopilotWidgetController {
 
   /** POST /copilot/v1/auth/token — 换票接口 */
   @Post('auth/token')
-  async token(@Body() dto: CopilotTokenExchangeDto) {
-    return this.authService.exchangeToken(dto);
+  async token(@Body() dto: CopilotTokenExchangeDto, @Req() req: Request) {
+    const start = Date.now();
+    const app = await this.appService.findByClientId(dto.clientId);
+    const appId = app?.id ?? null;
+    try {
+      const result = await this.authService.exchangeToken(dto);
+      await this.logCall(
+        req,
+        appId,
+        'POST',
+        '/copilot/v1/auth/token',
+        200,
+        'success',
+        Date.now() - start,
+        undefined,
+        result.tenantId,
+      );
+      return result;
+    } catch (err: any) {
+      await this.logCall(
+        req,
+        appId,
+        'POST',
+        '/copilot/v1/auth/token',
+        err.status ?? 500,
+        'failed',
+        Date.now() - start,
+        err.message,
+      );
+      throw err;
+    }
   }
 
   /** POST /copilot/v1/sessions — 创建 Copilot 会话 */
@@ -102,31 +135,58 @@ export class CopilotWidgetController {
   async createSession(
     @Headers('authorization') authHeader: string,
     @Body() body: CreateCopilotSessionDto,
+    @Req() req: Request,
   ) {
+    const start = Date.now();
     const payload = this.extractPayload(authHeader);
+    try {
+      const principalContext = this.authService.snapshotPrincipalContext(payload);
 
-    const principalContext = this.authService.snapshotPrincipalContext(payload);
+      const session = await this.prisma.session.create({
+        data: {
+          tenantId: payload.tenantId,
+          userId: payload.sub,
+          title: body.title ?? null,
+          capabilityType: body.capabilityType,
+          principalContext: (principalContext ?? undefined) as
+            | Prisma.InputJsonValue
+            | undefined,
+        },
+      });
 
-    const session = await this.prisma.session.create({
-      data: {
-        tenantId: payload.tenantId,
-        userId: payload.sub,
-        title: body.title ?? null,
-        capabilityType: body.capabilityType,
-        principalContext: (principalContext ?? undefined) as
-          | Prisma.InputJsonValue
-          | undefined,
-      },
-    });
-
-    return {
-      id: session.id,
-      tenantId: session.tenantId,
-      title: session.title,
-      status: session.status,
-      capabilityType: session.capabilityType,
-      createdAt: session.createdAt,
-    };
+      await this.logCall(
+        req,
+        payload.appId,
+        'POST',
+        '/copilot/v1/sessions',
+        201,
+        'success',
+        Date.now() - start,
+        undefined,
+        payload.tenantId,
+      );
+      return {
+        id: session.id,
+        tenantId: session.tenantId,
+        title: session.title,
+        status: session.status,
+        capabilityType: session.capabilityType,
+        createdAt: session.createdAt,
+      };
+    } catch (err: any) {
+      await this.logCall(
+        req,
+        payload.appId,
+        'POST',
+        '/copilot/v1/sessions',
+        err.status ?? 500,
+        'failed',
+        Date.now() - start,
+        err.message,
+        payload.tenantId,
+      );
+      throw err;
+    }
   }
 
   /** GET /copilot/v1/sessions — 历史会话列表 */
@@ -315,22 +375,52 @@ export class CopilotWidgetController {
     @Headers('authorization') authHeader: string,
     @Param('id') sessionId: string,
     @Body() body: { content: string; mode?: 'sync' | 'stream' },
+    @Req() req: Request,
   ) {
+    const start = Date.now();
     const payload = this.extractPayload(authHeader);
-    const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
+    try {
+      const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
 
-    if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
-      throw new ForbiddenException({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
+      if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
+        throw new ForbiddenException({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
+      }
+
+      const result = await this.runtimeService.sendMessage(
+        this.toRuntimeUser(payload),
+        sessionId,
+        {
+          content: body.content,
+          mode: body.mode ?? 'stream',
+        },
+      );
+
+      await this.logCall(
+        req,
+        payload.appId,
+        'POST',
+        `/copilot/v1/sessions/${sessionId}/messages`,
+        201,
+        'success',
+        Date.now() - start,
+        undefined,
+        session.tenantId,
+      );
+      return result;
+    } catch (err: any) {
+      await this.logCall(
+        req,
+        payload.appId,
+        'POST',
+        `/copilot/v1/sessions/${sessionId}/messages`,
+        err.status ?? 500,
+        'failed',
+        Date.now() - start,
+        err.message,
+        payload.tenantId,
+      );
+      throw err;
     }
-
-    return this.runtimeService.sendMessage(
-      this.toRuntimeUser(payload),
-      sessionId,
-      {
-        content: body.content,
-        mode: body.mode ?? 'stream',
-      },
-    );
   }
 
   /**
@@ -345,6 +435,7 @@ export class CopilotWidgetController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
+    const start = Date.now();
     let payload: CopilotJwtPayload;
     try {
       payload = this.extractPayload(authHeader, queryToken);
@@ -353,55 +444,82 @@ export class CopilotWidgetController {
       return;
     }
 
-    const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
+    try {
+      const session = await this.prisma.session.findUnique({ where: { id: sessionId } });
 
-    if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
-      res.status(403).json({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
-      return;
-    }
+      if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
+        res.status(403).json({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
+        return;
+      }
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.setHeader('Access-Control-Allow-Origin', '*');
 
-    this.writeSseEvent(res, 'session.connected', {
-      sessionId,
-      status: session.status,
-    });
-
-    const messages = await this.prisma.message.findMany({
-      where: { sessionId },
-      orderBy: { seq: 'asc' },
-    });
-    for (const msg of messages) {
-      this.writeSseEvent(res, 'message', {
-        id: msg.id,
-        role: msg.role,
-        messageType: msg.type,
-        content: msg.content,
-        seq: msg.seq,
-        createdAt: msg.createdAt,
+      this.writeSseEvent(res, 'session.connected', {
+        sessionId,
+        status: session.status,
       });
+
+      const messages = await this.prisma.message.findMany({
+        where: { sessionId },
+        orderBy: { seq: 'asc' },
+      });
+      for (const msg of messages) {
+        this.writeSseEvent(res, 'message', {
+          id: msg.id,
+          role: msg.role,
+          messageType: msg.type,
+          content: msg.content,
+          seq: msg.seq,
+          createdAt: msg.createdAt,
+        });
+      }
+
+      this.writeSseEvent(res, 'session.snapshot_end', { status: session.status });
+
+      const unsubscribe = this.sseEmitter.subscribe(sessionId, (event: SseEvent) => {
+        this.writeSseEvent(res, event.event, event.data);
+      });
+
+      await this.logCall(
+        req,
+        payload.appId,
+        'GET',
+        `/copilot/v1/sessions/${sessionId}/stream`,
+        200,
+        'success',
+        Date.now() - start,
+        undefined,
+        session.tenantId,
+      );
+
+      const keepAlive = setInterval(() => {
+        res.write(`:keepalive\n\n`);
+      }, 15000);
+
+      req.on('close', () => {
+        this.logger.debug(`Copilot SSE 客户端断开 session=${sessionId}`);
+        clearInterval(keepAlive);
+        unsubscribe();
+        res.end();
+      });
+    } catch (err: any) {
+      await this.logCall(
+        req,
+        payload.appId,
+        'GET',
+        `/copilot/v1/sessions/${sessionId}/stream`,
+        err.status ?? 500,
+        'failed',
+        Date.now() - start,
+        err.message,
+        payload.tenantId,
+      );
+      throw err;
     }
-
-    this.writeSseEvent(res, 'session.snapshot_end', { status: session.status });
-
-    const unsubscribe = this.sseEmitter.subscribe(sessionId, (event: SseEvent) => {
-      this.writeSseEvent(res, event.event, event.data);
-    });
-
-    const keepAlive = setInterval(() => {
-      res.write(`:keepalive\n\n`);
-    }, 15000);
-
-    req.on('close', () => {
-      this.logger.debug(`Copilot SSE 客户端断开 session=${sessionId}`);
-      clearInterval(keepAlive);
-      unsubscribe();
-      res.end();
-    });
   }
 
   /** GET /copilot/v1/confirmations — 当前租户待确认列表 */
@@ -574,5 +692,31 @@ export class CopilotWidgetController {
       code: 'COPILOT_UNAUTHENTICATED',
       message: '缺少 Copilot Token',
     });
+  }
+
+  private async logCall(
+    req: Request,
+    appId: string | null,
+    method: string,
+    path: string,
+    statusCode: number,
+    status: 'success' | 'failed' | 'rate_limited',
+    durationMs: number,
+    errorMessage?: string,
+    tenantId?: string,
+  ) {
+    if (!appId) return;
+    const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0] ?? req.ip;
+    await this.callLogService.log({
+      appId,
+      tenantId,
+      method,
+      path,
+      statusCode,
+      status,
+      ip,
+      durationMs,
+      errorMessage,
+    }).catch(() => {});
   }
 }

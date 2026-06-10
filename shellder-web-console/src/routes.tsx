@@ -54,6 +54,7 @@ const EditTenantPage = lazy(() => import('@/pages/console/tenants/[id]/edit/page
 const TenantIsolationPage = lazy(() => import('@/pages/console/tenants/[id]/isolation/page'));
 const OpenApiAppsPage = lazy(() => import('@/pages/console/openapi/apps/page'));
 const OpenApiAppDetailPage = lazy(() => import('@/pages/console/openapi/apps/[id]/page'));
+const OpenApiCallLogsPage = lazy(() => import('@/pages/console/openapi/logs/page'));
 const OpenApiDocsPage = lazy(() => import('@/pages/console/openapi/docs/page'));
 const CopilotAdminPage = lazy(() => import('@/pages/console/copilot-admin/page'));
 const CopilotPreviewPage = lazy(() => import('@/pages/console/copilot-admin/preview/page'));
@@ -124,6 +125,7 @@ export const appRoutes: RouteObject[] = [
       { path: 'tenants/:id/isolation', element: <TenantIsolationPage /> },
       { path: 'openapi/apps', element: <OpenApiAppsPage /> },
       { path: 'openapi/apps/:id', element: <OpenApiAppDetailPage /> },
+      { path: 'openapi/logs', element: <OpenApiCallLogsPage /> },
       { path: 'openapi/docs', element: <OpenApiDocsPage /> },
       { path: 'copilot-admin', element: <CopilotAdminPage /> },
       { path: 'copilot-admin/preview', element: <CopilotPreviewPage /> },
