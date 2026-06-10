@@ -47,8 +47,8 @@ SELECT
   '21000000-0000-0000-0001-000000000002',
   '21000000-0000-0000-0000-000000000002',
   1,
-  '你是只读 SQL 生成助手。根据数据库 ER 关系图与用户自然语言，生成单条 MySQL 只读查询。\n\n要求：\n1. 仅输出一个合法 JSON 对象，不要 markdown，不要额外说明。\n2. JSON 格式：\n{\n  \"sql\": \"SELECT ...\",\n  \"explanation\": \"面向用户的中文简要说明\",\n  \"referencedTables\": [\"表名1\", \"表名2\"],\n  \"params\": { \"paramName\": \"value\" }\n}\n3. sql 必须是单条 SELECT 或 WITH...SELECT，禁止 INSERT/UPDATE/DELETE/DDL。\n4. 只能使用输入 ER 图中出现的表；不得引用表黑名单中的表（若提供）。\n5. 命名参数使用 :name 形式，并在 params 中给出示例值；无参数时 params 为 {}。\n6. referencedTables 列出 SQL 实际引用的物理表名（小写无关，保持原表名）。',
-  SHA2('query.nl2sql.system.v1', 256),
+  '你是只读 SQL 生成助手。根据数据库 ER 关系图与用户自然语言，生成单条 MySQL 只读查询。\n\n要求：\n1. 仅输出一个合法 JSON 对象，不要 markdown，不要额外说明。\n2. JSON 格式：\n{\n  \"sql\": \"SELECT ...\",\n  \"explanation\": \"面向用户的中文简要说明\",\n  \"referencedTables\": [\"表名1\", \"表名2\"],\n  \"params\": { \"paramName\": \"value\" },\n  \"extractedLiterals\": [\"实体名1\"]\n}\n3. sql 必须是单条 SELECT 或 WITH...SELECT，禁止 INSERT/UPDATE/DELETE/DDL。\n4. 只能使用输入 ER 图中出现的表；不得引用表黑名单中的表（若提供）。\n5. 命名参数使用 :name 形式，并在 params 中给出从用户问题提取的真实值；无参数时 params 为 {}。\n6. referencedTables 列出 SQL 实际引用的物理表名（小写无关，保持原表名）。\n7. extractedLiterals：从用户问题中识别出的具体实体名、筛选值（如人名、部门名、项目名等）。\n   - 纯聚合/统计类问题（如「一共有多少员工」「总共几个部门」）无具体实体名时，输出空数组 []。\n   - 仅提取用户明确提及的业务实体名，不要把疑问词、量词、语气词当作实体名。\n   - extractedLiterals 中的每个值都必须在 params 中有对应条目。',
+  SHA2('query.nl2sql.system.v2', 256),
   '从 nl2sql.prompt.ts NL2SQL_SYSTEM_PROMPT 迁移',
   'published', CURRENT_TIMESTAMP(3), NULL, CURRENT_TIMESTAMP(3)
 FROM DUAL
@@ -285,4 +285,61 @@ FROM DUAL
 WHERE NOT EXISTS (
   SELECT 1 FROM `agent_platform`.`prompt_version`
   WHERE `template_id` = '21000000-0000-0000-0000-000000000010' AND `version` = 1
+);
+
+INSERT INTO `agent_platform`.`prompt_template`
+  (`id`, `prompt_key`, `name`, `description`, `category`, `role`, `scope`, `tenant_id`, `variable_schema`, `status`, `created_at`, `updated_at`)
+VALUES (
+  '21000000-0000-0000-0000-000000000011',
+  'query.nl2sql.review.system',
+  'NL2SQL 语义审核 System',
+  '审核生成的 SQL 是否正确回答了用户问题',
+  'query', 'system', 'global', NULL, NULL,
+  'active', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3)
+)
+ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `updated_at` = CURRENT_TIMESTAMP(3);
+
+INSERT INTO `agent_platform`.`prompt_version`
+  (`id`, `template_id`, `version`, `content`, `content_hash`, `changelog`, `state`, `published_at`, `published_by`, `created_at`)
+SELECT
+  '21000000-0000-0000-0001-000000000011',
+  '21000000-0000-0000-0000-000000000011',
+  1,
+  '你是 SQL 语义审核助手。你的任务是判断一条已生成的 SQL 是否正确回答了用户的自然语言问题。\n\n审核要点：\n1. SQL 的查询目标是否与用户问题的意图一致（如用户问数量，SQL 是否用了 COUNT）。\n2. 用户提到的筛选条件（人名、部门名、时间等）是否在 SQL 的 WHERE 中体现为对应的参数绑定。\n3. extractedLiterals 中的每个实体是否都在 params 中有对应的值，且绑定到了合理的列。\n4. 若用户未提及具体筛选条件（如「一共有多少员工」），SQL 不应有多余的 WHERE 条件。\n\n仅输出一个 JSON 对象，不要 markdown，不要额外说明：\n- 通过：{\"pass\": true, \"reason\": \"\"}\n- 不通过：{\"pass\": false, \"reason\": \"具体问题描述，说明哪里不一致\"}',
+  SHA2('query.nl2sql.review.system.v1', 256),
+  'NL2SQL 轻量语义审核',
+  'published', CURRENT_TIMESTAMP(3), NULL, CURRENT_TIMESTAMP(3)
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM `agent_platform`.`prompt_version`
+  WHERE `template_id` = '21000000-0000-0000-0000-000000000011' AND `version` = 1
+);
+
+INSERT INTO `agent_platform`.`prompt_template`
+  (`id`, `prompt_key`, `name`, `description`, `category`, `role`, `scope`, `tenant_id`, `variable_schema`, `status`, `created_at`, `updated_at`)
+VALUES (
+  '21000000-0000-0000-0000-000000000012',
+  'query.nl2sql.review.user',
+  'NL2SQL 语义审核 User',
+  '用户问题 + SQL + params 骨架',
+  'query', 'user', 'global', NULL,
+  JSON_OBJECT('required', JSON_ARRAY('userMessage', 'sql', 'params', 'extractedLiterals')),
+  'active', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3)
+)
+ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `updated_at` = CURRENT_TIMESTAMP(3);
+
+INSERT INTO `agent_platform`.`prompt_version`
+  (`id`, `template_id`, `version`, `content`, `content_hash`, `changelog`, `state`, `published_at`, `published_by`, `created_at`)
+SELECT
+  '21000000-0000-0000-0001-000000000012',
+  '21000000-0000-0000-0000-000000000012',
+  1,
+  '## 用户问题\n{{userMessage}}\n\n## 生成的 SQL\n{{sql}}\n\n## 参数（params）\n{{params}}\n\n## 提取的实体名（extractedLiterals）\n{{extractedLiterals}}\n\n请判断该 SQL 是否正确回答了用户问题，输出 JSON。',
+  SHA2('query.nl2sql.review.user.v1', 256),
+  'NL2SQL 语义审核 user 骨架',
+  'published', CURRENT_TIMESTAMP(3), NULL, CURRENT_TIMESTAMP(3)
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM `agent_platform`.`prompt_version`
+  WHERE `template_id` = '21000000-0000-0000-0000-000000000012' AND `version` = 1
 );

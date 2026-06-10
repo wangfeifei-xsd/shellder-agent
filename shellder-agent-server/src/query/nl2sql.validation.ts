@@ -5,6 +5,8 @@ export interface Nl2SqlParsedOutput {
   sql: string;
   referencedTables: string[];
   params: Record<string, unknown>;
+  /** LLM 从用户问题中识别到的实体名/筛选值（由 LLM 输出，用于正向校验） */
+  extractedLiterals?: string[];
 }
 
 /** 占位符/说明性 param 值（非用户问题中的真实取值） */
@@ -35,12 +37,13 @@ export interface Nl2SqlSemanticValidationInput {
   userMessage: string;
 }
 
-/** NL2SQL 生成后的语义校验（范围列、占位参数、参数-列一致性、用户实体名提取） */
+/** NL2SQL 生成后的语义校验（范围列、占位参数、参数-列一致性、实体名一致性、参数来源） */
 export function assertNl2SqlSemantics(input: Nl2SqlSemanticValidationInput): void {
   assertNoScopeColumnInSql(input.parsed, input.er, input.scopeContext);
   assertParamsNotPlaceholder(input.parsed);
   assertParamColumnConsistency(input.parsed, input.er);
-  assertParamsReflectUserLiterals(input.parsed, input.userMessage);
+  assertParamsReflectUserLiterals(input.parsed);
+  assertParamsOriginateFromUser(input.parsed, input.userMessage);
 }
 
 function isActiveScopeContext(scopeContext?: string): boolean {
@@ -155,12 +158,11 @@ function assertParamColumnConsistency(
   }
 }
 
-/** ④ 用户问题中的实体名/引号内文字须出现在 params 中 */
+/** ④ LLM 识别的实体名须出现在 params 中（正向校验） */
 function assertParamsReflectUserLiterals(
   parsed: Nl2SqlParsedOutput,
-  userMessage: string,
 ): void {
-  const literals = extractUserLiterals(userMessage);
+  const literals = parsed.extractedLiterals ?? [];
   if (literals.length === 0) return;
 
   const paramValues = Object.values(parsed.params ?? {})
@@ -170,7 +172,7 @@ function assertParamsReflectUserLiterals(
   if (paramValues.length === 0) {
     throw new BadRequestException({
       code: 'NL2SQL_PARAM_LITERAL_MISSING',
-      message: `用户问题含实体名「${literals.join('、')}」，但 params 未提供对应字符串取值`,
+      message: `LLM 识别出用户问题含实体名「${literals.join('、')}」，但 params 未提供对应字符串取值`,
     });
   }
 
@@ -179,10 +181,38 @@ function assertParamsReflectUserLiterals(
     if (!found) {
       throw new BadRequestException({
         code: 'NL2SQL_PARAM_LITERAL_MISSING',
-        message: `用户问题中的「${lit}」未出现在 params 中，请从用户问题提取真实值写入 params`,
+        message: `LLM 识别的实体名「${lit}」未出现在 params 中，请确保 extractedLiterals 与 params 保持一致`,
       });
     }
   }
+}
+
+/** ⑤ params 中的字符串值须能在用户问题中找到来源（反向校验） */
+function assertParamsOriginateFromUser(
+  parsed: Nl2SqlParsedOutput,
+  userMessage: string,
+): void {
+  const msg = userMessage.toLowerCase();
+
+  for (const [key, value] of Object.entries(parsed.params ?? {})) {
+    if (typeof value !== 'string') continue;
+    const v = value.trim();
+    if (!v || v.length < 2) continue;
+
+    const vLower = v.toLowerCase();
+    if (!msg.includes(vLower) && !fuzzyContains(msg, vLower)) {
+      throw new BadRequestException({
+        code: 'NL2SQL_PARAM_NOT_FROM_USER',
+        message: `params.${key}（值「${v}」）无法在用户问题中找到来源，params 取值须来自用户原始表述`,
+      });
+    }
+  }
+}
+
+/** 模糊包含：允许用户消息中的值与 param 值存在子串关系 */
+function fuzzyContains(message: string, value: string): boolean {
+  if (value.length < 2) return false;
+  return message.includes(value) || value.includes(message);
 }
 
 // ── helpers ─────────────────────────────────────────────
@@ -333,37 +363,6 @@ function looksLikeNonNumericString(value: string): boolean {
     return false;
   }
   return /[^\d.]/.test(t);
-}
-
-function extractUserLiterals(userMessage: string): string[] {
-  const literals = new Set<string>();
-  const msg = userMessage.trim();
-
-  for (const m of msg.matchAll(/[「『"']([^」』"']+)[」』"']/g)) {
-    const v = m[1]?.trim();
-    if (v && v.length >= 2) literals.add(v);
-  }
-
-  for (const m of msg.matchAll(/名为\s*['「"']([^」』"']+)['」"']/g)) {
-    const v = m[1]?.trim();
-    if (v && v.length >= 2) literals.add(v);
-  }
-
-  const unquoted = msg.match(/^(.+?)(?:有哪些|有多少|有几个|几位|几个|下的|中(?:的)?(?:员工|用户|订单|记录))/);
-  if (unquoted?.[1]) {
-    const candidate = unquoted[1]
-      .replace(/^(查询|查|统计|列出|显示|获取)\s*/u, '')
-      .trim();
-    if (
-      candidate.length >= 2 &&
-      candidate.length <= 50 &&
-      !/^(所有|全部|每个|哪些)/u.test(candidate)
-    ) {
-      literals.add(candidate);
-    }
-  }
-
-  return [...literals];
 }
 
 function columnInWhere(

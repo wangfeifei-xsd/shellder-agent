@@ -15,6 +15,8 @@ export interface Nl2SqlGenerateResult {
   explanation: string;
   referencedTables: string[];
   params: Record<string, unknown>;
+  /** LLM 从用户问题中识别到的实体名/筛选值 */
+  extractedLiterals: string[];
 }
 
 export interface Nl2SqlGenerateInput {
@@ -112,11 +114,28 @@ export class Nl2SqlService {
           scopeContext: input.scopeContext,
           userMessage: input.userMessage,
         });
+
+        // 代码规则校验通过后，执行 LLM 语义审核
+        const reviewResult = await this.semanticReview(
+          input.userMessage,
+          parsed.sql,
+          parsed.params ?? {},
+          parsed.extractedLiterals ?? [],
+          input.tenantId,
+        );
+        if (!reviewResult.pass) {
+          throw new BadRequestException({
+            code: 'NL2SQL_SEMANTIC_REVIEW_FAILED',
+            message: reviewResult.reason,
+          });
+        }
+
         return {
           sql: parsed.sql,
           explanation: parsed.explanation,
           referencedTables: parsed.referencedTables,
           params: parsed.params ?? {},
+          extractedLiterals: parsed.extractedLiterals ?? [],
         };
       } catch (err) {
         lastValidationError = this.formatValidationError(err);
@@ -258,7 +277,10 @@ export class Nl2SqlService {
       raw.params && typeof raw.params === 'object' && !Array.isArray(raw.params)
         ? (raw.params as Record<string, unknown>)
         : {};
-    return { sql, explanation, referencedTables, params };
+    const extractedLiterals = Array.isArray(raw.extractedLiterals)
+      ? raw.extractedLiterals.filter((v): v is string => typeof v === 'string')
+      : [];
+    return { sql, explanation, referencedTables, params, extractedLiterals };
   }
 
   private buildFewShot(templates?: SqlTemplate[]): string | undefined {
@@ -267,6 +289,66 @@ export class Nl2SqlService {
       .slice(0, 3)
       .map((t) => `- ${t.name}: ${t.sql}${t.description ? ` (${t.description})` : ''}`)
       .join('\n');
+  }
+
+  /**
+   * LLM 语义审核：判断生成的 SQL 是否正确回答了用户问题。
+   * 嵌入重试循环内，代码规则校验通过后执行；不通过则进入重试。
+   */
+  private async semanticReview(
+    userMessage: string,
+    sql: string,
+    params: Record<string, unknown>,
+    extractedLiterals: string[],
+    tenantId?: string,
+  ): Promise<{ pass: boolean; reason: string }> {
+    try {
+      const [systemRendered, userRendered] = await Promise.all([
+        this.promptResolver.render({
+          promptKey: PROMPT_KEYS.QUERY_NL2SQL_REVIEW_SYSTEM,
+          channel: 'published',
+          tenantId,
+          variables: {},
+        }),
+        this.promptResolver.render({
+          promptKey: PROMPT_KEYS.QUERY_NL2SQL_REVIEW_USER,
+          channel: 'published',
+          tenantId,
+          variables: {
+            userMessage,
+            sql,
+            params: JSON.stringify(params),
+            extractedLiterals: JSON.stringify(extractedLiterals),
+          },
+        }),
+      ]);
+
+      const completion = await this.llm.chatCompletion([
+        { role: 'system', content: systemRendered.content },
+        { role: 'user', content: userRendered.content },
+      ]);
+
+      const text = completion.text.trim();
+      const jsonStr = text.startsWith('{')
+        ? text
+        : text.match(/```(?:json)?\s*([\s\S]*?)```/)?.[1]?.trim() ?? text;
+
+      try {
+        const result = JSON.parse(jsonStr) as { pass?: boolean; reason?: string };
+        return {
+          pass: result.pass === true,
+          reason: result.reason ?? 'SQL 语义审核未通过',
+        };
+      } catch {
+        this.logger.warn(`语义审核 LLM 返回非法 JSON，视为通过：${text.slice(0, 200)}`);
+        return { pass: true, reason: '' };
+      }
+    } catch (err) {
+      this.logger.warn(
+        `语义审核调用失败，降级跳过：${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { pass: true, reason: '' };
+    }
   }
 
   private formatValidationError(err: unknown): string {

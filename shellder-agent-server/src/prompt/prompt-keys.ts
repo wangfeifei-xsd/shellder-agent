@@ -9,6 +9,10 @@ export const PROMPT_KEYS = {
   QUERY_NL2SQL_SYSTEM: 'query.nl2sql.system',
   /** NL2SQL user 骨架 */
   QUERY_NL2SQL_USER: 'query.nl2sql.user',
+  /** NL2SQL 语义审核 system */
+  QUERY_NL2SQL_REVIEW_SYSTEM: 'query.nl2sql.review.system',
+  /** NL2SQL 语义审核 user 骨架 */
+  QUERY_NL2SQL_REVIEW_USER: 'query.nl2sql.review.user',
   /** 查询结果解读 system */
   QUERY_RESULT_SYSTEM: 'query.result.system',
   /** 查询结果解读 user 骨架 */
