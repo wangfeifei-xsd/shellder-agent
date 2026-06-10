@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Avatar, Button, Input, Spin, Tag, Tabs, Badge, Empty, List, Timeline, Modal, message, Alert, Tooltip } from 'antd';
+import { Avatar, Button, Input, Spin, Tag, Tabs, Badge, Empty, List, Timeline, Modal, Popconfirm, message, Alert, Tooltip } from 'antd';
 import {
   SendOutlined,
   HistoryOutlined,
@@ -17,6 +17,8 @@ import {
   NodeIndexOutlined,
   FormatPainterOutlined,
   ProfileOutlined,
+  DeleteOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import type {
   CapabilityTypeKey,
@@ -33,6 +35,8 @@ import {
   copilotSendMessage,
   copilotListSessions,
   copilotGetSession,
+  copilotDeleteSession,
+  copilotUpdateSession,
   copilotListConfirmations,
   copilotSubmitConfirmation,
   copilotBuildSseUrl,
@@ -415,7 +419,7 @@ export default function CopilotPage() {
     }
   };
 
-  const handleClearSession = useCallback(() => {
+  const resetCurrentSession = useCallback((options?: { resetCapabilityType?: boolean }) => {
     closeSse();
     setSessionId(null);
     setMessages([]);
@@ -424,8 +428,45 @@ export default function CopilotPage() {
     setInputValue('');
     setStreaming(false);
     setSending(false);
-    message.success('已清除当前会话，可重新选择能力类型开始对话');
+    if (options?.resetCapabilityType) {
+      setSelectedCapabilityType(null);
+    }
   }, [closeSse]);
+
+  const handleClearSession = useCallback(() => {
+    resetCurrentSession();
+    message.success('已清除当前会话，可重新选择能力类型开始对话');
+  }, [resetCurrentSession]);
+
+  const handleDeleteSession = async (sid: string) => {
+    const authToken = tokenRef.current;
+    if (!authToken) return;
+    try {
+      await copilotDeleteSession(authToken, sid);
+      setSessions((prev) => prev.filter((s) => s.id !== sid));
+      if (sessionId === sid) {
+        resetCurrentSession({ resetCapabilityType: true });
+      }
+      message.success('已删除');
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : '删除失败');
+    }
+  };
+
+  const handleRenameSession = async (sid: string, title: string) => {
+    const authToken = tokenRef.current;
+    if (!authToken) return;
+    try {
+      const updated = await copilotUpdateSession(authToken, sid, { title });
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sid ? { ...s, title: updated.title } : s)),
+      );
+      message.success('已重命名');
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : '重命名失败');
+      throw e;
+    }
+  };
 
   const handleConfirm = async (id: string, action: 'approve' | 'reject') => {
     const authToken = tokenRef.current;
@@ -516,8 +557,8 @@ export default function CopilotPage() {
   ];
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b px-4">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="shrink-0 border-b px-4">
         <Tabs
           activeKey={activeTab}
           onChange={(k) => setActiveTab(k as CopilotTab)}
@@ -526,7 +567,7 @@ export default function CopilotPage() {
         />
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activeTab === 'chat' && (
           <ChatPanel
             messages={messages}
@@ -559,7 +600,12 @@ export default function CopilotPage() {
           />
         )}
         {activeTab === 'history' && (
-          <HistoryPanel sessions={sessions} onResume={(id) => void resumeSession(id)} />
+          <HistoryPanel
+            sessions={sessions}
+            onResume={(id) => void resumeSession(id)}
+            onDelete={(id) => void handleDeleteSession(id)}
+            onRename={(id, title) => handleRenameSession(id, title)}
+          />
         )}
         {activeTab === 'confirmations' && (
           <ConfirmationPanel
@@ -826,22 +872,90 @@ function MessageBubble({
 function HistoryPanel({
   sessions,
   onResume,
+  onDelete,
+  onRename,
 }: {
   sessions: CopilotSession[];
   onResume: (id: string) => void;
+  onDelete: (id: string) => void;
+  onRename: (id: string, title: string) => Promise<void>;
 }) {
+  const [renameTarget, setRenameTarget] = useState<CopilotSession | null>(null);
+  const [renameTitle, setRenameTitle] = useState('');
+  const [renaming, setRenaming] = useState(false);
+
+  const openRename = (session: CopilotSession, event: React.MouseEvent) => {
+    event.stopPropagation();
+    setRenameTarget(session);
+    setRenameTitle(session.title || '');
+  };
+
+  const submitRename = async () => {
+    if (!renameTarget) return;
+    const trimmed = renameTitle.trim();
+    if (!trimmed) {
+      message.warning('会话名称不能为空');
+      return;
+    }
+    setRenaming(true);
+    try {
+      await onRename(renameTarget.id, trimmed);
+      setRenameTarget(null);
+    } catch {
+      // 错误提示由父组件处理
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   if (sessions.length === 0) {
-    return <Empty description="暂无历史会话" className="mt-12" />;
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto">
+        <Empty description="暂无历史会话" />
+      </div>
+    );
   }
 
   return (
-    <div className="overflow-y-auto p-4">
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain p-4">
       <List
         dataSource={sessions}
         renderItem={(s) => (
           <List.Item
             className="cursor-pointer hover:bg-gray-50 rounded px-2"
             onClick={() => onResume(s.id)}
+            actions={[
+              <Button
+                key="rename"
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                aria-label="重命名会话"
+                onClick={(e) => openRename(s, e)}
+              />,
+              <Popconfirm
+                key="delete"
+                title={`确认删除「${s.title || '未命名会话'}」？`}
+                description="将永久删除该会话下的消息；关联任务与待确认审批一并移除，不可恢复。"
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+                onConfirm={(e) => {
+                  e?.stopPropagation();
+                  onDelete(s.id);
+                }}
+                onCancel={(e) => e?.stopPropagation()}
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  aria-label="删除会话"
+                  onClick={(e) => e.stopPropagation()}
+                />
+              </Popconfirm>,
+            ]}
           >
             <List.Item.Meta
               title={s.title || '未命名会话'}
@@ -856,6 +970,24 @@ function HistoryPanel({
           </List.Item>
         )}
       />
+      <Modal
+        title="重命名会话"
+        open={!!renameTarget}
+        onCancel={() => setRenameTarget(null)}
+        onOk={() => void submitRename()}
+        confirmLoading={renaming}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Input
+          value={renameTitle}
+          onChange={(e) => setRenameTitle(e.target.value)}
+          maxLength={256}
+          placeholder="请输入会话名称"
+          onPressEnter={() => void submitRename()}
+        />
+      </Modal>
     </div>
   );
 }
@@ -868,11 +1000,15 @@ function ConfirmationPanel({
   onAction: (id: string, action: 'approve' | 'reject') => void;
 }) {
   if (confirmations.length === 0) {
-    return <Empty description="暂无待确认事项" className="mt-12" />;
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto">
+        <Empty description="暂无待确认事项" />
+      </div>
+    );
   }
 
   return (
-    <div className="overflow-y-auto p-4 space-y-3">
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain space-y-3 p-4">
       {confirmations.map((c) => (
         <div key={c.id} className="rounded-lg border p-3">
           <div className="flex items-center justify-between">
@@ -921,11 +1057,15 @@ function ConfirmationPanel({
 
 function TaskPanel({ token, tasks }: { token: string; tasks: CopilotSessionTask[] }) {
   if (tasks.length === 0) {
-    return <Empty description="当前会话暂无任务（流程型能力执行后可见）" className="mt-12" />;
+    return (
+      <div className="flex h-full min-h-0 items-center justify-center overflow-y-auto">
+        <Empty description="当前会话暂无任务（流程型能力执行后可见）" />
+      </div>
+    );
   }
 
   return (
-    <div className="overflow-y-auto p-4 space-y-3">
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain space-y-3 p-4">
       {tasks.map((task) => (
         <TaskCard key={task.id} task={task} token={token} />
       ))}

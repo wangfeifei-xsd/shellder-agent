@@ -26,7 +26,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { KnowledgeProxyService } from '../knowledge/knowledge-proxy.service';
 import { CopilotAuthService, CopilotJwtPayload } from './copilot-auth.service';
 import { CopilotConfigService } from './copilot-config.service';
-import { CreateCopilotSessionDto } from './dto/copilot-session.dto';
+import { CreateCopilotSessionDto, UpdateCopilotSessionDto } from './dto/copilot-session.dto';
 import {
   CopilotTokenExchangeDto,
   CreateCopilotConfigDto,
@@ -224,6 +224,86 @@ export class CopilotWidgetController {
       })),
       tasks,
     };
+  }
+
+  /** PATCH /copilot/v1/sessions/:id — 更新会话（如重命名） */
+  @Patch('sessions/:id')
+  async updateSession(
+    @Headers('authorization') authHeader: string,
+    @Param('id') id: string,
+    @Body() body: UpdateCopilotSessionDto,
+  ) {
+    const payload = this.extractPayload(authHeader);
+    const session = await this.prisma.session.findUnique({ where: { id } });
+
+    if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
+      throw new ForbiddenException({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
+    }
+
+    if (body.title === undefined) {
+      return {
+        id: session.id,
+        title: session.title,
+        status: session.status,
+        capabilityType: session.capabilityType,
+        summary: session.summary,
+        lastMessageAt: session.lastMessageAt,
+        createdAt: session.createdAt,
+      };
+    }
+
+    const updated = await this.prisma.session.update({
+      where: { id },
+      data: { title: body.title.trim() || null },
+    });
+
+    return {
+      id: updated.id,
+      title: updated.title,
+      status: updated.status,
+      capabilityType: updated.capabilityType,
+      summary: updated.summary,
+      lastMessageAt: updated.lastMessageAt,
+      createdAt: updated.createdAt,
+    };
+  }
+
+  /** DELETE /copilot/v1/sessions/:id — 删除历史会话（消息、任务、关联审批一并清理） */
+  @Delete('sessions/:id')
+  async deleteSession(
+    @Headers('authorization') authHeader: string,
+    @Param('id') id: string,
+  ) {
+    const payload = this.extractPayload(authHeader);
+    const session = await this.prisma.session.findUnique({ where: { id } });
+
+    if (!session || session.tenantId !== payload.tenantId || session.userId !== payload.sub) {
+      throw new ForbiddenException({ code: 'SESSION_NOT_FOUND', message: '会话不存在' });
+    }
+
+    const messageIds = (
+      await this.prisma.message.findMany({
+        where: { sessionId: id },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.task.deleteMany({ where: { sessionId: id } });
+      await tx.approval.deleteMany({
+        where: {
+          OR: [
+            { sessionId: id },
+            ...(messageIds.length > 0
+              ? [{ messageId: { in: messageIds } }]
+              : []),
+          ],
+        },
+      });
+      await tx.session.delete({ where: { id } });
+    });
+
+    return { id };
   }
 
   /**
@@ -452,6 +532,8 @@ export class CopilotWidgetController {
         { method: 'POST', path: '/sessions', description: '创建会话（capabilityType 必填，手动选择）', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/sessions', description: '历史会话列表', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/sessions/:id', description: '会话详情（消息 + 任务）', auth: 'Bearer Copilot JWT' },
+        { method: 'PATCH', path: '/sessions/:id', description: '更新会话（如重命名）', auth: 'Bearer Copilot JWT' },
+        { method: 'DELETE', path: '/sessions/:id', description: '删除历史会话', auth: 'Bearer Copilot JWT' },
         { method: 'POST', path: '/sessions/:id/messages', description: '发送消息并触发 Runtime（mode=stream|sync）', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/sessions/:id/stream', description: 'SSE 订阅（?token= 供 EventSource）', auth: 'Bearer 或 ?token=' },
         { method: 'GET', path: '/confirmations', description: '待确认列表', auth: 'Bearer Copilot JWT' },

@@ -11,3 +11,10 @@ export class CreateCopilotSessionDto {
   @IsEnum(CapabilityType)
   capabilityType!: CapabilityType;
 }
+
+export class UpdateCopilotSessionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(256)
+  title?: string;
+}

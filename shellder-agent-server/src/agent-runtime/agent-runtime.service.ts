@@ -30,6 +30,7 @@ import {
 } from '../system-settings/system-settings.service';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ConfirmationActor } from '../approval/approval-runtime.types';
+import { SessionTitleService } from './session-title.service';
 
 /** 未配置系统设置时的兜底（与 basic.defaultTimeoutMs 默认 300000 对齐） */
 const FALLBACK_CAPABILITY_TIMEOUT_MS = 300_000;
@@ -63,6 +64,7 @@ export class AgentRuntimeService {
     private readonly sessionService: SessionService,
     private readonly sseEmitter: SseEmitterService,
     private readonly systemSettings: SystemSettingsService,
+    private readonly sessionTitleService: SessionTitleService,
   ) {}
 
   /** 能力 Handler 总超时（Copilot 预览 / 嵌入会话共用） */
@@ -119,6 +121,15 @@ export class AgentRuntimeService {
     const userMessage = await this.appendMessage(sessionId, 'user', {
       text: dto.content,
     });
+
+    // 首条消息且无标题时异步生成会话标题（不阻塞主流程）
+    if (!session.title && userMessage.seq === 1) {
+      void this.sessionTitleService
+        .generateTitle(sessionId, dto.content)
+        .catch((err) =>
+          this.logger.warn(`会话标题生成失败 session=${sessionId}: ${err.message}`),
+        );
+    }
 
     const mode: SendMessageMode = dto.mode ?? 'stream';
 

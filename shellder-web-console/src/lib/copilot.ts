@@ -241,6 +241,30 @@ export async function copilotGetSession(
   return readCopilotJson<CopilotSessionDetail>(res, '获取会话失败');
 }
 
+export async function copilotDeleteSession(
+  token: string,
+  sessionId: string,
+): Promise<{ id: string }> {
+  const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}`, {
+    method: 'DELETE',
+    headers: copilotHeaders(token),
+  });
+  return readCopilotJson<{ id: string }>(res, '删除会话失败');
+}
+
+export async function copilotUpdateSession(
+  token: string,
+  sessionId: string,
+  body: { title: string },
+): Promise<CopilotSession> {
+  const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: copilotHeaders(token),
+    body: JSON.stringify(body),
+  });
+  return readCopilotJson<CopilotSession>(res, '更新会话失败');
+}
+
 export async function copilotSendMessage(
   token: string,
   sessionId: string,
