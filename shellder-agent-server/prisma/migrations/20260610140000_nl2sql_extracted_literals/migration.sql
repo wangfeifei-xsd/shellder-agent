@@ -1,5 +1,34 @@
 -- NL2SQL system prompt v2: 增加 extractedLiterals 输出要求，实体名识别由 LLM 完成
 
+-- 纯 Docker / prisma migrate deploy 未执行 project-sql seed 时，须先 bootstrap query.nl2sql.system
+INSERT INTO `prompt_template`
+  (`id`, `prompt_key`, `name`, `description`, `category`, `role`, `scope`, `tenant_id`, `variable_schema`, `status`, `created_at`, `updated_at`)
+VALUES (
+  '21000000-0000-0000-0000-000000000002',
+  'query.nl2sql.system',
+  'NL2SQL System',
+  'NL2SQL 约束与 JSON 输出格式',
+  'query', 'system', 'global', NULL, NULL,
+  'active', CURRENT_TIMESTAMP(3), CURRENT_TIMESTAMP(3)
+)
+ON DUPLICATE KEY UPDATE `name` = VALUES(`name`), `updated_at` = CURRENT_TIMESTAMP(3);
+
+INSERT INTO `prompt_version`
+  (`id`, `template_id`, `version`, `content`, `content_hash`, `changelog`, `state`, `published_at`, `published_by`, `created_at`)
+SELECT
+  '21000000-0000-0000-0001-000000000002',
+  '21000000-0000-0000-0000-000000000002',
+  1,
+  '你是只读 SQL 生成助手。根据数据库 ER 关系图与用户自然语言，生成单条 MySQL 只读查询。\n\n要求：\n1. 仅输出一个合法 JSON 对象，不要 markdown，不要额外说明。\n2. JSON 格式：\n{\n  \"sql\": \"SELECT ...\",\n  \"explanation\": \"面向用户的中文简要说明\",\n  \"referencedTables\": [\"表名1\", \"表名2\"],\n  \"params\": { \"paramName\": \"value\" }\n}\n3. sql 必须是单条 SELECT 或 WITH...SELECT，禁止 INSERT/UPDATE/DELETE/DDL。\n4. 只能使用输入 ER 图中出现的表；不得引用表黑名单中的表（若提供）。\n5. 命名参数使用 :name 形式，并在 params 中给出从用户问题提取的真实值；无参数时 params 为 {}。\n6. referencedTables 列出 SQL 实际引用的物理表名（小写无关，保持原表名）。',
+  SHA2('query.nl2sql.system.v1', 256),
+  '从 nl2sql.prompt.ts NL2SQL_SYSTEM_PROMPT 迁移',
+  'published', CURRENT_TIMESTAMP(3), NULL, CURRENT_TIMESTAMP(3)
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM `prompt_version`
+  WHERE `template_id` = '21000000-0000-0000-0000-000000000002' AND `version` = 1
+);
+
 INSERT INTO `prompt_version`
   (`id`, `template_id`, `version`, `content`, `content_hash`, `changelog`, `state`, `published_at`, `published_by`, `created_at`)
 SELECT
