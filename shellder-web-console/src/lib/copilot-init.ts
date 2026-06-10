@@ -16,6 +16,30 @@ export const COPILOT_INIT_MESSAGE_TYPE = 'copilot:init';
 /** 嵌入页挂载并准备好接收 init 后向父页发送 */
 export const COPILOT_READY_MESSAGE_TYPE = 'copilot:ready';
 
+/** 从 document.referrer 解析父页 origin（跨域嵌入） */
+export function getCopilotParentOrigin(): string | null {
+  if (typeof document === 'undefined' || !document.referrer) return null;
+  try {
+    return new URL(document.referrer).origin;
+  } catch {
+    return null;
+  }
+}
+
+/** 同源预览或 referrer 匹配的跨域父页 */
+export function isAllowedCopilotParentOrigin(origin: string): boolean {
+  if (!origin) return false;
+  if (typeof window !== 'undefined' && origin === window.location.origin) return true;
+  const parentOrigin = getCopilotParentOrigin();
+  return !!parentOrigin && origin === parentOrigin;
+}
+
+/** postMessage 目标：跨域时发往父页 origin，同源预览走当前 origin */
+export function resolveCopilotPostMessageTarget(): string {
+  if (typeof window === 'undefined') return '*';
+  return getCopilotParentOrigin() ?? window.location.origin;
+}
+
 function normalizeStringArray(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const list = raw

@@ -53,8 +53,10 @@ import {
 import {
   COPILOT_INIT_MESSAGE_TYPE,
   COPILOT_READY_MESSAGE_TYPE,
+  isAllowedCopilotParentOrigin,
   pickCopilotTokenExchangeParams,
   pickCopilotTokenExchangeParamsFromSearchParams,
+  resolveCopilotPostMessageTarget,
   type CopilotTokenExchangeParams,
 } from '@/lib/copilot-init';
 
@@ -139,7 +141,7 @@ export default function CopilotPage() {
     }
 
     const handler = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
+      if (!isAllowedCopilotParentOrigin(event.origin)) return;
       if (event.data?.type !== COPILOT_INIT_MESSAGE_TYPE) return;
       const params = pickCopilotTokenExchangeParams(
         event.data as Record<string, unknown>,
@@ -154,7 +156,7 @@ export default function CopilotPage() {
       if (window.parent !== window) {
         window.parent.postMessage(
           { type: COPILOT_READY_MESSAGE_TYPE },
-          window.location.origin,
+          resolveCopilotPostMessageTarget(),
         );
       }
     }
