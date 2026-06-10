@@ -29,13 +29,13 @@ Monorepo 包含 Web 管理后台（`shellder-web-console`）、主后端（`shel
 
 **默认行为**：`docker compose up` 只启动三个应用容器，**不会**创建 mysql/redis。连接地址来自仓库内的 **`.env.example`**（Jenkins scp 会一并下发，无需再维护单独的 `.env`）。
 
+Docker 部署**只启动应用容器**，不执行任何 SQL。库表与种子数据由运维自行维护，见 [`project-sql/README.md`](project-sql/README.md)。
+
 ```bash
 # 按需编辑 .env.example 中的 DATABASE_URL、REDIS_HOST 等
 docker compose --env-file .env.example up --build -d
 # 或 Jenkins：bash scripts/deploy.sh
 ```
-
-`shellder-agent-server` 启动顺序：**Prisma 迁移** → **可选 seed**（`SEED_ON_STARTUP=true` 时）→ 应用进程。生产环境请保持 `SEED_ON_STARTUP=false`。
 
 验证：
 
@@ -88,7 +88,7 @@ docker compose --env-file .env.example --profile bundled-infra \
 
 npm install
 npm run prisma:generate
-npm run prisma:migrate:dev          # 交互式迁移；无新迁移时可跳过
+# 首次建库：手动执行 project-sql/00-all-schema.sql、00-all-seed.sql
 ```
 
 本地 npm 开发时，可在 `shellder-agent/` 下新建 `.env`（指向 `localhost:3306`），会优先于 `.env.example` 加载。
@@ -174,7 +174,7 @@ docker exec shellder-agent-server printenv DATABASE_URL
    docker compose down -v
    docker compose up -d mysql redis
    ```
-3. 等约 30s 后：`npm run prisma:migrate:dev`
+3. 等约 30s 后手动执行 `project-sql/00-all-schema.sql`、`00-all-seed.sql`
 
 **若用本机 MySQL（Homebrew 等，占 3306）：**
 
@@ -193,12 +193,9 @@ FLUSH PRIVILEGES;
 mysql -h 127.0.0.1 -P 3306 -u agent -pchangeme_agent agent_platform -e "SELECT 1"
 ```
 
-## Prisma 迁移
+## 数据库（project-sql 手动维护）
 
-```bash
-npm run prisma:migrate:dev   # 开发
-npm run prisma:migrate       # 部署（migrate deploy）
-```
+结构 + 种子以 `project-sql/00-all-schema.sql`、`00-all-seed.sql` 为准，发版前由运维自行执行。本地开发 `npm run prisma:generate` 仅用于生成 ORM 客户端（不连库、不跑迁移）。
 
 ## 文档
 

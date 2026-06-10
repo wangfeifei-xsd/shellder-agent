@@ -14,9 +14,7 @@
     "dev:worker": "npm run start:dev -w shellder-job-worker",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
-    "prisma:generate": "npm run prisma:generate -w shellder-agent-server",
-    "prisma:migrate": "npm run prisma:migrate -w shellder-agent-server",
-    "prisma:migrate:dev": "npm run prisma:migrate:dev -w shellder-agent-server"
+    "prisma:generate": "npm run prisma:generate -w shellder-agent-server"
   },
   "engines": {
     "node": ">=20"
