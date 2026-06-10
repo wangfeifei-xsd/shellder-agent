@@ -39,7 +39,8 @@
 | Key | 消费方 |
 |-----|--------|
 | `qa.dialogue.system` | QaPipelineService |
-| `query.nl2sql.system` / `.user` | Nl2SqlService |
+| `query.nl2sql.system` / `.user` | Nl2SqlService（NL2SQL 生成） |
+| `query.nl2sql.review.system` / `.review.user` | Nl2SqlService（语义审核） |
 | `query.result.system` / `.user` | QueryResultService |
 | `connector.er_diagram.*` | ErDiagramService |
 | `connector.er_data_scope.*` | ErDataScopeService |
