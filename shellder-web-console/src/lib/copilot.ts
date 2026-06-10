@@ -5,7 +5,10 @@
 
 import { resolveApiOrigin } from './api';
 
-const COPILOT_BASE = `${resolveApiOrigin()}/copilot/v1`;
+/** 运行时解析，避免模块加载时 window 未就绪或构建期固化 localhost */
+function copilotApiBase(): string {
+  return `${resolveApiOrigin()}/copilot/v1`;
+}
 
 export interface CopilotConfig {
   theme?: Record<string, unknown>;
@@ -194,7 +197,7 @@ export async function copilotExchangeToken(params: {
   /** 问答型 wiki 子目录范围（层内相对路径）；空或未传表示租户 wiki 全目录 */
   wikiPrefixes?: string[];
 }): Promise<CopilotTokenResponse> {
-  const res = await fetch(`${COPILOT_BASE}/auth/token`, {
+  const res = await fetch(`${copilotApiBase()}/auth/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
@@ -206,7 +209,7 @@ export async function copilotCreateSession(
   token: string,
   options?: { title?: string; capabilityType?: CapabilityTypeKey },
 ): Promise<CopilotSession> {
-  const res = await fetch(`${COPILOT_BASE}/sessions`, {
+  const res = await fetch(`${copilotApiBase()}/sessions`, {
     method: 'POST',
     headers: copilotHeaders(token),
     body: JSON.stringify({
@@ -222,7 +225,7 @@ export async function copilotListSessions(
   page = 1,
   pageSize = 20,
 ): Promise<{ items: CopilotSession[]; total: number }> {
-  const res = await fetch(`${COPILOT_BASE}/sessions?page=${page}&pageSize=${pageSize}`, {
+  const res = await fetch(`${copilotApiBase()}/sessions?page=${page}&pageSize=${pageSize}`, {
     headers: copilotHeaders(token),
   });
   return readCopilotJson<{ items: CopilotSession[]; total: number }>(
@@ -235,7 +238,7 @@ export async function copilotGetSession(
   token: string,
   sessionId: string,
 ): Promise<CopilotSessionDetail> {
-  const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}`, {
+  const res = await fetch(`${copilotApiBase()}/sessions/${sessionId}`, {
     headers: copilotHeaders(token),
   });
   return readCopilotJson<CopilotSessionDetail>(res, '获取会话失败');
@@ -245,7 +248,7 @@ export async function copilotDeleteSession(
   token: string,
   sessionId: string,
 ): Promise<{ id: string }> {
-  const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}`, {
+  const res = await fetch(`${copilotApiBase()}/sessions/${sessionId}`, {
     method: 'DELETE',
     headers: copilotHeaders(token),
   });
@@ -257,7 +260,7 @@ export async function copilotUpdateSession(
   sessionId: string,
   body: { title: string },
 ): Promise<CopilotSession> {
-  const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}`, {
+  const res = await fetch(`${copilotApiBase()}/sessions/${sessionId}`, {
     method: 'PATCH',
     headers: copilotHeaders(token),
     body: JSON.stringify(body),
@@ -271,7 +274,7 @@ export async function copilotSendMessage(
   content: string,
   mode: 'sync' | 'stream' = 'stream',
 ): Promise<CopilotSendMessageResult> {
-  const res = await fetch(`${COPILOT_BASE}/sessions/${sessionId}/messages`, {
+  const res = await fetch(`${copilotApiBase()}/sessions/${sessionId}/messages`, {
     method: 'POST',
     headers: copilotHeaders(token),
     body: JSON.stringify({ content, mode }),
@@ -282,7 +285,7 @@ export async function copilotSendMessage(
 /** EventSource 无法携带 Authorization，通过 query token 鉴权 */
 export function copilotBuildSseUrl(sessionId: string, token: string): string {
   const qs = new URLSearchParams({ token });
-  return `${COPILOT_BASE}/sessions/${sessionId}/stream?${qs.toString()}`;
+  return `${copilotApiBase()}/sessions/${sessionId}/stream?${qs.toString()}`;
 }
 
 export async function copilotListConfirmations(
@@ -290,7 +293,7 @@ export async function copilotListConfirmations(
   status?: string,
 ): Promise<CopilotConfirmation[]> {
   const qs = status ? `?status=${status}` : '';
-  const res = await fetch(`${COPILOT_BASE}/confirmations${qs}`, {
+  const res = await fetch(`${copilotApiBase()}/confirmations${qs}`, {
     headers: copilotHeaders(token),
   });
   return readCopilotJson<CopilotConfirmation[]>(res, '获取待确认列表失败');
@@ -302,7 +305,7 @@ export async function copilotSubmitConfirmation(
   action: 'approve' | 'reject',
   opinion?: string,
 ): Promise<{ id: string; status: string; resumed?: boolean }> {
-  const res = await fetch(`${COPILOT_BASE}/confirmations/${id}`, {
+  const res = await fetch(`${copilotApiBase()}/confirmations/${id}`, {
     method: 'POST',
     headers: copilotHeaders(token),
     body: JSON.stringify({ action, opinion }),
@@ -317,7 +320,7 @@ export async function copilotGetTask(
   token: string,
   taskId: string,
 ): Promise<CopilotTask> {
-  const res = await fetch(`${COPILOT_BASE}/tasks/${taskId}`, {
+  const res = await fetch(`${copilotApiBase()}/tasks/${taskId}`, {
     headers: copilotHeaders(token),
   });
   return readCopilotJson<CopilotTask>(res, '获取任务失败');
@@ -358,7 +361,7 @@ export async function copilotFetchMediaObjectUrl(
   token: string,
   code: string,
 ): Promise<string> {
-  const res = await fetch(`${COPILOT_BASE}/media/${encodeURIComponent(code)}?token=${encodeURIComponent(token)}`, {
+  const res = await fetch(`${copilotApiBase()}/media/${encodeURIComponent(code)}?token=${encodeURIComponent(token)}`, {
     cache: 'no-store',
   });
   if (!res.ok) {
