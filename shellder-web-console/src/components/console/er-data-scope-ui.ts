@@ -55,6 +55,7 @@ export function dimensionStatus(
   ds: ErDataScopeBinding | undefined,
   dim: DataScopeDimension,
 ): '推断' | '已确认' | '待配置' {
+  if (!ds) return '待配置';
   const maintained = dim === 'scope' ? hasScopeMaintenance(ds) : hasUserMaintenance(ds);
   const col = dimensionColumn(ds, dim);
   if (!maintained) return '待配置';
