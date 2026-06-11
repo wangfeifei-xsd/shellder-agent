@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Card, Form, Input, Select, Space, Typography, message } from 'antd';
 import { PlayCircleOutlined, CopyOutlined } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   useWikiPrefixTree,
@@ -15,6 +16,8 @@ import {
   type CopilotTokenExchangeParams,
 } from '@/lib/copilot-init';
 import { buildHashRouteUrl } from '@/lib/navigation';
+import { listOpenApiApps, type OpenApiAppItem } from '@/lib/openapi-management';
+import { getTenant } from '@/lib/tenant';
 
 const { Title, Paragraph } = Typography;
 
@@ -23,10 +26,12 @@ const { Title, Paragraph } = Typography;
  * 并获取嵌入代码片段。
  */
 export default function CopilotPreviewPage() {
-  const { tenants } = useActiveTenant();
+  const { tenants, activeTenantId } = useActiveTenant();
   const [form] = Form.useForm();
   const [iframeSrc, setIframeSrc] = useState<string | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
+  const [openapiApps, setOpenapiApps] = useState<OpenApiAppItem[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
   const pendingInitRef = useRef<CopilotTokenExchangeParams | null>(null);
   const selectedTenantId = Form.useWatch('tenantId', form) as string | undefined;
   const { treeData: wikiPrefixTreeData, loading: wikiPrefixTreeLoading } =
@@ -40,6 +45,81 @@ export default function CopilotPreviewPage() {
         label: `${tenant.name}（${tenant.code}）`,
       })),
     [tenants],
+  );
+
+  const appOptions = useMemo(
+    () =>
+      openapiApps.map((app) => ({
+        value: app.id,
+        label: `${app.name}（${app.clientId}）`,
+      })),
+    [openapiApps],
+  );
+
+  const loadOpenapiApps = useCallback(async () => {
+    setAppsLoading(true);
+    try {
+      const res = await listOpenApiApps({
+        pageSize: 200,
+        status: 'enabled',
+        tenantId: activeTenantId,
+      });
+      setOpenapiApps(res.items);
+    } catch {
+      setOpenapiApps([]);
+    } finally {
+      setAppsLoading(false);
+    }
+  }, [activeTenantId]);
+
+  useEffect(() => {
+    void loadOpenapiApps();
+  }, [loadOpenapiApps]);
+
+  useEffect(() => {
+    const appId = form.getFieldValue('appId') as string | undefined;
+    if (!appId || openapiApps.some((a) => a.id === appId)) return;
+    form.setFieldValue('appId', undefined);
+  }, [form, openapiApps]);
+
+  const resolveTenantIdForApp = useCallback(
+    (app: OpenApiAppItem): string | undefined => {
+      const allowed = app.allowedTenantIds;
+      if (!allowed.length) return activeTenantId;
+      if (activeTenantId && allowed.includes(activeTenantId)) return activeTenantId;
+      const bound = allowed.filter((id) => tenants.some((t) => t.id === id));
+      if (bound.length === 1) return bound[0];
+      if (allowed.length === 1) return allowed[0];
+      return undefined;
+    },
+    [activeTenantId, tenants],
+  );
+
+  const handleAppSelect = useCallback(
+    async (appId: string | undefined) => {
+      if (!appId) return;
+      const app = openapiApps.find((a) => a.id === appId);
+      if (!app) return;
+
+      const tenantId = resolveTenantIdForApp(app);
+      const patch: Record<string, unknown> = {
+        clientId: app.clientId,
+        clientSecret: undefined,
+        tenantId,
+      };
+
+      if (tenantId) {
+        try {
+          const tenant = await getTenant(tenantId);
+          patch.externalTenantId = tenant.externalTenantId ?? undefined;
+        } catch {
+          // 租户详情加载失败时仍保留 clientId / tenantId
+        }
+      }
+
+      form.setFieldsValue(patch);
+    },
+    [form, openapiApps, resolveTenantIdForApp],
   );
 
   const buildInitParamsFromForm = (
@@ -157,10 +237,48 @@ export default function CopilotPreviewPage() {
         {/* 左侧：配置表单 */}
         <Card className="w-[400px]" title="嵌入参数">
           <Form form={form} layout="vertical" initialValues={{ wikiPrefixes: [] }}>
+            <Form.Item
+              name="appId"
+              label="OpenAPI 应用"
+              tooltip="选择后自动填入 Client ID、租户 ID 等；Client Secret 需手动填写（平台不存储明文）"
+            >
+              <Select
+                allowClear
+                showSearch
+                loading={appsLoading}
+                optionFilterProp="label"
+                placeholder={
+                  appOptions.length > 0
+                    ? '选择应用以代入参数'
+                    : '暂无可用应用'
+                }
+                options={appOptions}
+                onChange={(value) => {
+                  if (value) void handleAppSelect(value);
+                  else {
+                    form.setFieldsValue({
+                      clientId: undefined,
+                      clientSecret: undefined,
+                    });
+                  }
+                }}
+                notFoundContent={
+                  <span className="text-gray-400">
+                    请先在{' '}
+                    <Link to="/openapi/apps">OpenAPI 应用接入</Link> 创建应用
+                  </span>
+                }
+              />
+            </Form.Item>
             <Form.Item name="clientId" label="Client ID" rules={[{ required: true }]}>
               <Input placeholder="OpenAPI 应用的 Client ID" />
             </Form.Item>
-            <Form.Item name="clientSecret" label="Client Secret" rules={[{ required: true }]}>
+            <Form.Item
+              name="clientSecret"
+              label="Client Secret"
+              rules={[{ required: true }]}
+              extra="创建或重置密钥时展示一次，请从本地保管处粘贴"
+            >
               <Input.Password placeholder="OpenAPI 应用的 Client Secret" />
             </Form.Item>
             <Form.Item name="tenantId" label="租户 ID">

@@ -1,6 +1,6 @@
 'use client';
 
-import { Collapse, Space, Spin, Tag, Typography } from 'antd';
+import { Collapse, Space, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import {
   copilotBuildMediaUrl,
@@ -72,30 +72,39 @@ export function CopilotQaRecallMedia({
   token: string;
   content: Record<string, unknown>;
 }) {
-  const bundle = extractQaRecallMediaBundleFromContent(content);
-  const media = bundle?.merged_media ?? [];
+  const bundle = useMemo(
+    () => extractQaRecallMediaBundleFromContent(content),
+    [content],
+  );
+  const mediaCodes = useMemo(
+    () => (bundle?.merged_media ?? []).map((m) => m.code).join(','),
+    [bundle],
+  );
   const injectedContext = bundle?.injected_context ?? '';
+  const mediaCount = bundle?.merged_media.length ?? 0;
   const [loading, setLoading] = useState(false);
   const [resolvedItems, setResolvedItems] = useState<CopilotMediaResolvedItem[]>([]);
   const [resolveError, setResolveError] = useState<string | null>(null);
 
-  const resolveKey = useMemo(
-    () => `${injectedContext.length}:${media.map((m) => m.code).join(',')}`,
-    [injectedContext, media],
-  );
+  const resolveKey = useMemo(() => {
+    if (!mediaCodes) return '';
+    return `${mediaCodes}|${injectedContext.length}`;
+  }, [mediaCodes, injectedContext]);
 
   useEffect(() => {
-    if (!bundle || media.length === 0) {
+    if (!resolveKey) {
       setResolvedItems([]);
       setResolveError(null);
+      setLoading(false);
       return;
     }
+    const codes = mediaCodes.split(',').filter(Boolean);
     let cancelled = false;
     setLoading(true);
     setResolveError(null);
     void copilotResolveMediaFromText(token, {
       text: injectedContext,
-      codes: media.map((m) => m.code),
+      codes,
     })
       .then((res) => {
         if (!cancelled) setResolvedItems(res.items ?? []);
@@ -112,13 +121,17 @@ export function CopilotQaRecallMedia({
     return () => {
       cancelled = true;
     };
-  }, [token, bundle, media, injectedContext, resolveKey]);
+  }, [token, resolveKey, mediaCodes, injectedContext]);
 
-  if (!bundle || media.length === 0) return null;
-
-  const previewItems = resolvedItems.filter(
-    (item) => item.registered && (isImageMime(item.mime) || isVideoMime(item.mime)),
+  const previewItems = useMemo(
+    () =>
+      resolvedItems.filter(
+        (item) => item.registered && (isImageMime(item.mime) || isVideoMime(item.mime)),
+      ),
+    [resolvedItems],
   );
+
+  if (!bundle || mediaCount === 0) return null;
 
   return (
     <Collapse
@@ -131,7 +144,7 @@ export function CopilotQaRecallMedia({
           label: (
             <Space size={6}>
               <span className="text-xs text-slate-600">多媒体内容</span>
-              {loading ? <Spin size="small" /> : <Tag className="!m-0">{media.length} 个</Tag>}
+              <Tag className="!m-0">{mediaCount} 个</Tag>
             </Space>
           ),
           children: (
