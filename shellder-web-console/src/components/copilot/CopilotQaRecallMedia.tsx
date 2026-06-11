@@ -1,12 +1,13 @@
 'use client';
 
-import { Collapse, Space, Tag, Typography } from 'antd';
-import { useEffect, useState } from 'react';
+import { Collapse, Space, Spin, Tag, Typography } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  copilotFetchMediaObjectUrl,
+  copilotBuildMediaUrl,
   copilotOpenMediaInNewTab,
+  copilotResolveMediaFromText,
   extractQaRecallMediaBundleFromContent,
-  type QaRecallMediaRef,
+  type CopilotMediaResolvedItem,
 } from '@/lib/copilot';
 
 const { Text } = Typography;
@@ -19,57 +20,15 @@ function isVideoMime(mime: string): boolean {
   return /^video\//i.test(mime);
 }
 
-function CopilotMediaThumb({
+function CopilotMediaPreview({
   token,
   item,
 }: {
   token: string;
-  item: QaRecallMediaRef;
+  item: CopilotMediaResolvedItem;
 }) {
-  const [src, setSrc] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!isImageMime(item.mime) && !isVideoMime(item.mime)) return;
-    let revoked: string | null = null;
-    let cancelled = false;
-    void copilotFetchMediaObjectUrl(token, item.code)
-      .then((url) => {
-        if (cancelled) {
-          URL.revokeObjectURL(url);
-          return;
-        }
-        revoked = url;
-        setSrc(url);
-      })
-      .catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    return () => {
-      cancelled = true;
-      if (revoked) URL.revokeObjectURL(revoked);
-    };
-  }, [token, item.code, item.mime]);
-
+  const src = copilotBuildMediaUrl(token, item.code);
   const open = () => copilotOpenMediaInNewTab(token, item.code);
-
-  if (failed) {
-    return (
-      <button
-        type="button"
-        onClick={open}
-        className="rounded border border-dashed border-slate-200 px-2 py-1 text-xs text-slate-500 hover:bg-slate-50"
-      >
-        打开
-      </button>
-    );
-  }
-
-  if (!src) {
-    return (
-      <div className="h-16 w-24 animate-pulse rounded bg-slate-100" aria-hidden />
-    );
-  }
 
   if (isImageMime(item.mime)) {
     return (
@@ -77,9 +36,21 @@ function CopilotMediaThumb({
         <img
           alt={item.title ?? item.code}
           src={src}
-          className="block h-16 w-24 object-cover"
+          className="block h-24 w-36 object-cover"
+          loading="lazy"
         />
       </button>
+    );
+  }
+
+  if (isVideoMime(item.mime)) {
+    return (
+      <video
+        src={src}
+        controls
+        className="block max-h-40 max-w-full rounded border border-slate-200"
+        preload="metadata"
+      />
     );
   }
 
@@ -87,9 +58,9 @@ function CopilotMediaThumb({
     <button
       type="button"
       onClick={open}
-      className="flex h-16 w-24 items-center justify-center rounded border border-slate-700 bg-slate-900 text-xs text-white"
+      className="text-xs text-blue-600 hover:underline"
     >
-      视频
+      {item.title ?? item.code}
     </button>
   );
 }
@@ -103,14 +74,56 @@ export function CopilotQaRecallMedia({
 }) {
   const bundle = extractQaRecallMediaBundleFromContent(content);
   const media = bundle?.merged_media ?? [];
+  const injectedContext = bundle?.injected_context ?? '';
+  const [loading, setLoading] = useState(false);
+  const [resolvedItems, setResolvedItems] = useState<CopilotMediaResolvedItem[]>([]);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+
+  const resolveKey = useMemo(
+    () => `${injectedContext.length}:${media.map((m) => m.code).join(',')}`,
+    [injectedContext, media],
+  );
+
+  useEffect(() => {
+    if (!bundle || media.length === 0) {
+      setResolvedItems([]);
+      setResolveError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setResolveError(null);
+    void copilotResolveMediaFromText(token, {
+      text: injectedContext,
+      codes: media.map((m) => m.code),
+    })
+      .then((res) => {
+        if (!cancelled) setResolvedItems(res.items ?? []);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setResolvedItems([]);
+          setResolveError(err instanceof Error ? err.message : '解析媒体失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, bundle, media, injectedContext, resolveKey]);
+
   if (!bundle || media.length === 0) return null;
-  const previewItems = media.filter(
-    (m) => isImageMime(m.mime) || isVideoMime(m.mime),
+
+  const previewItems = resolvedItems.filter(
+    (item) => item.registered && (isImageMime(item.mime) || isVideoMime(item.mime)),
   );
 
   return (
     <Collapse
       size="small"
+      defaultActiveKey={['merged-media']}
       className="mt-2 [&_.ant-collapse-header]:!px-2 [&_.ant-collapse-content-box]:!px-2"
       items={[
         {
@@ -118,16 +131,21 @@ export function CopilotQaRecallMedia({
           label: (
             <Space size={6}>
               <span className="text-xs text-slate-600">多媒体内容</span>
-              <Tag className="!m-0">{media.length} 个</Tag>
+              {loading ? <Spin size="small" /> : <Tag className="!m-0">{media.length} 个</Tag>}
             </Space>
           ),
           children: (
             <div className="space-y-2">
+              {resolveError ? (
+                <Text type="danger" className="text-xs">
+                  {resolveError}
+                </Text>
+              ) : null}
               {previewItems.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-3">
                   {previewItems.map((item) => (
-                    <div key={item.code} className="max-w-[6.5rem]">
-                      <CopilotMediaThumb token={token} item={item} />
+                    <div key={item.code} className="max-w-[9.5rem]">
+                      <CopilotMediaPreview token={token} item={item} />
                       <Text
                         type="secondary"
                         ellipsis
@@ -139,28 +157,15 @@ export function CopilotQaRecallMedia({
                     </div>
                   ))}
                 </div>
+              ) : loading ? (
+                <Text type="secondary" className="text-xs">
+                  正在解析媒体…
+                </Text>
               ) : (
                 <Text type="secondary" className="text-xs">
-                  无图片/视频预览，可在引用来源中查看文本片段。
+                  媒体未登记或无可预览项，可在引用来源中查看文本片段。
                 </Text>
               )}
-              {media.length > previewItems.length ? (
-                <ul className="space-y-1 text-xs text-slate-600">
-                  {media
-                    .filter((m) => !isImageMime(m.mime) && !isVideoMime(m.mime))
-                    .map((m) => (
-                      <li key={m.code}>
-                        <button
-                          type="button"
-                          onClick={() => copilotOpenMediaInNewTab(token, m.code)}
-                          className="text-blue-600 hover:underline"
-                        >
-                          {m.title ?? m.code}
-                        </button>
-                      </li>
-                    ))}
-                </ul>
-              ) : null}
             </div>
           ),
         },

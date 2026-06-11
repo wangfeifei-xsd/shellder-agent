@@ -621,6 +621,17 @@ export class CopilotWidgetController {
     };
   }
 
+  /** POST /copilot/v1/media/resolve-from-text — 解析 merged_media / injected_context 中的媒体 code */
+  @Post('media/resolve-from-text')
+  async resolveMediaFromText(
+    @Headers('authorization') authHeader: string,
+    @Body() body: { text?: string; codes?: string[] },
+  ) {
+    const payload = this.extractPayload(authHeader);
+    const user = this.toRuntimeUser(payload);
+    return this.knowledgeProxy.resolveMediaFromText(user, payload.tenantId, body);
+  }
+
   /** GET /copilot/v1/media/:code — 读取问答 merged_media 对应二进制资源 */
   @Get('media/:code')
   async getMedia(
@@ -659,6 +670,7 @@ export class CopilotWidgetController {
         { method: 'GET', path: '/confirmations', description: '待确认列表', auth: 'Bearer Copilot JWT' },
         { method: 'POST', path: '/confirmations/:id', description: '确认/驳回', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/tasks/:id', description: '任务状态与步骤进度', auth: 'Bearer Copilot JWT' },
+        { method: 'POST', path: '/media/resolve-from-text', description: '解析 merged_media / injected_context 媒体 code', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/media/:code', description: '读取问答 merged_media 二进制资源', auth: 'Bearer 或 ?token=' },
       ],
     };

@@ -131,6 +131,21 @@ export interface QaRecallMediaBundle {
   merged_media: QaRecallMediaRef[];
 }
 
+/** 与 knowledge media/resolve-from-text 响应一致 */
+export interface CopilotMediaResolvedItem {
+  code: string;
+  registered: boolean;
+  mime: string;
+  size: number;
+  title?: string | null;
+  original_name?: string | null;
+}
+
+export interface CopilotMediaResolveResponse {
+  codes: string[];
+  items: CopilotMediaResolvedItem[];
+}
+
 export interface CapabilityResult {
   capabilityType: CapabilityTypeKey;
   data: Record<string, unknown>;
@@ -356,12 +371,33 @@ export function extractQaRecallMediaBundle(
   return { injected_context, merged_media };
 }
 
+/** Copilot 媒体二进制 URL（img 标签可用 ?token= 鉴权） */
+export function copilotBuildMediaUrl(token: string, code: string): string {
+  return `${copilotApiBase()}/media/${encodeURIComponent(code)}?token=${encodeURIComponent(token)}`;
+}
+
+/** POST /copilot/v1/media/resolve-from-text — 登记校验 merged_media code */
+export async function copilotResolveMediaFromText(
+  token: string,
+  body: { text?: string; codes?: string[] },
+): Promise<CopilotMediaResolveResponse> {
+  const res = await fetch(`${copilotApiBase()}/media/resolve-from-text`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  return readCopilotJson<CopilotMediaResolveResponse>(res, '解析媒体失败');
+}
+
 /** Copilot 下按 code 获取问答召回媒体 object URL（调用方需在不用时 revoke） */
 export async function copilotFetchMediaObjectUrl(
   token: string,
   code: string,
 ): Promise<string> {
-  const res = await fetch(`${copilotApiBase()}/media/${encodeURIComponent(code)}?token=${encodeURIComponent(token)}`, {
+  const res = await fetch(copilotBuildMediaUrl(token, code), {
     cache: 'no-store',
   });
   if (!res.ok) {
@@ -373,8 +409,7 @@ export async function copilotFetchMediaObjectUrl(
 
 /** 在新标签页打开 Copilot 媒体资源 */
 export function copilotOpenMediaInNewTab(token: string, code: string): void {
-  const url = `${copilotApiBase()}/media/${encodeURIComponent(code)}?token=${encodeURIComponent(token)}`;
-  window.open(url, '_blank', 'noopener,noreferrer');
+  window.open(copilotBuildMediaUrl(token, code), '_blank', 'noopener,noreferrer');
 }
 
 /** 从消息 content 提取引用（问答型 CapabilityResult） */
