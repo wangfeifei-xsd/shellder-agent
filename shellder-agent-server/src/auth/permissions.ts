@@ -11,49 +11,53 @@
 
 export const PERMISSION_WILDCARD = '*';
 
-/** 菜单权限目录，key 与 web-console 侧栏菜单一致 */
+/** 菜单权限目录：每项对应侧栏一个顶级菜单（key 与 menu-items 侧栏分组一致） */
 export const MENU_CATALOG = [
   { key: 'workbench', label: '工作台' },
-  { key: 'session', label: '会话管理' },
-  { key: 'task', label: '任务中心' },
-  { key: 'routing', label: '能力路由' },
-  { key: 'skill', label: '技能书管理' },
-  { key: 'tool', label: '工具管理' },
-  { key: 'connector', label: '连接器管理' },
   { key: 'knowledge', label: '知识库' },
-  { key: 'rule', label: '规则' },
-  { key: 'approval', label: '审批中心' },
-  { key: 'audit', label: '审计中心' },
+  { key: 'query', label: '『查询型』配置' },
+  { key: 'prompt', label: 'Prompt 管理' },
+  { key: 'session', label: '会话管理' },
+  { key: 'capability', label: '业务调试' },
+  { key: 'copilot', label: '嵌入式 Copilot' },
+  { key: 'openapi', label: 'OpenAPI 管理' },
   { key: 'user', label: '用户与权限' },
   { key: 'tenant', label: '租户管理' },
-  { key: 'openapi', label: 'OpenAPI 管理' },
   { key: 'settings', label: '系统设置' },
-  { key: 'prompt', label: 'Prompt 管理' },
+  { key: 'task', label: '任务中心（实验中）' },
+  { key: 'routing', label: '能力路由（实验中）' },
+  { key: 'skill', label: '技能书管理（实验中）' },
+  { key: 'tool', label: '工具管理（实验中）' },
+  { key: 'connector', label: '连接器管理（实验中）' },
+  { key: 'rule', label: '规则（实验中）' },
+  { key: 'approval', label: '审批中心（实验中）' },
+  { key: 'audit', label: '审计中心（实验中）' },
 ] as const;
 
 export type MenuKey = (typeof MENU_CATALOG)[number]['key'];
 export const MENU_KEYS = MENU_CATALOG.map((m) => m.key) as MenuKey[];
 
-/** 模块权限目录（模块级写/维护权限） */
+/** 模块权限目录（模块级写/维护权限；label 与侧栏菜单名称对齐） */
 export const MODULE_CATALOG = [
-  { key: 'tenant.manage', label: '租户管理' },
+  { key: 'knowledge.manage', label: '知识库' },
+  { key: 'connector.manage', label: '连接器管理（实验中）' },
+  { key: 'tool.manage', label: '工具管理（实验中）' },
+  { key: 'prompt:read', label: 'Prompt 管理 · 查看' },
+  { key: 'prompt:write', label: 'Prompt 管理 · 编辑' },
+  { key: 'prompt:publish', label: 'Prompt 管理 · 发布/回滚' },
+  { key: 'prompt:debug', label: 'Prompt 管理 · 试跑' },
+  { key: 'session.manage', label: '会话管理' },
   { key: 'user.manage', label: '用户管理' },
   { key: 'role.manage', label: '角色管理' },
-  { key: 'policy.manage', label: '权限策略管理' },
-  { key: 'rule.manage', label: '规则配置管理' },
-  { key: 'audit.view', label: '审计查询' },
-  { key: 'connector.manage', label: '连接器管理' },
-  { key: 'tool.manage', label: '工具管理' },
-  { key: 'skill.manage', label: '技能书管理' },
-  { key: 'knowledge.manage', label: '知识库管理' },
-  { key: 'session.manage', label: '会话管理' },
-  { key: 'task.manage', label: '任务管理' },
-  { key: 'approval.handle', label: '审批处理' },
+  { key: 'policy.manage', label: '权限策略' },
+  { key: 'tenant.manage', label: '租户管理' },
   { key: 'settings.manage', label: '系统设置' },
-  { key: 'prompt:read', label: 'Prompt 查看' },
-  { key: 'prompt:write', label: 'Prompt 编辑' },
-  { key: 'prompt:publish', label: 'Prompt 发布/回滚' },
-  { key: 'prompt:debug', label: 'Prompt 试跑调 LLM' },
+  { key: 'task.manage', label: '任务中心（实验中）' },
+  { key: 'routing.manage', label: '能力路由（实验中）' },
+  { key: 'skill.manage', label: '技能书管理（实验中）' },
+  { key: 'rule.manage', label: '规则配置（实验中）' },
+  { key: 'approval.handle', label: '审批中心（实验中）' },
+  { key: 'audit.view', label: '审计中心（实验中）' },
 ] as const;
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]['key'];
@@ -93,4 +97,23 @@ export interface EffectivePermissions {
 
 export function hasPermission(granted: string[], required: string): boolean {
   return granted.includes(PERMISSION_WILDCARD) || granted.includes(required);
+}
+
+/** 拥有 granted 中任一菜单权限即通过 */
+export function hasAnyMenuPermission(granted: string[], required: string[]): boolean {
+  if (granted.includes(PERMISSION_WILDCARD)) return true;
+  return required.some((key) => granted.includes(key));
+}
+
+/**
+ * 合并拆分前的组合菜单权限，避免存量角色丢失侧栏入口。
+ * 旧版 connector / routing / openapi 各控制两个侧栏分组。
+ */
+export function expandLegacyMenuPermissions(menus: string[]): string[] {
+  if (menus.includes(PERMISSION_WILDCARD)) return menus;
+  const expanded = new Set(menus);
+  if (expanded.has('connector')) expanded.add('query');
+  if (expanded.has('routing')) expanded.add('capability');
+  if (expanded.has('openapi')) expanded.add('copilot');
+  return [...expanded];
 }

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { Audit } from '../audit/decorators/audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequireMenu } from '../auth/decorators/require-permission.decorator';
+import { RequireAnyMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
 import { ConnectorSchemaService } from './connector-schema.service';
 import { ConnectorService } from './connector.service';
@@ -21,7 +21,7 @@ import { UpdateConnectorDto } from './dto/update-connector.dto';
 
 /** 连接器管理（功能清单 §1.6）；归属「连接器管理」菜单（connector） */
 @Controller('api/v1/connectors')
-@RequireMenu('connector')
+@RequireAnyMenu('query', 'connector')
 export class ConnectorController {
   constructor(
     private readonly connectorService: ConnectorService,

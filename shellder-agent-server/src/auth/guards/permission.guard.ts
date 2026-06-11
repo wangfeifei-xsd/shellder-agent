@@ -7,10 +7,11 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import {
+  REQUIRE_ANY_MENU_KEY,
   REQUIRE_MENU_KEY,
   REQUIRE_MODULE_KEY,
 } from '../decorators/require-permission.decorator';
-import { hasPermission } from '../permissions';
+import { expandLegacyMenuPermissions, hasAnyMenuPermission, hasPermission } from '../permissions';
 import { PermissionService } from '../permission.service';
 
 /**
@@ -29,12 +30,16 @@ export class PermissionGuard implements CanActivate {
       REQUIRE_MENU_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const requiredAnyMenu = this.reflector.getAllAndOverride<string[] | undefined>(
+      REQUIRE_ANY_MENU_KEY,
+      [context.getHandler(), context.getClass()],
+    );
     const requiredModule = this.reflector.getAllAndOverride<string | undefined>(
       REQUIRE_MODULE_KEY,
       [context.getHandler(), context.getClass()],
     );
 
-    if (!requiredMenu && !requiredModule) {
+    if (!requiredMenu && !requiredAnyMenu?.length && !requiredModule) {
       return true;
     }
 
@@ -48,11 +53,22 @@ export class PermissionGuard implements CanActivate {
     }
 
     const permissions = await this.permissionService.resolveForUser(user.id);
+    const effectiveMenus = expandLegacyMenuPermissions(permissions.menus);
 
-    if (requiredMenu && !hasPermission(permissions.menus, requiredMenu)) {
+    if (requiredMenu && !hasPermission(effectiveMenus, requiredMenu)) {
       throw new ForbiddenException({
         code: 'MENU_FORBIDDEN',
         message: `无菜单权限：${requiredMenu}`,
+      });
+    }
+
+    if (
+      requiredAnyMenu?.length &&
+      !hasAnyMenuPermission(effectiveMenus, requiredAnyMenu)
+    ) {
+      throw new ForbiddenException({
+        code: 'MENU_FORBIDDEN',
+        message: `无菜单权限：${requiredAnyMenu.join(' / ')}`,
       });
     }
 

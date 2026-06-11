@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { Audit } from '../audit/decorators/audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequireMenu } from '../auth/decorators/require-permission.decorator';
+import { RequireAnyMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
 import { CreateToolDto } from './dto/create-tool.dto';
 import { QueryToolDto } from './dto/query-tool.dto';
@@ -23,7 +23,7 @@ import { ToolTestService } from './tool-test.service';
 
 /** 工具注册与管理（功能清单 §1.5）；归属「工具管理」菜单（tool） */
 @Controller('api/v1/tools')
-@RequireMenu('tool')
+@RequireAnyMenu('query', 'tool')
 export class ToolController {
   constructor(
     private readonly toolService: ToolService,

@@ -62,7 +62,7 @@ function submenuOpenKeysFromPath(pathname: string): string[] {
   if (pathname.startsWith('/sessions')) keys.push('session');
   if (pathname.startsWith('/tasks')) keys.push('task');
   if (pathname.startsWith('/routing')) keys.push('routing');
-  if (pathname.startsWith('/capabilities')) keys.push('/capabilities');
+  if (pathname.startsWith('/capabilities')) keys.push('capability');
   if (pathname.startsWith('/skills')) keys.push('skill');
   if (pathname.startsWith('/tools')) keys.push('tool');
   if (pathname.startsWith('/connectors')) keys.push('connector');

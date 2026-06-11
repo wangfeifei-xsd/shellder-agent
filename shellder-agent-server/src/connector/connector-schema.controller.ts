@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
 import { Audit } from '../audit/decorators/audit.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { RequireMenu } from '../auth/decorators/require-permission.decorator';
+import { RequireAnyMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
 import { ConnectorService } from './connector.service';
 import { ConnectorSchemaService } from './connector-schema.service';
@@ -11,7 +11,7 @@ import { SaveErDraftDto } from './dto/save-er-draft.dto';
 
 /** 只读库结构抽取与 ER 关系图（查询型能力 §4） */
 @Controller('api/v1/connectors')
-@RequireMenu('connector')
+@RequireAnyMenu('query', 'connector')
 export class ConnectorSchemaController {
   constructor(
     private readonly schemaService: ConnectorSchemaService,

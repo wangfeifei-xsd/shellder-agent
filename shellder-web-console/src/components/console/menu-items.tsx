@@ -21,29 +21,29 @@ import {
 } from '@ant-design/icons';
 
 /**
- * 顶级菜单 key → RBAC 菜单权限 key 映射。
+ * 顶级菜单 key → RBAC 菜单权限 key 映射（一对一，与侧栏分组一致）。
  * 用于按当前用户权限过滤侧栏（缺失权限的菜单隐藏，对应路由后端返回 403）。
  */
 export const MENU_PERMISSION_KEY: Record<string, string> = {
   '/': 'workbench',
+  knowledge: 'knowledge',
+  query: 'query',
+  prompt: 'prompt',
   session: 'session',
+  capability: 'capability',
+  copilot: 'copilot',
+  openapi: 'openapi',
+  user: 'user',
+  tenant: 'tenant',
+  settings: 'settings',
   task: 'task',
   routing: 'routing',
-  capability: 'routing',
   skill: 'skill',
   tool: 'tool',
   connector: 'connector',
-  query: 'connector',
-  knowledge: 'knowledge',
   rule: 'rule',
   approval: 'approval',
   audit: 'audit',
-  user: 'user',
-  tenant: 'tenant',
-  openapi: 'openapi',
-  copilot: 'openapi',
-  settings: 'settings',
-  prompt: 'prompt',
 };
 
 /** 侧栏菜单（与架构 §6.1.1 对齐，链接随阶段推进逐步启用） */
@@ -135,10 +135,7 @@ export const consoleMenuItems: MenuProps['items'] = [
     key: 'tenant',
     icon: <ApartmentOutlined />,
     label: '租户管理',
-    children: [
-      { key: '/tenants', label: <Link to="/tenants">租户列表</Link> },
-      { key: '/tenants/new', label: <Link to="/tenants/new">新建租户</Link> },
-    ],
+    children: [{ key: '/tenants', label: <Link to="/tenants">租户列表</Link> }],
   },
   {
     key: 'settings',

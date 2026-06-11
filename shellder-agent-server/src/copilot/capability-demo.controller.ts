@@ -1,5 +1,6 @@
 import { Body, Controller, ForbiddenException, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequireMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
 import { PermissionService } from '../auth/permission.service';
 import { CopilotAuthService } from './copilot-auth.service';
@@ -10,6 +11,7 @@ import { CapabilityDemoCopilotTokenDto } from './dto/capability-demo.dto';
  * 路径：POST /api/v1/capabilities/demo/copilot-token
  */
 @Controller('api/v1/capabilities/demo')
+@RequireMenu('capability')
 export class CapabilityDemoController {
   constructor(
     private readonly copilotAuth: CopilotAuthService,

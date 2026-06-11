@@ -16,6 +16,7 @@ import {
 import { Request, Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { RequireMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
 import { AgentRuntimeService } from '../agent-runtime/agent-runtime.service';
 import { SseEvent } from '../agent-runtime/agent-runtime.types';
@@ -40,6 +41,7 @@ import {
  * 路径前缀：/api/v1/copilot/configs
  */
 @Controller('api/v1/copilot/configs')
+@RequireMenu('copilot')
 export class CopilotConfigController {
   constructor(private readonly configService: CopilotConfigService) {}
 

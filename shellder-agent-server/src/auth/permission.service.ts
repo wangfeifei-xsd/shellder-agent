@@ -7,6 +7,7 @@ import {
   EMPTY_ROLE_POLICY,
   PERMISSION_WILDCARD,
   RolePolicy,
+  expandLegacyMenuPermissions,
 } from './permissions';
 
 /** role.policy 的归一化读取 */
@@ -54,7 +55,7 @@ export class PermissionService {
     const isSuperAdmin = menus.has(PERMISSION_WILDCARD);
 
     return {
-      menus: [...menus],
+      menus: expandLegacyMenuPermissions([...menus]),
       modules: [...modules],
       toolScopes: [...toolScopes],
       capabilities: [...capabilities],

@@ -353,6 +353,7 @@ function getMenuKeyForPath(path: string): string | undefined {
     '/query/query-test': 'query',
     '/audit': 'audit',
     '/skills': 'skill',
+    '/capabilities': 'capability',
     '/routing/capabilities': 'routing',
   };
   return map[path];
