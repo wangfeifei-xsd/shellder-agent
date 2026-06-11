@@ -48,7 +48,7 @@ export class ConnectorSchemaController {
     targetType: 'connector',
   })
   introspect(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.schemaService.introspect(user, id, true);
+    return this.schemaService.introspect(user, id);
   }
 
   @Get(':id/schema')
@@ -85,6 +85,7 @@ export class ConnectorSchemaController {
     return this.schemaService.publish(user, id);
   }
 
+  /** 异步触发 LLM 生成 ER 草稿，立即返回任务状态，结果通过 generation-status 轮询 */
   @Post(':id/er-diagram/regenerate')
   @Audit({
     action: 'connector.erDiagram.regenerate',
@@ -92,7 +93,12 @@ export class ConnectorSchemaController {
     targetType: 'connector',
   })
   regenerate(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.schemaService.regenerateDraft(user, id);
+    return this.schemaService.startRegenerateDraft(user, id);
+  }
+
+  @Get(':id/er-diagram/generation-status')
+  getErGenerationStatus(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.schemaService.getErGenerationStatus(user, id);
   }
 
 }

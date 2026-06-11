@@ -77,6 +77,18 @@ export class ErDiagramService {
     return (row?.erDiagramPublished as ErDiagram | null) ?? null;
   }
 
+  /** 异步生成前的同步预校验：LLM 已配置、表结构已抽取（让用户立即拿到可读错误） */
+  async assertRegenerateReady(connector: Connector): Promise<void> {
+    await this.llm.assertConfigured();
+    const { introspectedSchema } = await this.introspection.getSchema(connector.id);
+    if (!introspectedSchema?.tables?.length) {
+      throw new BadRequestException({
+        code: 'SCHEMA_NOT_INTROSPECTED',
+        message: '请先执行表结构抽取',
+      });
+    }
+  }
+
   async regenerateDraft(connector: Connector): Promise<ErDiagram> {
     const config = await this.llm.assertConfigured();
     const { introspectedSchema } = await this.introspection.getSchema(connector.id);

@@ -25,6 +25,7 @@ import {
   ErTableNode,
   getConnectorErDiagram,
   getConnectorSchema,
+  getErGenerationStatus,
   introspectConnector,
   IntrospectedSchema,
   IntrospectedColumn,
@@ -272,6 +273,65 @@ export function ErDiagramPanel({
     void load();
   }, [load]);
 
+  // ── LLM 生成 ER 草稿：异步任务 + 轮询 ──
+  const [generating, setGenerating] = useState(false);
+
+  // 挂载时检查是否有进行中的生成任务（如刷新页面后恢复轮询）
+  useEffect(() => {
+    let cancelled = false;
+    void getErGenerationStatus(connectorId)
+      .then((s) => {
+        if (!cancelled && s.status === 'running') setGenerating(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [connectorId]);
+
+  useEffect(() => {
+    if (!generating) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await getErGenerationStatus(connectorId);
+        if (cancelled || s.status === 'running') return;
+        setGenerating(false);
+        if (s.status === 'done') {
+          message.success('LLM 辅助生成 ER 草稿完成');
+          await load();
+          onChanged?.();
+        } else if (s.status === 'failed') {
+          message.error(s.error || 'ER 草稿生成失败');
+        } else {
+          message.warning('生成任务状态丢失（服务可能已重启），请重新生成');
+        }
+      } catch {
+        // 网络抖动忽略，下一轮继续
+      }
+    };
+    const timer = setInterval(() => void tick(), 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [generating, connectorId, load, message, onChanged]);
+
+  const startErGeneration = async () => {
+    try {
+      await regenerateConnectorErDraft(connectorId);
+      setGenerating(true);
+      message.info('生成任务已提交，正在后台执行，完成后自动刷新');
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'ER_GENERATION_RUNNING') {
+        setGenerating(true);
+        message.info('已有生成任务进行中，正在等待结果');
+        return;
+      }
+      message.error(formatApiError(err, '提交生成任务失败'));
+    }
+  };
+
   const run = async (key: string, fn: () => Promise<void>) => {
     setBusy(key);
     try {
@@ -495,22 +555,15 @@ export function ErDiagramPanel({
           >
             抽取表结构
           </Button>
-          <Button
-            size="small"
-            loading={busy === 'regenerate'}
-            onClick={() =>
-              run('regenerate', async () => {
-                await regenerateConnectorErDraft(connectorId);
-                message.success(
-                  draft?.tables?.length || draft?.relationships?.length
-                    ? '已在现有草稿上完成 LLM 辅助优化'
-                    : 'ER 草稿已生成',
-                );
-              })
-            }
-          >
-            LLM 辅助生成草稿
-          </Button>
+          <Tooltip title={generating ? '正在后台生成，完成后自动刷新' : undefined}>
+            <Button
+              size="small"
+              loading={generating}
+              onClick={() => void startErGeneration()}
+            >
+              LLM 辅助生成草稿
+            </Button>
+          </Tooltip>
           <Tooltip
             title={
               state?.introspectedAt

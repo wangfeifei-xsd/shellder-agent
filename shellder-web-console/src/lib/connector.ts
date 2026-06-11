@@ -247,10 +247,9 @@ export interface ErDiagramState {
 }
 
 export function introspectConnector(id: string) {
-  return apiFetch<{ schema: IntrospectedSchema; draft: ErDiagram | null }>(
-    `${BASE}/${id}/introspect`,
-    { method: 'POST' },
-  );
+  return apiFetch<{ schema: IntrospectedSchema }>(`${BASE}/${id}/introspect`, {
+    method: 'POST',
+  });
 }
 
 export function getConnectorSchema(id: string) {
@@ -278,10 +277,24 @@ export function publishConnectorErDiagram(id: string) {
   );
 }
 
+export interface ErGenerationJobView {
+  status: 'idle' | 'running' | 'done' | 'failed';
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+}
+
+/** 异步触发 LLM 生成 ER 草稿，立即返回任务状态；结果通过 getErGenerationStatus 轮询 */
 export function regenerateConnectorErDraft(id: string) {
-  return apiFetch<{ draft: ErDiagram }>(`${BASE}/${id}/er-diagram/regenerate`, {
+  return apiFetch<ErGenerationJobView>(`${BASE}/${id}/er-diagram/regenerate`, {
     method: 'POST',
   });
+}
+
+export function getErGenerationStatus(id: string) {
+  return apiFetch<ErGenerationJobView>(
+    `${BASE}/${id}/er-diagram/generation-status`,
+  );
 }
 
 export function suggestConnectorErDataScope(id: string) {
