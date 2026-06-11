@@ -215,6 +215,28 @@ WHERE NOT EXISTS (
   WHERE `template_id` = '21000000-0000-0000-0000-000000000002' AND `version` = 1
 );
 
+-- v2：新增字段级硬约束（禁止使用 ER 图中不存在的字段，防字段幻觉）
+INSERT INTO `agent_platform`.`prompt_version`
+  (`id`, `template_id`, `version`, `content`, `content_hash`, `changelog`, `state`, `published_at`, `published_by`, `created_at`)
+SELECT
+  '21000000-0000-0000-0002-000000000002',
+  '21000000-0000-0000-0000-000000000002',
+  2,
+  '你是只读 SQL 生成助手。根据数据库 ER 关系图与用户自然语言，生成单条 MySQL 只读查询。\n\n要求：\n1. 仅输出一个合法 JSON 对象，不要 markdown，不要额外说明。\n2. JSON 格式：\n{\n  \"sql\": \"SELECT ...\",\n  \"explanation\": \"面向用户的中文简要说明\",\n  \"referencedTables\": [\"表名1\", \"表名2\"],\n  \"params\": { \"paramName\": \"value\" },\n  \"extractedLiterals\": [\"实体名1\"]\n}\n3. sql 必须是单条 SELECT 或 WITH...SELECT，禁止 INSERT/UPDATE/DELETE/DDL。\n4. 只能使用输入 ER 图中出现的表；不得引用表黑名单中的表（若提供）。\n5. SQL 中引用的每个字段（含 SELECT、WHERE、JOIN ON、GROUP BY、ORDER BY 中的列）都必须真实存在于 ER 图对应表的 columns 列表中；严禁使用 ER 图未列出的字段，包括 is_deleted、deleted_at、status、enabled 等「常见但本库未必存在」的字段。若所需过滤字段在 ER 图中不存在，直接省略该过滤条件，不要编造字段。\n6. 命名参数使用 :name 形式，并在 params 中给出从用户问题提取的真实值；无参数时 params 为 {}。\n7. referencedTables 列出 SQL 实际引用的物理表名（小写无关，保持原表名）。\n8. extractedLiterals：从用户问题中识别出的具体实体名、筛选值（如人名、部门名、项目名等）。\n   - 纯聚合/统计类问题（如「一共有多少员工」「总共几个部门」）无具体实体名时，输出空数组 []。\n   - 仅提取用户明确提及的业务实体名，不要把疑问词、量词、语气词当作实体名。\n   - extractedLiterals 中的每个值都必须在 params 中有对应条目。',
+  SHA2('query.nl2sql.system.v3', 256),
+  'v2 新增字段级硬约束：SQL 仅可使用 ER 图 columns 中列出的字段（防字段幻觉）',
+  'published', CURRENT_TIMESTAMP(3), NULL, CURRENT_TIMESTAMP(3)
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM `agent_platform`.`prompt_version`
+  WHERE `template_id` = '21000000-0000-0000-0000-000000000002' AND `version` = 2
+);
+
+UPDATE `agent_platform`.`prompt_version`
+SET `state` = 'deprecated'
+WHERE `template_id` = '21000000-0000-0000-0000-000000000002'
+  AND `version` = 1 AND `state` = 'published';
+
 INSERT INTO `agent_platform`.`prompt_template`
   (`id`, `prompt_key`, `name`, `description`, `category`, `role`, `scope`, `tenant_id`, `variable_schema`, `status`, `created_at`, `updated_at`)
 VALUES (

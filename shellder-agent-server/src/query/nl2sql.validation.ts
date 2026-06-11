@@ -37,8 +37,9 @@ export interface Nl2SqlSemanticValidationInput {
   userMessage: string;
 }
 
-/** NL2SQL 生成后的语义校验（范围列、占位参数、参数-列一致性、实体名一致性、参数来源） */
+/** NL2SQL 生成后的语义校验（字段存在性、范围列、占位参数、参数-列一致性、实体名一致性、参数来源） */
 export function assertNl2SqlSemantics(input: Nl2SqlSemanticValidationInput): void {
+  assertColumnsInEr(input.parsed, input.er);
   assertNoScopeColumnInSql(input.parsed, input.er, input.scopeContext);
   assertParamsNotPlaceholder(input.parsed);
   assertParamColumnConsistency(input.parsed, input.er);
@@ -49,6 +50,120 @@ export function assertNl2SqlSemantics(input: Nl2SqlSemanticValidationInput): voi
 function isActiveScopeContext(scopeContext?: string): boolean {
   const text = scopeContext?.trim();
   return !!text && !text.includes('未配置业务数据范围');
+}
+
+/** ⓪ SQL 引用的字段必须存在于裁剪后 ER 图中（拦截 is_deleted/status 等幻觉字段） */
+function assertColumnsInEr(parsed: Nl2SqlParsedOutput, er: ErDiagram): void {
+  const tableColumns = new Map<string, Set<string>>();
+  const allColumns = new Set<string>();
+  for (const table of er.tables ?? []) {
+    const cols = new Set((table.columns ?? []).map((c) => c.name.toLowerCase()));
+    tableColumns.set(table.name.toLowerCase(), cols);
+    for (const c of cols) allColumns.add(c);
+  }
+  const tableNames = new Set(tableColumns.keys());
+  if (tableNames.size === 0) return;
+
+  const tokens = tokenizeSql(parsed.sql);
+  const aliasToTable = buildAliasToTableMap(parsed.sql, parsed.referencedTables);
+
+  // 第一遍：收集不应按物理列校验的标识符（函数名、表/列别名、CTE 名、表位置名）
+  const derivedNames = new Set<string>();
+  const skipIdx = new Set<number>();
+  for (let i = 0; i < tokens.length; i++) {
+    const tk = tokens[i];
+    if (tk.type !== 'ident') continue;
+    const lower = tk.value.toLowerCase();
+    const prev = tokens[i - 1];
+    const next = tokens[i + 1];
+
+    if (SQL_KEYWORDS.has(lower)) {
+      skipIdx.add(i);
+      continue;
+    }
+    // 函数调用：标识符后紧跟 (
+    if (next?.type === 'punct' && next.value === '(') {
+      skipIdx.add(i);
+      continue;
+    }
+    // CTE 名：`WITH x AS (`
+    const afterAs = tokens[i + 2];
+    if (
+      next?.type === 'ident' &&
+      next.value.toLowerCase() === 'as' &&
+      afterAs?.type === 'punct' &&
+      afterAs.value === '('
+    ) {
+      derivedNames.add(lower);
+      skipIdx.add(i);
+      continue;
+    }
+    if (prev) {
+      const prevKeyword =
+        prev.type === 'ident' ? prev.value.toLowerCase() : '';
+      // AS 别名 / CASE...END 后的隐式别名
+      if (prevKeyword === 'as' || prevKeyword === 'end') {
+        derivedNames.add(lower);
+        skipIdx.add(i);
+        continue;
+      }
+      // FROM/JOIN 后是表名（含 CTE 引用），不按列校验
+      if (prevKeyword === 'from' || prevKeyword === 'join') {
+        skipIdx.add(i);
+        continue;
+      }
+      // 隐式别名：紧跟 )、限定列、字面量或非关键字标识符之后（如 `users u`、`COUNT(*) cnt`）
+      if (
+        (prev.type === 'punct' && prev.value === ')') ||
+        prev.type === 'qualified' ||
+        prev.type === 'literal' ||
+        (prev.type === 'ident' && !SQL_KEYWORDS.has(prevKeyword))
+      ) {
+        derivedNames.add(lower);
+        skipIdx.add(i);
+        continue;
+      }
+    }
+  }
+
+  // 第二遍：逐一校验列引用
+  const violations = new Set<string>();
+  for (let i = 0; i < tokens.length; i++) {
+    const tk = tokens[i];
+
+    if (tk.type === 'qualified') {
+      const qualifier = tk.qualifier.toLowerCase();
+      const column = tk.column.toLowerCase();
+      if (column === '*') continue;
+      const tableName =
+        aliasToTable.get(qualifier)?.toLowerCase() ??
+        (tableNames.has(qualifier) ? qualifier : undefined);
+      if (!tableName) continue; // 子查询/CTE 别名，无法静态对照物理表
+      const cols = tableColumns.get(tableName);
+      if (cols && !cols.has(column)) {
+        violations.add(
+          `表「${tableName}」中不存在字段「${tk.column}」（该表可用字段：${[...cols].join(', ')}）`,
+        );
+      }
+      continue;
+    }
+
+    if (tk.type !== 'ident' || skipIdx.has(i)) continue;
+    const lower = tk.value.toLowerCase();
+    if (derivedNames.has(lower)) continue;
+    if (tableNames.has(lower)) continue;
+    if (allColumns.has(lower)) continue;
+    violations.add(`字段「${tk.value}」不存在于 ER 关系图的任何表中`);
+  }
+
+  if (violations.size > 0) {
+    throw new BadRequestException({
+      code: 'NL2SQL_COLUMN_NOT_IN_ER',
+      message:
+        `SQL 引用了 ER 关系图中不存在的字段：${[...violations].join('；')}。` +
+        `只能使用 ER 图各表 columns 中列出的字段，禁止编造字段；若缺少所需字段，请去掉对应条件或改用已有字段`,
+    });
+  }
 }
 
 /** ① 数据范围列不得出现在 SQL WHERE 中（执行层自动注入） */
@@ -216,6 +331,153 @@ function fuzzyContains(message: string, value: string): boolean {
 }
 
 // ── helpers ─────────────────────────────────────────────
+
+/** MySQL 关键字/保留字（小写）。命中者不按物理列校验，仅损失召回不产生误报 */
+const SQL_KEYWORDS = new Set([
+  'select', 'from', 'where', 'and', 'or', 'not', 'in', 'exists', 'between',
+  'like', 'rlike', 'regexp', 'is', 'null', 'as', 'on', 'using', 'join',
+  'inner', 'left', 'right', 'full', 'outer', 'cross', 'natural',
+  'straight_join', 'group', 'by', 'order', 'having', 'limit', 'offset',
+  'asc', 'desc', 'distinct', 'distinctrow', 'union', 'all', 'any', 'some',
+  'case', 'when', 'then', 'else', 'end', 'with', 'recursive', 'interval',
+  'true', 'false', 'unknown', 'div', 'mod', 'xor', 'binary', 'collate',
+  'escape', 'separator', 'partition', 'over', 'window', 'rows', 'range',
+  'unbounded', 'preceding', 'following', 'current', 'row', 'ties', 'others',
+  'exclude', 'groups', 'for', 'dual', 'if',
+  'year', 'month', 'day', 'week', 'quarter', 'hour', 'minute', 'second',
+  'microsecond', 'year_month', 'day_hour', 'day_minute', 'day_second',
+  'hour_minute', 'hour_second', 'minute_second',
+  'current_date', 'current_time', 'current_timestamp', 'localtime',
+  'localtimestamp', 'utc_date', 'utc_time', 'utc_timestamp', 'sysdate',
+]);
+
+type SqlToken =
+  | { type: 'ident'; value: string }
+  | { type: 'qualified'; qualifier: string; column: string }
+  | { type: 'literal' }
+  | { type: 'param'; value: string }
+  | { type: 'punct'; value: string };
+
+/** 轻量 SQL 词法切分：跳过字符串/数字/注释/命名参数，识别裸标识符与 a.b 限定列 */
+function tokenizeSql(sql: string): SqlToken[] {
+  const tokens: SqlToken[] = [];
+  const n = sql.length;
+  let i = 0;
+
+  const readIdentifier = (): string | undefined => {
+    if (sql[i] === '`') {
+      const end = sql.indexOf('`', i + 1);
+      if (end < 0) {
+        i = n;
+        return undefined;
+      }
+      const name = sql.slice(i + 1, end);
+      i = end + 1;
+      return name;
+    }
+    if (/[a-zA-Z_]/.test(sql[i] ?? '')) {
+      const start = i;
+      while (i < n && /[\w$]/.test(sql[i])) i++;
+      return sql.slice(start, i);
+    }
+    return undefined;
+  };
+
+  while (i < n) {
+    const ch = sql[i];
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === '-' && sql[i + 1] === '-') {
+      while (i < n && sql[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '#') {
+      while (i < n && sql[i] !== '\n') i++;
+      continue;
+    }
+    if (ch === '/' && sql[i + 1] === '*') {
+      const end = sql.indexOf('*/', i + 2);
+      i = end < 0 ? n : end + 2;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      i++;
+      while (i < n) {
+        if (sql[i] === '\\') {
+          i += 2;
+          continue;
+        }
+        if (sql[i] === ch) {
+          if (sql[i + 1] === ch) {
+            i += 2;
+            continue;
+          }
+          i++;
+          break;
+        }
+        i++;
+      }
+      tokens.push({ type: 'literal' });
+      continue;
+    }
+    if (ch === ':' && /[a-zA-Z_]/.test(sql[i + 1] ?? '')) {
+      i++;
+      const start = i;
+      while (i < n && /\w/.test(sql[i])) i++;
+      tokens.push({ type: 'param', value: sql.slice(start, i) });
+      continue;
+    }
+    if (/[0-9]/.test(ch)) {
+      while (i < n && /[\w.]/.test(sql[i])) i++;
+      tokens.push({ type: 'literal' });
+      continue;
+    }
+    if (ch === '`' || /[a-zA-Z_]/.test(ch)) {
+      const first = readIdentifier();
+      if (first === undefined) continue;
+      // 探测 a.b / a.b.c（取末两段）/ a.*
+      const parts = [first];
+      let star = false;
+      while (true) {
+        let j = i;
+        while (j < n && /\s/.test(sql[j])) j++;
+        if (sql[j] !== '.') break;
+        j++;
+        while (j < n && /\s/.test(sql[j])) j++;
+        if (sql[j] === '*') {
+          i = j + 1;
+          star = true;
+          break;
+        }
+        i = j;
+        const next = readIdentifier();
+        if (next === undefined) break;
+        parts.push(next);
+      }
+      if (star) {
+        tokens.push({
+          type: 'qualified',
+          qualifier: parts[parts.length - 1],
+          column: '*',
+        });
+      } else if (parts.length >= 2) {
+        tokens.push({
+          type: 'qualified',
+          qualifier: parts[parts.length - 2],
+          column: parts[parts.length - 1],
+        });
+      } else {
+        tokens.push({ type: 'ident', value: first });
+      }
+      continue;
+    }
+    tokens.push({ type: 'punct', value: ch });
+    i++;
+  }
+  return tokens;
+}
 
 function isPlaceholderParamValue(value: unknown): boolean {
   if (value === null || value === undefined) return true;
