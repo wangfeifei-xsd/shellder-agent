@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Button,
   Card,
@@ -64,39 +64,60 @@ export default function CopilotAdminPage() {
   const appOptions = useMemo(() => {
     if (!activeTenantId) return [];
     return openapiApps
-      .filter(
-        (a) =>
-          a.status === 'enabled' &&
-          a.allowedTenantIds.includes(activeTenantId) &&
-          !usedAppIds.has(a.id),
-      )
+      .filter((a) => !usedAppIds.has(a.id))
       .map((a) => ({
         value: a.id,
         label: `${a.name}（${a.clientId}）`,
       }));
   }, [activeTenantId, openapiApps, usedAppIds]);
 
-  const load = async () => {
+  const loadOpenapiApps = useCallback(async () => {
+    if (!activeTenantId) {
+      setOpenapiApps([]);
+      return;
+    }
+    try {
+      const res = await listOpenApiApps({
+        pageSize: 200,
+        status: 'enabled',
+        tenantId: activeTenantId,
+      });
+      setOpenapiApps(res.items);
+    } catch {
+      setOpenapiApps([]);
+    }
+  }, [activeTenantId]);
+
+  const load = useCallback(async () => {
+    if (!activeTenantId) {
+      setConfigs([]);
+      return;
+    }
     setLoading(true);
     try {
-      const data = await apiFetch<CopilotConfigItem[]>('/api/v1/copilot/configs');
+      const data = await apiFetch<CopilotConfigItem[]>('/api/v1/copilot/configs', {
+        query: { tenantId: activeTenantId },
+      });
       setConfigs(data);
     } catch (e: any) {
       message.error(e.message ?? '加载失败');
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTenantId]);
 
   useEffect(() => {
-    load();
-  }, []);
+    void load();
+  }, [load]);
 
   useEffect(() => {
-    listOpenApiApps({ pageSize: 200, status: 'enabled' })
-      .then((res) => setOpenapiApps(res.items))
-      .catch(() => {});
-  }, []);
+    void loadOpenapiApps();
+  }, [loadOpenapiApps]);
+
+  useEffect(() => {
+    if (!modalOpen || editingId) return;
+    form.setFieldValue('appId', undefined);
+  }, [activeTenantId, modalOpen, editingId, form]);
 
   const handleCreate = () => {
     if (!activeTenantId) {

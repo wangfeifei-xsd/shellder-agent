@@ -1,11 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { OpenApiApp, Prisma } from '@prisma/client';
 import { randomBytes, createHash } from 'crypto';
+import { AuthUser } from '../auth/jwt.types';
+import { PermissionService } from '../auth/permission.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateOpenApiAppDto } from './dto/create-openapi-app.dto';
 import { UpdateOpenApiAppDto } from './dto/update-openapi-app.dto';
@@ -13,7 +16,10 @@ import { QueryOpenApiAppDto } from './dto/query-openapi-app.dto';
 
 @Injectable()
 export class OpenApiAppService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissionService: PermissionService,
+  ) {}
 
   async create(dto: CreateOpenApiAppDto, createdBy?: string) {
     await this.validateTenantIds(dto.allowedTenantIds);
@@ -57,19 +63,27 @@ export class OpenApiAppService {
     }
   }
 
-  async findMany(query: QueryOpenApiAppDto) {
+  async findMany(user: AuthUser, query: QueryOpenApiAppDto) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.OpenApiAppWhereInput = {};
+    const and: Prisma.OpenApiAppWhereInput[] = [];
+
+    const tenantScope = await this.buildTenantScopeFilter(user, query.tenantId);
+    if (tenantScope) and.push(tenantScope);
+
     if (query.status) where.status = query.status;
     if (query.keyword) {
-      where.OR = [
-        { name: { contains: query.keyword } },
-        { description: { contains: query.keyword } },
-        { clientId: { contains: query.keyword } },
-      ];
+      and.push({
+        OR: [
+          { name: { contains: query.keyword } },
+          { description: { contains: query.keyword } },
+          { clientId: { contains: query.keyword } },
+        ],
+      });
     }
+    if (and.length > 0) where.AND = and;
 
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.openApiApp.count({ where }),
@@ -181,6 +195,36 @@ export class OpenApiAppService {
       rateLimited,
       successRate: total > 0 ? +(success / total * 100).toFixed(2) : 0,
       errorRate: total > 0 ? +(failed / total * 100).toFixed(2) : 0,
+    };
+  }
+
+  /** 列表租户范围：指定 tenantId 时精确匹配；未指定时非超管限定在其绑定租户内 */
+  private async buildTenantScopeFilter(
+    user: AuthUser,
+    requestedTenantId?: string,
+  ): Promise<Prisma.OpenApiAppWhereInput | undefined> {
+    const permissions = await this.permissionService.resolveForUser(user.id);
+
+    if (requestedTenantId) {
+      if (!permissions.isSuperAdmin && !(user.tenantIds ?? []).includes(requestedTenantId)) {
+        throw new ForbiddenException({
+          code: 'TENANT_FORBIDDEN',
+          message: '无该租户的访问权限',
+        });
+      }
+      return { allowedTenantIds: { array_contains: requestedTenantId } };
+    }
+
+    if (permissions.isSuperAdmin) return undefined;
+
+    const allowed = user.tenantIds ?? [];
+    if (allowed.length === 0) {
+      return { id: { in: [] } };
+    }
+    return {
+      OR: allowed.map((tenantId) => ({
+        allowedTenantIds: { array_contains: tenantId },
+      })),
     };
   }
 

@@ -66,11 +66,17 @@ export default function OpenApiAppsPage() {
   const [form] = Form.useForm();
 
   const load = useCallback(async () => {
+    if (!activeTenantId) {
+      setData([]);
+      setTotal(0);
+      return;
+    }
     setLoading(true);
     try {
       const res = await listOpenApiApps({
         keyword: keyword || undefined,
         status: statusFilter,
+        tenantId: activeTenantId,
         page,
         pageSize,
       });
@@ -81,7 +87,7 @@ export default function OpenApiAppsPage() {
     } finally {
       setLoading(false);
     }
-  }, [keyword, statusFilter, page, pageSize, message]);
+  }, [activeTenantId, keyword, statusFilter, page, pageSize, message]);
 
   useEffect(() => {
     void load();

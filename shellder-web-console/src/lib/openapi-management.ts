@@ -107,6 +107,7 @@ type QueryParams = Record<string, string | number | undefined | null>;
 
 export function listOpenApiApps(
   query: {
+    tenantId?: string;
     keyword?: string;
     status?: OpenApiAppStatus;
     page?: number;

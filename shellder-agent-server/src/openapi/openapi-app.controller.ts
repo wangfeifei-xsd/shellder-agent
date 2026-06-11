@@ -35,8 +35,8 @@ export class OpenApiAppController {
   }
 
   @Get()
-  list(@Query() query: QueryOpenApiAppDto) {
-    return this.appService.findMany(query);
+  list(@CurrentUser() user: AuthUser, @Query() query: QueryOpenApiAppDto) {
+    return this.appService.findMany(user, query);
   }
 
   @Get(':id')
