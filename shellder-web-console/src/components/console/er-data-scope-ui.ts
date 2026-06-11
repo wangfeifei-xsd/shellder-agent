@@ -59,10 +59,16 @@ export function dimensionStatus(
   const col = dimensionColumn(ds, dim);
   if (!maintained) return '待配置';
   if (!col?.trim()) return '待配置';
-  if (ds?.inferred === true) {
-    const confirmed = dim === 'scope' ? ds.scopeConfirmed === true : ds.userConfirmed === true;
-    if (!confirmed) return '推断';
-  }
+
+  const confirmed = dim === 'scope' ? ds.scopeConfirmed === true : ds.userConfirmed === true;
+  if (confirmed) return '已确认';
+
+  // 按维度独立判断：LLM 推断或显式 scopeConfirmed/userConfirmed=false 时待确认
+  const explicitlyPending =
+    dim === 'scope' ? ds.scopeConfirmed === false : ds.userConfirmed === false;
+  if (ds.inferred === true || explicitlyPending) return '推断';
+
+  // 手动配置（无 LLM 推断标记）视为已确认
   return '已确认';
 }
 
@@ -75,9 +81,21 @@ export function isDataScopePending(ds: ErDataScopeBinding): boolean {
   if (scopeMaintained && !ds.scopeColumn?.trim()) return true;
   if (userMaintained && !ds.userColumn?.trim()) return true;
 
-  if (ds.inferred === true) {
-    if (scopeMaintained && ds.scopeConfirmed !== true) return true;
-    if (userMaintained && ds.userConfirmed !== true) return true;
+  if (
+    scopeMaintained &&
+    ds.scopeColumn?.trim() &&
+    ds.scopeConfirmed !== true &&
+    (ds.inferred === true || ds.scopeConfirmed === false)
+  ) {
+    return true;
+  }
+  if (
+    userMaintained &&
+    ds.userColumn?.trim() &&
+    ds.userConfirmed !== true &&
+    (ds.inferred === true || ds.userConfirmed === false)
+  ) {
+    return true;
   }
   return false;
 }
@@ -178,13 +196,19 @@ export function patchDataScopeDimension(
     if ('column' in patch) base.userColumn = patch.column;
     if (patch.userColumn !== undefined) base.userColumn = patch.userColumn;
   }
-  if (patch.inferred !== undefined) base.inferred = patch.inferred;
   if (patch.reason !== undefined) base.reason = patch.reason;
-  if (patch.inferred === false) {
-    if (dim === 'scope') base.scopeConfirmed = true;
-    else base.userConfirmed = true;
+  if (patch.inferred !== undefined) {
+    if (patch.inferred === false) {
+      // 手动改列：仅确认当前维度，不清除全局 inferred（避免另一维度误显示已确认）
+      if (dim === 'scope') base.scopeConfirmed = true;
+      else base.userConfirmed = true;
+    } else {
+      base.inferred = patch.inferred;
+    }
   }
-  return pruneDataScope(base);
+  const pruned = pruneDataScope(base);
+  if (!pruned) return undefined;
+  return normalizeDataScopeBinding(pruned);
 }
 
 export function removeDataScopeDimension(

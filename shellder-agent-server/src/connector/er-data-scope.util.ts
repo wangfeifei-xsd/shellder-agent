@@ -17,9 +17,21 @@ export function isDataScopePending(ds: ErDataScopeBinding): boolean {
   if (scopeMaintained && !ds.scopeColumn?.trim()) return true;
   if (userMaintained && !ds.userColumn?.trim()) return true;
 
-  if (ds.inferred === true) {
-    if (scopeMaintained && ds.scopeConfirmed !== true) return true;
-    if (userMaintained && ds.userConfirmed !== true) return true;
+  if (
+    scopeMaintained &&
+    ds.scopeColumn?.trim() &&
+    ds.scopeConfirmed !== true &&
+    (ds.inferred === true || ds.scopeConfirmed === false)
+  ) {
+    return true;
+  }
+  if (
+    userMaintained &&
+    ds.userColumn?.trim() &&
+    ds.userConfirmed !== true &&
+    (ds.inferred === true || ds.userConfirmed === false)
+  ) {
+    return true;
   }
   return false;
 }

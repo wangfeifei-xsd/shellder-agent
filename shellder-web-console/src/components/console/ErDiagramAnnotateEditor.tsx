@@ -336,12 +336,15 @@ export function ErDiagramAnnotateEditor({
             新增关系
           </Button>
         </div>
-        <Typography.Paragraph type="secondary" className="!mb-3 text-xs">
+        <Typography.Paragraph type="secondary" className="!mb-1 text-xs">
           <Tag color="processing">蓝框</Tag> 外键或已确认；
           <Tag color="warning" className="ml-1">
             黄虚线
           </Tag>{' '}
           为推断关系，发布前建议核对源列/目标列。
+        </Typography.Paragraph>
+        <Typography.Paragraph type="danger" className="!mb-3 text-xs">
+          修改后请先点击「保存草稿」，再发布或关闭抽屉，否则未保存的更改将丢失。
         </Typography.Paragraph>
         {relationships.length === 0 ? (
           <Empty
