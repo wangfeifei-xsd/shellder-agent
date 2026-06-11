@@ -157,7 +157,10 @@ export class OpenApiAppService {
 
   async remove(id: string) {
     await this.getOrThrow(id);
-    await this.prisma.openApiApp.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.openApiCallLog.deleteMany({ where: { appId: id } });
+      await tx.openApiApp.delete({ where: { id } });
+    });
     return { ok: true };
   }
 

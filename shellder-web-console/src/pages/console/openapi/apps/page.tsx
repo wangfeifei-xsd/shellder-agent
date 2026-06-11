@@ -21,8 +21,9 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Link } from 'react-router-dom';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
+import { useTenantSelectOptions } from '@/lib/tenant-select';
 import {
   EllipsisCell,
   renderCompactTags,
@@ -47,11 +48,8 @@ const fmt = (s: string | null) =>
 
 export default function OpenApiAppsPage() {
   const { message, modal } = App.useApp();
-  const { activeTenantId, tenants: boundTenants } = useActiveTenant();
-  const activeTenantLabel = useMemo(() => {
-    const t = boundTenants.find((x) => x.id === activeTenantId);
-    return t ? `${t.name}（${t.code}）` : activeTenantId ?? '—';
-  }, [boundTenants, activeTenantId]);
+  const { activeTenantId } = useActiveTenant();
+  const { selectOptions, defaultTenantId, catalogLoading } = useTenantSelectOptions();
 
   const [data, setData] = useState<OpenApiAppItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -94,28 +92,28 @@ export default function OpenApiAppsPage() {
   }, [load]);
 
   const openCreateModal = () => {
-    if (!activeTenantId) {
-      message.warning('请先在顶栏选择「当前操作租户」');
+    if (selectOptions.length === 0) {
+      message.warning('暂无可用租户，请联系管理员分配租户权限');
       return;
     }
     form.resetFields();
+    form.setFieldsValue({ tenantId: defaultTenantId });
     setCreateOpen(true);
   };
 
   const handleCreate = async (values: {
     name: string;
     description?: string;
+    tenantId: string;
     allowedCapabilities: CapabilityType[];
   }) => {
-    if (!activeTenantId) {
-      message.warning('请先在顶栏选择「当前操作租户」');
-      return;
-    }
     setCreating(true);
     try {
       const result: OpenApiAppCreated = await createOpenApiApp({
-        ...values,
-        allowedTenantIds: [activeTenantId],
+        name: values.name,
+        description: values.description,
+        allowedCapabilities: values.allowedCapabilities,
+        allowedTenantIds: [values.tenantId],
       });
       setCreateOpen(false);
       form.resetFields();
@@ -304,11 +302,19 @@ export default function OpenApiAppsPage() {
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={2} placeholder="可选" maxLength={512} />
           </Form.Item>
-          <Form.Item label="归属租户">
-            <Typography.Text>{activeTenantLabel}</Typography.Text>
-            <div className="mt-1 text-xs text-gray-500">
-              与顶栏「当前操作租户」一致；平台无子租户，应用仅归属该租户
-            </div>
+          <Form.Item
+            name="tenantId"
+            label="归属租户"
+            rules={[{ required: true, message: '请选择归属租户' }]}
+            extra="创建后不可变更归属租户"
+          >
+            <Select
+              showSearch
+              placeholder="选择租户"
+              loading={catalogLoading}
+              optionFilterProp="label"
+              options={selectOptions}
+            />
           </Form.Item>
           <Form.Item
             name="allowedCapabilities"
