@@ -371,6 +371,12 @@ export async function copilotFetchMediaObjectUrl(
   return URL.createObjectURL(blob);
 }
 
+/** 在新标签页打开 Copilot 媒体资源 */
+export function copilotOpenMediaInNewTab(token: string, code: string): void {
+  const url = `${copilotApiBase()}/media/${encodeURIComponent(code)}?token=${encodeURIComponent(token)}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 /** 从消息 content 提取引用（问答型 CapabilityResult） */
 export function extractCitations(content: Record<string, unknown>): CopilotCitation[] {
   const citations = content.citations;
@@ -415,6 +421,13 @@ export function parseCapabilityResult(
     status: status as CapabilityResult['status'],
     error: typeof content.error === 'string' ? content.error : undefined,
   };
+}
+
+/** 从助手消息 content 提取问答型召回媒体 */
+export function extractQaRecallMediaBundleFromContent(
+  content: Record<string, unknown>,
+): QaRecallMediaBundle | null {
+  return extractQaRecallMediaBundle(parseCapabilityResult(content));
 }
 
 /** 从会话消息列表取最后一条可解析的 CapabilityResult */

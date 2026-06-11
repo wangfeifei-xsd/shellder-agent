@@ -59,6 +59,7 @@ import {
   resolveCopilotPostMessageTarget,
   type CopilotTokenExchangeParams,
 } from '@/lib/copilot-init';
+import { CopilotQaRecallMedia } from '@/components/copilot/CopilotQaRecallMedia';
 
 const { TextArea } = Input;
 const STREAMING_MSG_ID = '__streaming__';
@@ -572,6 +573,7 @@ export default function CopilotPage() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activeTab === 'chat' && (
           <ChatPanel
+            token={token}
             messages={messages}
             inputValue={inputValue}
             sessionId={sessionId}
@@ -624,6 +626,7 @@ export default function CopilotPage() {
 }
 
 function ChatPanel({
+  token,
   messages,
   inputValue,
   sessionId,
@@ -639,6 +642,7 @@ function ChatPanel({
   onSend,
   messagesEndRef,
 }: {
+  token: string;
   messages: CopilotMessage[];
   inputValue: string;
   sessionId: string | null;
@@ -694,6 +698,7 @@ function ChatPanel({
         {messages.filter((msg) => !isHiddenCopilotChatMessage(msg)).map((msg) => (
           <MessageBubble
             key={msg.id}
+            token={token}
             message={msg}
             capabilityType={selectedCapabilityType}
           />
@@ -810,9 +815,11 @@ function CapabilityTypeSelector({
 }
 
 function MessageBubble({
+  token,
   message: msg,
   capabilityType,
 }: {
+  token: string;
   message: CopilotMessage;
   capabilityType: CapabilityTypeKey | null;
 }) {
@@ -845,6 +852,9 @@ function MessageBubble({
           <Tag color="warning" className="mt-1">
             待确认
           </Tag>
+        )}
+        {!isUser && !isTypingPlaceholder && (
+          <CopilotQaRecallMedia token={token} content={msg.content} />
         )}
         {citations.length > 0 && (
           <div className="mt-2 border-t border-slate-100 pt-2">
