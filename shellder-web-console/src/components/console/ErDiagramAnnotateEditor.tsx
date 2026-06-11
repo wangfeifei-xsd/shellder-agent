@@ -1,7 +1,7 @@
 'use client';
 
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { Button, Card, Collapse, Empty, Input, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useMemo } from 'react';
 import { tableEllipsisLayout, withNowrap } from '@/components/console/tableEllipsis';
@@ -294,22 +294,32 @@ export function ErDiagramAnnotateEditor({
         <Tag color="warning">{inferredCount} 推断</Tag>
       </Space>
 
-      <div>
-        <Typography.Title level={5} className="!mb-2 !text-sm">
-          表显示名
-        </Typography.Title>
-        <Typography.Paragraph type="secondary" className="!mb-2 text-xs">
-          修改业务显示名后，可视化节点标题与 NL2SQL 上下文会同步更新。
-        </Typography.Paragraph>
-        <Table<ErTableNode>
-          size="small"
-          rowKey="name"
-          pagination={{ pageSize: 8, size: 'small', showSizeChanger: true }}
-          dataSource={tables}
-          columns={tableColumns}
-          {...tableEllipsisLayout}
-        />
-      </div>
+      <Collapse
+        size="small"
+        items={[
+          {
+            key: 'table-display-names',
+            label: (
+              <Space wrap>
+                <span>表显示名</span>
+                <Typography.Text type="secondary" className="text-xs font-normal">
+                  {tables.length} 张表 · 修改后可视化与 NL2SQL 上下文同步更新
+                </Typography.Text>
+              </Space>
+            ),
+            children: (
+              <Table<ErTableNode>
+                size="small"
+                rowKey="name"
+                pagination={{ pageSize: 8, size: 'small', showSizeChanger: true }}
+                dataSource={tables}
+                columns={tableColumns}
+                {...tableEllipsisLayout}
+              />
+            ),
+          },
+        ]}
+      />
 
       <div>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
