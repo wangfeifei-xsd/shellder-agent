@@ -1,4 +1,4 @@
-# shellder-agent
+# Shellder Agent
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![NestJS](https://img.shields.io/badge/NestJS-10-E0234E?logo=nestjs&logoColor=white)](https://nestjs.com/)
@@ -9,7 +9,7 @@
 
 > Shellder Agent 平台 Monorepo — 可运行的 Web 管理后台、主 API 与异步 Worker。
 
-本目录为 **shellder-agent 可运行代码根目录**（推 GitHub / 本地 `npm` / `docker compose` 均在此执行）。产品设计与架构文档见上级目录 [`project-analysis`](../project-analysis/)。
+本目录为 **shellder-agent 可运行代码根目录**（推 GitHub / 本地 `npm` / `docker compose` 均在此执行）。产品设计与架构文档见 [`project-analysis`](https://github.com/wangfeifei-xsd/shellder-agent/tree/master/project-analysis-v1-completed)。
 
 ## 目录
 
@@ -24,9 +24,9 @@
 - [常用命令](#常用命令)
 - [数据库](#数据库)
 - [开发规范](#开发规范)
+- [二次开发指引](#二次开发指引)
 - [常见问题](#常见问题)
 - [相关文档](#相关文档)
-- [阶段进度](#阶段进度)
 
 ## 特性
 
@@ -205,6 +205,51 @@ cd shellder-agent-server && npm run check:prompt-constants
 - 关闭自动创建：`AUTH_BOOTSTRAP=false`
 - 自定义账号：`ADMIN_USERNAME` / `ADMIN_PASSWORD`
 
+## 二次开发指引
+
+[`project-analysis-v1-completed/`](project-analysis-v1-completed/) 是以 **已验收功能** 为基线的方案文档，供人类开发者或各类 AI Agent 在改造、扩展本平台时快速理解现状，避免误读未验收模块或偏离已落地约束。
+
+**入口**：[`project-analysis-v1-completed/README.md`](project-analysis-v1-completed/README.md)
+
+### 文档地图
+
+| 文档 | 何时阅读 |
+|------|----------|
+| [01-范围与边界](project-analysis-v1-completed/01-范围与边界.md) | 确认 V1 已完成 / 实验中 / 与初始方案差异 |
+| [02-架构设计-V1已完成](project-analysis-v1-completed/02-架构设计-V1已完成.md) | 理解模块依赖与运行时链路 |
+| [03-功能清单-V1已完成](project-analysis-v1-completed/03-功能清单-V1已完成.md) | 查已验收菜单与能力清单 |
+| [04-代码导航](project-analysis-v1-completed/04-代码导航.md) | 定位前后端目录、路由、Controller、API 前缀 |
+| [05-数据模型](project-analysis-v1-completed/05-数据模型.md) | 查 Prisma 表与模块关联 |
+| [06-实施约束-已落地](project-analysis-v1-completed/06-实施约束-已落地.md) | 改代码前必读硬约束（Prompt、LLM、租户等） |
+| [modules/](project-analysis-v1-completed/modules/) | 按管理后台菜单拆分的模块说明 |
+| [capabilities/](project-analysis-v1-completed/capabilities/) | 问答型 / 查询型等业务能力说明 |
+
+### 按任务选文档
+
+| 改造目标 | 建议阅读顺序 |
+|----------|--------------|
+| 某个管理后台菜单或页面 | `modules/xx-*.md` → [04-代码导航](project-analysis-v1-completed/04-代码导航.md) → 对应 `src/pages/console/` 与 NestJS 模块 |
+| 问答 / 问数等业务能力 | [capabilities/](project-analysis-v1-completed/capabilities/) + [modules/02-知识库](project-analysis-v1-completed/modules/02-知识库.md) 或 [modules/03-查询型配置](project-analysis-v1-completed/modules/03-查询型配置.md) |
+| Copilot / OpenAPI 接入 | [modules/07-嵌入式Copilot](project-analysis-v1-completed/modules/07-嵌入式Copilot.md)、[modules/08-OpenAPI管理](project-analysis-v1-completed/modules/08-OpenAPI管理.md) |
+| 数据表或 ORM 变更 | [05-数据模型](project-analysis-v1-completed/05-数据模型.md) → `project-sql/` 递增 SQL → `npm run prisma:generate` |
+| 实验中菜单（任务中心、能力路由等） | 侧栏标注「（实验中）」的模块**不在 V1 验收基线内**；完整规格见仓库外 [`project-analysis/`](../project-analysis/) 初始方案 |
+
+### 给 AI Agent 的使用建议
+
+将以下文件作为上下文一并提供给 Agent，可显著降低「改错模块 / 违反约束」的概率：
+
+1. **任务相关**：目标模块的 `modules/*.md` 或 `capabilities/*.md`
+2. **定位代码**：[04-代码导航](project-analysis-v1-completed/04-代码导航.md)
+3. **硬约束**：[06-实施约束-已落地](project-analysis-v1-completed/06-实施约束-已落地.md) + 上文 [Prompt 防回归](#prompt-防回归21-c)
+
+**原则**：以 **当前代码与 `project-analysis-v1-completed` 文档** 为准；各模块文末「对照初始方案」仅作差异参考，勿以其覆盖现网实现。
+
+### V1 边界速记
+
+- **已完成**：侧栏**未**标注「（实验中）」的菜单及其关联能力（见 [已完成菜单一览](project-analysis-v1-completed/README.md#已完成菜单一览)）。
+- **实验中**：任务中心、能力路由、技能书、工具管理、连接器管理、规则、审批、审计等——后端或有代码，但 UI 未纳入 V1 验收，改造勿以其为交付基线。
+- **四类业务能力**：问答 / 查询已在正式入口验证；操作 / 流程的 Runtime 已实现，管理配置仍在实验中菜单。
+
 ## 常见问题
 
 <details>
@@ -299,61 +344,8 @@ curl http://localhost:3001/health
 
 | 文档 | 路径 |
 |------|------|
-| 执行计划 | [`project-analysis/agent-platform-执行计划/`](../project-analysis/agent-platform-执行计划/) |
-| 实施约束 | [`project-analysis/implementation-constraints.md`](../project-analysis/implementation-constraints.md) |
-| 返工 / 验收提示 | [`prompt/remediation/`](../prompt/remediation/) |
+| V1 已完成方案（二次开发） | [`project-analysis-v1-completed/README.md`](project-analysis-v1-completed/README.md) |
+| 代码导航 | [`project-analysis-v1-completed/04-代码导航.md`](project-analysis-v1-completed/04-代码导航.md) |
+| 实施约束（已落地） | [`project-analysis-v1-completed/06-实施约束-已落地.md`](project-analysis-v1-completed/06-实施约束-已落地.md) |
 | SQL 演进 | [`project-sql/README.md`](project-sql/README.md) |
-
-## 阶段进度
-
-对应 [`agent-platform-执行计划`](../project-analysis/agent-platform-执行计划/README.md) 序号 **01–19 + 11A**。
-
-- SQL 增量见 `project-sql/`：**11A** → `12-knowledge-base`；执行计划 **12–19** → `project-sql/13-*` … `20-*`
-- 当前分支：**master**
-
-<details>
-<summary><strong>查看完整阶段清单（01–19 + 11A）</strong></summary>
-
-- [x] **01** 工程脚手架与基础设施 — Monorepo / Docker Compose / Prisma 基线
-- [x] **02** 租户管理 — `tenant` 表、`/api/v1/tenants`、页面 `/tenants`
-- [x] **03** 用户与权限 — JWT + RBAC、`/api/v1/auth`·`/users`·`/roles`·`/permission-policies`
-- [x] **04** 审计模块与审计中心 — `@Audit` 采集、`/api/v1/audit`、页面 `/audit/*`
-- [x] **05** 策略引擎与规则配置 — `PolicyService.evaluate`、`/api/v1/rules`·`/rule-hits`
-- [x] **06** 连接器管理 — 结构抽取与 ER 图 API、页面 `/connectors`
-- [x] **07** 工具注册与工具管理 — SQL 查询工具、页面 `/tools`·`/tools/sql`
-- [x] **08** 会话与消息核心 — `/api/v1/sessions`·`/messages`、页面 `/sessions`
-- [x] **09** 任务中心与异步 Worker — BullMQ `shellder-job-worker`、页面 `/tasks/*`[^07]
-- [x] **10** 能力路由 — `/api/v1/capabilities`·`/routing-rules`·`/routing/test`
-- [x] **11** 技能书管理 — `/api/v1/skills`、页面 `/skills/*`
-- [x] **11A** 知识库代理与知识库管理 — `/api/v1/knowledge/*`、页面 `/knowledge/*`[^02][^08]
-- [x] **12** Agent 运行时与流式响应 — SSE 事件、`/stream`·`/confirm`[^04]
-- [x] **13** 四类业务能力 — qa/query/action/workflow Handler 编排
-- [x] **14** 审批中心 — `ApprovalRuntimeService` 断点恢复、页面 `/approvals/*`[^04]
-- [x] **15** OpenAPI 对外接口与管理 — `/openapi/v1/*`、页面 `/openapi/*`[^03]
-- [x] **16** 会话管理与调试台 — 页面 `/sessions/[id]`·`/sessions/debug`
-- [x] **17** 工作台 — `GET /api/v1/dashboard/summary`、首页 `/`
-- [x] **18** 系统设置 — `/api/v1/system-settings`、模型接入 `/settings/llm`
-- [x] **19** 嵌入式 Copilot — `/copilot/v1/*`、嵌入页 `/copilot`[^06]
-
-**Prisma 迁移**：`shellder-agent-server/prisma/migrations/` 已覆盖 01–07 基线及 08–20 对应增量。空库验收见 [remediation/01](../prompt/remediation/01-补齐-prisma-migrations.md)。[^01]
-
-</details>
-
-<details>
-<summary><strong>返工脚注</strong></summary>
-
-| 标记 | 说明 | 文档 |
-|:----:|------|------|
-| [^01] | 08–20 迁移与 `project-sql` 对齐、空库 deploy 可复现 | [01-补齐-prisma-migrations.md](../prompt/remediation/01-补齐-prisma-migrations.md) |
-| [^02] | wiki 代理方案、租户 wiki 前缀 | [02-知识库方向拍板与实现.md](../prompt/remediation/02-知识库方向拍板与实现.md) |
-| [^03] | OpenAPI 发消息 / SSE 与 Agent Runtime 联调验收 | [03-openapi-对接-agent-runtime.md](../prompt/remediation/03-openapi-对接-agent-runtime.md) |
-| [^04] | 会话确认 `/confirm`、审批后 Runtime 断点恢复 | [04-审批确认与-runtime-断点恢复.md](../prompt/remediation/04-审批确认与-runtime-断点恢复.md) |
-| [^05] | Worker 驱动四类能力 / workflow 步骤真实执行 | [05-task-processor-接入四类能力.md](../prompt/remediation/05-task-processor-接入四类能力.md) |
-| [^06] | Copilot 换票后会话 / 消息 / SSE / 确认全链路 | [06-copilot-后端与会话打通.md](../prompt/remediation/06-copilot-后端与会话打通.md) |
-| [^07] | 异步通知、wiki 文档处理队列与系统设置模板 | [07-job-worker-通知与文档处理.md](../prompt/remediation/07-job-worker-通知与文档处理.md) |
-| [^08] | 知识库 Web 子菜单深化 | [08-知识库-web-菜单深化.md](../prompt/remediation/08-知识库-web-菜单深化.md) |
-
-> ⚠️ 上表为 2026-05-29 进度审查项；`master` 已提交对应实现，**仍建议按 remediation 文档做联调与空库迁移验收**。  
-> 执行计划文件名与 `project-sql` 编号不一致（11A vs `12-*`）见 [remediation/10](../prompt/remediation/10-执行计划文档编号统一.md)。
-
-</details>
+| 初始方案（实验中模块等） | [`../project-analysis/`](../project-analysis/) |
