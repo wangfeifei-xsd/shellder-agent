@@ -11,10 +11,6 @@ import { AuthUser } from '../auth/jwt.types';
 import { CreateKnowledgeBaseDto } from './dto/create-knowledge-base.dto';
 import { UpdateKnowledgeBaseDto } from './dto/update-knowledge-base.dto';
 import { QueryKnowledgeBaseDto } from './dto/query-knowledge-base.dto';
-import { CreateDataSourceDto } from './dto/create-data-source.dto';
-import { QueryDocumentDto } from './dto/query-document.dto';
-import { QueryEmbeddingTaskDto } from './dto/query-embedding-task.dto';
-import { throwSelfHostedDeprecated } from './knowledge-deprecation.util';
 
 /**
  * 知识库租户绑定元数据（wiki 代理模式）。
@@ -140,64 +136,6 @@ export class KnowledgeService {
     });
 
     return { id };
-  }
-
-  async addDataSource(
-    _user: AuthUser,
-    _kbId: string,
-    _dto: CreateDataSourceDto,
-  ) {
-    throwSelfHostedDeprecated('数据源管理');
-  }
-
-  async listDataSources(_user: AuthUser, _kbId: string) {
-    throwSelfHostedDeprecated('数据源列表');
-  }
-
-  async removeDataSource(_user: AuthUser, _kbId: string, _dsId: string) {
-    throwSelfHostedDeprecated('数据源删除');
-  }
-
-  async uploadDocument(
-    _user: AuthUser,
-    _kbId: string,
-    _file: { title: string; content: string },
-  ) {
-    throwSelfHostedDeprecated('文档上传');
-  }
-
-  async listDocuments(
-    _user: AuthUser,
-    _kbId: string,
-    _query: QueryDocumentDto,
-  ) {
-    throwSelfHostedDeprecated('文档列表');
-  }
-
-  async removeDocument(_user: AuthUser, _kbId: string, _docId: string) {
-    throwSelfHostedDeprecated('文档删除');
-  }
-
-  async retrieve(
-    _user: AuthUser,
-    _kbId: string,
-    _query: string,
-    _topK?: number,
-    _threshold?: number,
-  ) {
-    throwSelfHostedDeprecated('平台内 kb_chunk 检索');
-  }
-
-  async listEmbeddingTasks(
-    _user: AuthUser,
-    _kbId: string,
-    _query: QueryEmbeddingTaskDto,
-  ) {
-    throwSelfHostedDeprecated('向量化任务列表');
-  }
-
-  async getEmbeddingTask(_user: AuthUser, _kbId: string, _taskId: string) {
-    throwSelfHostedDeprecated('向量化任务详情');
   }
 
   private async getOrThrow(id: string): Promise<KnowledgeBase> {
