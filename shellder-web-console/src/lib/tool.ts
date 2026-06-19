@@ -306,6 +306,40 @@ export function parametersToInputSchema(parameters: HttpQueryParameter[]): Recor
   return { type: 'object', properties, required };
 }
 
+/** 根据 parameters 定义生成调用测试用的示例入参 */
+export function buildHttpQueryTestParams(parameters: HttpQueryParameter[]): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const p of parameters) {
+    if (!p.name?.trim()) continue;
+    out[p.name] = sampleHttpQueryParamValue(p);
+  }
+  return out;
+}
+
+export function buildHttpQueryTestParamsText(parameters?: HttpQueryParameter[]): string {
+  return JSON.stringify(buildHttpQueryTestParams(parameters ?? []), null, 2);
+}
+
+function sampleHttpQueryParamValue(p: HttpQueryParameter): unknown {
+  const type = (p.type || 'string').toLowerCase();
+  switch (type) {
+    case 'number':
+    case 'integer':
+      return 1;
+    case 'boolean':
+      return false;
+    case 'array':
+      return [];
+    case 'object':
+      return {};
+    default: {
+      const desc = p.description?.trim();
+      if (desc) return desc.length <= 48 ? desc : `${desc.slice(0, 48)}…`;
+      return p.required ? '示例值' : '';
+    }
+  }
+}
+
 export function testTool(id: string, params: Record<string, unknown>) {
   return apiFetch<ToolTestResult>(`${BASE}/${id}/test`, {
     method: 'POST',

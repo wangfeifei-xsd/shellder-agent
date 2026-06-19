@@ -44,6 +44,7 @@ import {
   deleteTool,
   getTool,
   invokeTool,
+  buildHttpQueryTestParamsText,
   listHttpQueryTools,
   parametersToInputSchema,
   parseHttpQuerySignal,
@@ -352,6 +353,12 @@ export default function HttpQueryToolPage() {
     }
   };
 
+  const openInvokeTest = useCallback((tool: Tool) => {
+    setTestTarget(tool);
+    setTestResult(undefined);
+    setTestParamsText(buildHttpQueryTestParamsText(tool.config.httpQuery?.parameters));
+  }, []);
+
   const runInvoke = async () => {
     if (!testTarget) return;
     try {
@@ -463,11 +470,7 @@ export default function HttpQueryToolPage() {
             type="link"
             size="small"
             icon={<ThunderboltOutlined />}
-            onClick={() => {
-              setTestTarget(r);
-              setTestResult(undefined);
-              setTestParamsText('{}');
-            }}
+            onClick={() => openInvokeTest(r)}
           >
             调用
           </Button>
@@ -707,7 +710,10 @@ export default function HttpQueryToolPage() {
         width={800}
       >
         <Form layout="vertical">
-          <Form.Item label="入参 params（JSON）">
+          <Form.Item
+            label="入参 params（JSON）"
+            extra="已根据工具 parameters 定义预填示例值，可按需修改后发起调用"
+          >
             <Input.TextArea
               rows={4}
               className="font-mono text-xs"
