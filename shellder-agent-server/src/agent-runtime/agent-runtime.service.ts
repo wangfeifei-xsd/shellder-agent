@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Approval, AuditStatus, CapabilityType, MessageType, Prisma, ToolType } from '@prisma/client';
-import { RoutingCandidate, RoutingTestResult } from '../capability/dto/routing-test.dto';
+import { RoutingTestResult } from '../capability/dto/routing-test.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { AuditService } from '../audit/audit.service';
@@ -192,18 +192,15 @@ export class AgentRuntimeService {
     const emitSse = (event: SseEvent) => this.sseEmitter.emit(sessionId, event);
 
     try {
-      // Step 2: 路由（会话已指定 capabilityType 时定向选择，不走规则匹配）
+      // Step 2: 两阶段路由（pinned 跳过 Stage1，Stage2 始终执行）
       const pinnedType = session.capabilityType ?? null;
-      const routingResult = pinnedType
-        ? await this.routingEngine.routeDirected(tenantId, pinnedType, user.id)
-        : await this.routingEngine.route(tenantId, userMessage, user.id);
+      const routingResult = await this.routingEngine.routeFull(tenantId, userMessage, {
+        pinnedCapabilityType: pinnedType ?? undefined,
+        userId: user.id,
+      });
 
       const capabilityType = routingResult.capabilityType;
-      const toolIds = await this.resolveToolIds(
-        tenantId,
-        capabilityType,
-        routingResult.candidates,
-      );
+      const toolIds = await this.resolveToolIds(tenantId, capabilityType, routingResult);
 
       // 更新 Session.capabilityType
       await this.prisma.session.update({
@@ -211,19 +208,19 @@ export class AgentRuntimeService {
         data: { capabilityType: capabilityType as CapabilityType },
       });
 
-      // 路由结果写入消息元数据（验收标准 2）；定向选择时不写入，避免嵌入页展示路由说明
-      if (!pinnedType) {
-        await this.appendMessage(sessionId, 'system', {
-          type: 'routing_result',
-          capabilityType,
-          capabilityName: routingResult.capabilityName,
-          reason: routingResult.reason,
-          candidates: routingResult.candidates,
-          needConfirmation: routingResult.needConfirmation,
-          pinnedCapability: false,
-          resolvedToolIds: toolIds,
-        });
-      }
+      // 路由结果写入消息元数据（含 typeStage + intraStage；pinned 也写入）
+      await this.appendMessage(sessionId, 'system', {
+        type: 'routing_result',
+        capabilityType,
+        capabilityName: routingResult.capabilityName,
+        reason: routingResult.reason,
+        candidates: routingResult.candidates,
+        needConfirmation: routingResult.needConfirmation,
+        typeStage: routingResult.typeStage,
+        intraStage: routingResult.intraStage,
+        pinnedCapability: !!pinnedType,
+        resolvedToolIds: toolIds,
+      });
 
       const principalContext = this.resolvePrincipalContext(session);
       const timeoutMs = await this.resolveCapabilityTimeoutMs(capabilityType);
@@ -723,20 +720,61 @@ export class AgentRuntimeService {
 
   // ── 辅助方法 ──────────────────────────────────────────────
 
-  /** 从路由候选或租户默认工具解析 toolIds */
+  /** 从路由结果解析 toolIds（优先级：intraStage → candidates → dependent_tools → fallback） */
   private async resolveToolIds(
     tenantId: string,
     capabilityType: string,
-    candidates: RoutingCandidate[],
+    routingResult: RoutingTestResult,
   ): Promise<string[]> {
+    const toolKindHint = routingResult.intraStage?.toolKind;
+
+    const fromIntra = routingResult.intraStage?.toolIds ?? [];
+    let validIntra = fromIntra.filter((id) => typeof id === 'string' && id.length > 0);
+    if (validIntra.length > 0 && toolKindHint) {
+      validIntra = await this.filterToolIdsByType(tenantId, validIntra, toolKindHint);
+    }
+    if (validIntra.length > 0) return validIntra;
+
     const fromCandidate =
-      candidates.find((c) => c.type === capabilityType)?.toolIds ??
-      candidates[0]?.toolIds ??
+      routingResult.candidates.find((c) => c.type === capabilityType)?.toolIds ??
+      routingResult.candidates[0]?.toolIds ??
       [];
-    const valid = fromCandidate.filter((id) => typeof id === 'string' && id.length > 0);
-    if (valid.length > 0) return valid;
+    let validCandidate = fromCandidate.filter((id) => typeof id === 'string' && id.length > 0);
+    if (validCandidate.length > 0 && toolKindHint) {
+      validCandidate = await this.filterToolIdsByType(tenantId, validCandidate, toolKindHint);
+    }
+    if (validCandidate.length > 0) return validCandidate;
+
+    const cap = await this.prisma.capability.findFirst({
+      where: { tenantId, status: 'enabled', type: capabilityType as CapabilityType },
+      orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+      select: { dependentTools: true },
+    });
+    if (cap?.dependentTools && Array.isArray(cap.dependentTools)) {
+      let fromDependent = (cap.dependentTools as unknown[]).filter(
+        (x): x is string => typeof x === 'string' && x.length > 0,
+      );
+      if (fromDependent.length > 0 && toolKindHint) {
+        fromDependent = await this.filterToolIdsByType(tenantId, fromDependent, toolKindHint);
+      }
+      if (fromDependent.length > 0) return fromDependent;
+    }
 
     if (capabilityType === 'qa') return [];
+
+    if (capabilityType === 'action') {
+      const types = this.resolveActionToolTypes(toolKindHint);
+      const tool = await this.prisma.tool.findFirst({
+        where: {
+          tenantId,
+          type: { in: types },
+          status: 'enabled',
+        },
+        orderBy: [{ updatedAt: 'desc' }],
+        select: { id: true },
+      });
+      return tool ? [tool.id] : [];
+    }
 
     const toolType = this.capabilityToToolType(capabilityType);
     if (!toolType) return [];
@@ -747,6 +785,30 @@ export class AgentRuntimeService {
       select: { id: true },
     });
     return tool ? [tool.id] : [];
+  }
+
+  private resolveActionToolTypes(toolKindHint?: string): ToolType[] {
+    if (toolKindHint === 'http_query' || toolKindHint === 'action' || toolKindHint === 'notification') {
+      return [toolKindHint as ToolType];
+    }
+    return [ToolType.action, ToolType.notification, ToolType.http_query];
+  }
+
+  private async filterToolIdsByType(
+    tenantId: string,
+    toolIds: string[],
+    toolType: string,
+  ): Promise<string[]> {
+    const tools = await this.prisma.tool.findMany({
+      where: {
+        tenantId,
+        id: { in: toolIds },
+        status: 'enabled',
+        type: toolType as ToolType,
+      },
+      select: { id: true },
+    });
+    return tools.map((t) => t.id);
   }
 
   private capabilityToToolType(capabilityType: string): ToolType | null {

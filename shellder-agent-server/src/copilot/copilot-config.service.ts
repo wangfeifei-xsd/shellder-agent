@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateCopilotConfigDto, UpdateCopilotConfigDto } from './dto/copilot-config.dto';
 import { AuthUser } from '../auth/jwt.types';
 import { PermissionService } from '../auth/permission.service';
+import { mergeCopilotFeatures } from './copilot-routing.features';
 
 @Injectable()
 export class CopilotConfigService {
@@ -45,11 +46,7 @@ export class CopilotConfigService {
         name: dto.name,
         domainWhitelist: dto.domainWhitelist ?? [],
         theme: (dto.theme ?? {}) as unknown as Prisma.InputJsonValue,
-        features: (dto.features ?? {
-          enableHistory: true,
-          enableTask: true,
-          enableConfirmation: true,
-        }) as unknown as Prisma.InputJsonValue,
+        features: (dto.features ?? mergeCopilotFeatures(undefined)) as unknown as Prisma.InputJsonValue,
         welcomeMessage: dto.welcomeMessage ?? null,
         placeholder: dto.placeholder ?? null,
         maxHistoryMessages: dto.maxHistoryMessages ?? 50,
@@ -87,7 +84,14 @@ export class CopilotConfigService {
     if (dto.status !== undefined) data.status = dto.status;
     if (dto.domainWhitelist !== undefined) data.domainWhitelist = dto.domainWhitelist;
     if (dto.theme !== undefined) data.theme = dto.theme as unknown as Prisma.InputJsonValue;
-    if (dto.features !== undefined) data.features = dto.features as unknown as Prisma.InputJsonValue;
+    if (dto.features !== undefined) {
+      data.features = mergeCopilotFeatures({
+        ...(typeof config.features === 'object' && config.features
+          ? (config.features as Record<string, unknown>)
+          : {}),
+        ...dto.features,
+      }) as unknown as Prisma.InputJsonValue;
+    }
     if (dto.welcomeMessage !== undefined) data.welcomeMessage = dto.welcomeMessage;
     if (dto.placeholder !== undefined) data.placeholder = dto.placeholder;
     if (dto.maxHistoryMessages !== undefined) data.maxHistoryMessages = dto.maxHistoryMessages;
@@ -152,7 +156,7 @@ export class CopilotConfigService {
       status: config.status,
       domainWhitelist: config.domainWhitelist,
       theme: config.theme,
-      features: config.features,
+      features: mergeCopilotFeatures(config.features),
       welcomeMessage: config.welcomeMessage,
       placeholder: config.placeholder,
       maxHistoryMessages: config.maxHistoryMessages,

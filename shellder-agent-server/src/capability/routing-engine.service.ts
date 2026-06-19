@@ -1,32 +1,38 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CapabilityType } from '@prisma/client';
+import { CapabilityType, ToolType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
+import { HttpQueryTriggerService } from '../tool/http-query-trigger.service';
 import { CapabilityService } from './capability.service';
-import { RoutingCandidate, RoutingTestResult } from './dto/routing-test.dto';
+import { RoutingLlmClassifyService } from './routing-llm-classify.service';
+import {
+  CapabilityRouteResult,
+  IntraCapabilityRouteResult,
+  RouteFullOptions,
+  RoutingCandidate,
+  RoutingTestResult,
+} from './dto/routing-test.dto';
 
 /** 路由规则 conditions DSL 结构 */
 interface RoutingConditions {
-  /** 关键词列表（命中任一即匹配） */
   keywords?: string[];
-  /** 正则表达式模式（命中任一即匹配） */
   patterns?: string[];
-  /** 意图标签（保留，供后续 NLU 引擎扩展） */
   intents?: string[];
+  /** action 能力内可选：限定绑定的 Tool 类型 */
+  toolKind?: 'http_query' | 'action' | 'notification';
+  minScore?: number;
 }
+
+type CapabilityWithRules = Awaited<
+  ReturnType<RoutingEngineService['loadEnabledCapabilities']>
+>[number];
 
 /**
  * 路由引擎（架构 Capability Routing / 执行计划 §4）。
  *
- * Agent Runtime 调用本模块将用户请求路由到四类能力之一。
- * 可独立调用（不经完整 Tool 编排）供「路由测试」、调试台使用。
- *
- * 路由算法：
- * 1. 获取租户启用能力（按 priority 升序）。
- * 2. 验证能力类型是否在租户 config.capabilities 范围内（验收标准 2）。
- * 3. 对每个能力的路由规则逐一匹配 conditions（关键词/正则/意图）。
- * 4. 计算匹配分数，取最高分能力作为路由结果。
- * 5. 结合 Policy 判断 needConfirmation（验收标准 3）。
+ * 两阶段路由：
+ * - Stage1 routeCapability：跨类型规则 + 启发式（pinned 时跳过跨类型）
+ * - Stage2 routeWithinCapability：能力内 routing_rule → toolIds
  */
 @Injectable()
 export class RoutingEngineService {
@@ -36,30 +42,142 @@ export class RoutingEngineService {
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
     private readonly capabilityService: CapabilityService,
+    private readonly httpQueryTrigger: HttpQueryTriggerService,
+    private readonly llmClassify: RoutingLlmClassifyService,
   ) {}
 
-  /**
-   * 路由测试（API POST /api/v1/routing/test）。
-   * 输入测试语句 → 命中能力类型、理由、候选能力、是否需确认。
-   */
-  async routeTest(tenantId: string, input: string, userId?: string): Promise<RoutingTestResult> {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) {
-      return this.fallbackResult('租户不存在');
+  /** Stage1：跨能力类型路由（session 未锁定类型时） */
+  async routeCapability(
+    tenantId: string,
+    input: string,
+    options?: Pick<RouteFullOptions, 'pinnedCapabilityType' | 'enableLlmClassify'>,
+  ): Promise<CapabilityRouteResult> {
+    const ctx = await this.prepareTenantContext(tenantId);
+    if (!ctx) {
+      const fallback = this.fallbackResult('租户不存在');
+      return {
+        capabilityType: fallback.capabilityType as CapabilityType,
+        capabilityName: fallback.capabilityName,
+        reason: fallback.reason,
+        confidence: 0,
+        pinned: false,
+        candidates: [],
+      };
     }
 
-    const tenantConfig = tenant.config as { capabilities?: string[] } | null;
-    const allowedTypes = tenantConfig?.capabilities ?? [];
-    if (allowedTypes.length === 0) {
-      return this.fallbackResult(
-        '该租户未配置开通能力范围，请在租户管理中至少选择一种能力',
+    if (ctx.errorReason) {
+      return {
+        capabilityType: 'qa',
+        capabilityName: this.typeLabel('qa'),
+        reason: ctx.errorReason,
+        confidence: 0,
+        pinned: false,
+        candidates: [],
+      };
+    }
+
+    const { allowedTypes } = ctx;
+
+    if (options?.pinnedCapabilityType) {
+      const pinned = options.pinnedCapabilityType;
+      if (allowedTypes.length > 0 && !allowedTypes.includes(pinned)) {
+        return {
+          capabilityType: pinned,
+          capabilityName: this.typeLabel(pinned),
+          reason: `定向锁定：${this.typeLabel(pinned)}（该租户未开通此能力类型）`,
+          confidence: 1,
+          pinned: true,
+          candidates: [],
+        };
+      }
+
+      const cap = await this.prisma.capability.findFirst({
+        where: { tenantId, status: 'enabled', type: pinned },
+        orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+      });
+
+      return {
+        capabilityType: pinned,
+        capabilityName: cap?.name ?? this.typeLabel(pinned),
+        reason: `定向锁定：${cap?.name ?? this.typeLabel(pinned)}`,
+        confidence: 1,
+        pinned: true,
+        candidates: cap
+          ? [
+              {
+                capabilityId: cap.id,
+                capabilityName: cap.name,
+                type: cap.type,
+                score: 100,
+                toolIds: this.readToolIds(cap.dependentTools),
+              },
+            ]
+          : [],
+      };
+    }
+
+    const capabilities = await this.loadEnabledCapabilities(tenantId, allowedTypes);
+    if (capabilities.length === 0) {
+      return {
+        capabilityType: 'qa',
+        capabilityName: this.typeLabel('qa'),
+        reason: '该租户无可用能力配置',
+        confidence: 0,
+        pinned: false,
+        candidates: [],
+      };
+    }
+
+    const candidates = this.scoreCapabilities(input, capabilities);
+    candidates.sort((a, b) => b.score - a.score);
+
+    if (candidates.length === 0) {
+      const inferred = this.inferTypeByKeywords(input, allowedTypes);
+      return (
+        (await this.maybeApplyLlmClassify(tenantId, input, allowedTypes, inferred, options)) ??
+        inferred
       );
     }
 
-    await this.capabilityService.ensureDefaultCapabilities(tenantId);
+    const best = candidates[0];
+    const confidence = this.computeConfidence(best.score, candidates[1]?.score);
+    const ruleResult: CapabilityRouteResult = {
+      capabilityType: best.type as CapabilityType,
+      capabilityName: best.capabilityName,
+      reason: `路由命中：${best.capabilityName}（得分 ${best.score}）`,
+      confidence,
+      pinned: false,
+      candidates,
+    };
 
-    const capabilities = await this.prisma.capability.findMany({
-      where: { tenantId, status: 'enabled', type: { in: allowedTypes as CapabilityType[] } },
+    if (confidence < 0.5) {
+      return (
+        (await this.maybeApplyLlmClassify(tenantId, input, allowedTypes, ruleResult, options)) ??
+        ruleResult
+      );
+    }
+
+    return ruleResult;
+  }
+
+  /** Stage2：能力内 Tool/规则匹配（定向与自动模式均调用） */
+  async routeWithinCapability(
+    tenantId: string,
+    capabilityType: CapabilityType,
+    input: string,
+    userId?: string,
+  ): Promise<IntraCapabilityRouteResult> {
+    const ctx = await this.prepareTenantContext(tenantId);
+    if (!ctx) {
+      return {
+        toolIds: [],
+        reason: '租户不存在',
+        needConfirmation: false,
+      };
+    }
+
+    const cap = await this.prisma.capability.findFirst({
+      where: { tenantId, status: 'enabled', type: capabilityType },
       orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
       include: {
         routingRules: {
@@ -69,16 +187,204 @@ export class RoutingEngineService {
       },
     });
 
-    if (capabilities.length === 0) {
-      return this.fallbackResult('该租户无可用能力配置');
+    if (!cap) {
+      return {
+        toolIds: [],
+        reason: `未找到 ${this.typeLabel(capabilityType)} 能力配置`,
+        needConfirmation: false,
+      };
     }
 
+    let bestScore = 0;
+    let matchedRule: (typeof cap.routingRules)[number] | undefined;
+    let matchedToolIds: string[] = [];
+    let matchedToolKind: string | undefined;
+
+    for (const rule of cap.routingRules) {
+      const conditions = this.readConditions(rule.conditions);
+      const score = this.calculateScore(input, conditions);
+      if (score <= bestScore) continue;
+
+      const rawToolIds = this.readToolIds(rule.toolIds);
+      const filteredToolIds = await this.filterToolIdsByKind(
+        tenantId,
+        rawToolIds,
+        conditions.toolKind,
+      );
+      if (conditions.toolKind && filteredToolIds.length === 0 && rawToolIds.length > 0) {
+        continue;
+      }
+
+      bestScore = score;
+      matchedRule = rule;
+      matchedToolIds = filteredToolIds.length > 0 ? filteredToolIds : rawToolIds;
+      matchedToolKind = conditions.toolKind;
+    }
+
+    if (bestScore > 0 && matchedRule) {
+      const needConfirmation = await this.checkNeedConfirmation(
+        tenantId,
+        capabilityType,
+        matchedToolIds,
+        userId,
+      );
+      return {
+        toolIds: matchedToolIds,
+        ruleId: matchedRule.id,
+        ruleName: matchedRule.name,
+        reason: `命中规则「${matchedRule.name}」（得分 ${bestScore}）`,
+        needConfirmation,
+        toolKind: matchedToolKind,
+      };
+    }
+
+    if (capabilityType === 'action') {
+      const signalResult = await this.resolveActionIntraFromSignal(tenantId, input, userId);
+      if (signalResult) {
+        return signalResult;
+      }
+    }
+
+    const dependentToolIds = this.readToolIds(cap.dependentTools);
+    const needConfirmation = await this.checkNeedConfirmation(
+      tenantId,
+      capabilityType,
+      dependentToolIds,
+      userId,
+    );
+
+    return {
+      toolIds: [],
+      reason: '未命中能力内路由规则',
+      needConfirmation,
+    };
+  }
+
+  /** 编排入口：Stage1 + Stage2，供 Runtime / 路由测试使用 */
+  async routeFull(
+    tenantId: string,
+    input: string,
+    options?: RouteFullOptions,
+  ): Promise<RoutingTestResult> {
+    const typeResult = await this.routeCapability(tenantId, input, {
+      pinnedCapabilityType: options?.pinnedCapabilityType,
+      enableLlmClassify: options?.enableLlmClassify,
+    });
+
+    const intraResult = await this.routeWithinCapability(
+      tenantId,
+      typeResult.capabilityType,
+      input,
+      options?.userId,
+    );
+
+    const typeStage = {
+      reason: typeResult.reason,
+      confidence: typeResult.confidence,
+      pinned: typeResult.pinned,
+    };
+
+    const intraStage = {
+      ruleId: intraResult.ruleId,
+      ruleName: intraResult.ruleName,
+      toolIds: intraResult.toolIds,
+      reason: intraResult.reason,
+      toolKind: intraResult.toolKind,
+      signalToolCode: intraResult.signalToolCode,
+    };
+
+    const mergedReason = typeResult.pinned
+      ? `${typeResult.reason}；能力内：${intraResult.reason}`
+      : `${typeResult.reason}；能力内：${intraResult.reason}`;
+
+    return {
+      capabilityType: typeResult.capabilityType,
+      capabilityName: typeResult.capabilityName,
+      reason: mergedReason,
+      candidates: typeResult.candidates,
+      needConfirmation: intraResult.needConfirmation,
+      typeStage,
+      intraStage,
+    };
+  }
+
+  /**
+   * 路由测试（API POST /api/v1/routing/test）。
+   * 输入测试语句 → 命中能力类型、理由、候选能力、是否需确认。
+   */
+  async routeTest(
+    tenantId: string,
+    input: string,
+    userId?: string,
+    options?: Pick<RouteFullOptions, 'pinnedCapabilityType'>,
+  ): Promise<RoutingTestResult> {
+    return this.routeFull(tenantId, input, {
+      userId,
+      pinnedCapabilityType: options?.pinnedCapabilityType,
+    });
+  }
+
+  /** 供 Agent Runtime 调用的路由方法（统一能力入口协议） */
+  async route(tenantId: string, input: string, userId?: string): Promise<RoutingTestResult> {
+    return this.routeFull(tenantId, input, { userId });
+  }
+
+  /**
+   * 定向选择能力类型：锁定类型 + 必须执行 Stage2。
+   * @deprecated 语义变更 — 现为 routeFull 的薄封装（pinned + Stage2）
+   */
+  async routeDirected(
+    tenantId: string,
+    capabilityType: CapabilityType,
+    input: string,
+    userId?: string,
+  ): Promise<RoutingTestResult> {
+    return this.routeFull(tenantId, input, {
+      pinnedCapabilityType: capabilityType,
+      userId,
+    });
+  }
+
+  // ── 租户上下文 ──────────────────────────────────────────
+
+  private async prepareTenantContext(
+    tenantId: string,
+  ): Promise<{ allowedTypes: string[]; errorReason?: string } | null> {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) return null;
+
+    const tenantConfig = tenant.config as { capabilities?: string[] } | null;
+    const allowedTypes = tenantConfig?.capabilities ?? [];
+    if (allowedTypes.length === 0) {
+      return {
+        allowedTypes: [],
+        errorReason: '该租户未配置开通能力范围，请在租户管理中至少选择一种能力',
+      };
+    }
+
+    await this.capabilityService.ensureDefaultCapabilities(tenantId);
+    return { allowedTypes };
+  }
+
+  private async loadEnabledCapabilities(tenantId: string, allowedTypes: string[]) {
+    return this.prisma.capability.findMany({
+      where: { tenantId, status: 'enabled', type: { in: allowedTypes as CapabilityType[] } },
+      orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+      include: {
+        routingRules: {
+          where: { status: 'enabled' },
+          orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+        },
+      },
+    });
+  }
+
+  private scoreCapabilities(input: string, capabilities: CapabilityWithRules[]): RoutingCandidate[] {
     const candidates: RoutingCandidate[] = [];
 
     for (const cap of capabilities) {
       let maxScore = 0;
       let matchedToolIds: string[] = [];
-      let matchedReason = '';
 
       for (const rule of cap.routingRules) {
         const conditions = this.readConditions(rule.conditions);
@@ -86,7 +392,6 @@ export class RoutingEngineService {
         if (score > maxScore) {
           maxScore = score;
           matchedToolIds = this.readToolIds(rule.toolIds);
-          matchedReason = `命中规则「${rule.name}」`;
         }
       }
 
@@ -101,95 +406,16 @@ export class RoutingEngineService {
       }
     }
 
-    candidates.sort((a, b) => b.score - a.score);
-
-    if (candidates.length === 0) {
-      return this.inferByKeywords(input, allowedTypes, tenantId);
-    }
-
-    const best = candidates[0];
-
-    const needConfirmation = await this.checkNeedConfirmation(
-      tenantId,
-      best.type,
-      best.toolIds,
-      userId,
-    );
-
-    return {
-      capabilityType: best.type,
-      capabilityName: best.capabilityName,
-      reason: `路由命中：${best.capabilityName}（得分 ${best.score}）`,
-      candidates,
-      needConfirmation,
-    };
+    return candidates;
   }
 
-  /**
-   * 供 Agent Runtime 调用的路由方法（统一能力入口协议）。
-   * 返回路由结果（不写命中记录，由 Runtime 决定是否持久化）。
-   */
-  async route(tenantId: string, input: string, userId?: string): Promise<RoutingTestResult> {
-    return this.routeTest(tenantId, input, userId);
-  }
-
-  /**
-   * 定向选择能力类型（演示页 / 嵌入 Copilot / 业务系统显式指定）。
-   * 不执行关键词、规则或启发式路由匹配。
-   */
-  async routeDirected(
-    tenantId: string,
-    capabilityType: CapabilityType,
-    userId?: string,
-  ): Promise<RoutingTestResult> {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) {
-      return this.fallbackResult('租户不存在');
+  private computeConfidence(bestScore: number, secondScore?: number): number {
+    if (bestScore <= 0) return 0.2;
+    if (secondScore === undefined || secondScore === 0) {
+      return Math.min(0.5 + bestScore / 100, 1);
     }
-
-    const tenantConfig = tenant.config as { capabilities?: string[] } | null;
-    const allowedTypes = tenantConfig?.capabilities ?? [];
-    if (allowedTypes.length > 0 && !allowedTypes.includes(capabilityType)) {
-      return {
-        capabilityType,
-        capabilityName: this.typeLabel(capabilityType),
-        reason: `定向选择：${this.typeLabel(capabilityType)}（该租户未开通此能力类型）`,
-        candidates: [],
-        needConfirmation: false,
-      };
-    }
-
-    await this.capabilityService.ensureDefaultCapabilities(tenantId);
-
-    const cap = await this.prisma.capability.findFirst({
-      where: { tenantId, status: 'enabled', type: capabilityType },
-      orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
-    });
-
-    const toolIds = cap ? this.readToolIds(cap.dependentTools) : [];
-    const needConfirmation = await this.checkNeedConfirmation(
-      tenantId,
-      capabilityType,
-      toolIds,
-      userId,
-    );
-
-    const capabilityName = cap?.name ?? this.typeLabel(capabilityType);
-    const candidate: RoutingCandidate = {
-      capabilityId: cap?.id ?? '',
-      capabilityName,
-      type: capabilityType,
-      score: 100,
-      toolIds,
-    };
-
-    return {
-      capabilityType,
-      capabilityName,
-      reason: `定向选择：${capabilityName}（不使用路由匹配）`,
-      candidates: [candidate],
-      needConfirmation,
-    };
+    const gap = bestScore - secondScore;
+    return Math.min(0.4 + gap / 50 + bestScore / 200, 1);
   }
 
   // ── 匹配算法 ────────────────────────────────────────────
@@ -220,8 +446,6 @@ export class RoutingEngineService {
     }
 
     if (conditions.intents && conditions.intents.length > 0) {
-      // 保留接口，后续接入 NLU/LLM 意图识别
-      // 当前简单用关键词近似匹配
       for (const intent of conditions.intents) {
         if (lowerInput.includes(intent.toLowerCase())) {
           score += 15;
@@ -233,11 +457,10 @@ export class RoutingEngineService {
   }
 
   /** 无规则命中时，按内置关键词启发式推断能力类型 */
-  private inferByKeywords(
+  private inferTypeByKeywords(
     input: string,
     allowedTypes: string[],
-    tenantId: string,
-  ): RoutingTestResult {
+  ): CapabilityRouteResult {
     const lower = input.toLowerCase();
 
     const typeScores: Record<string, number> = { qa: 0, query: 0, action: 0, workflow: 0 };
@@ -261,18 +484,21 @@ export class RoutingEngineService {
     if (bestScore === 0) {
       const defaultType = allowedTypes.includes('qa') ? 'qa' : allowedTypes[0];
       return {
-        capabilityType: defaultType,
+        capabilityType: defaultType as CapabilityType,
         capabilityName: this.typeLabel(defaultType),
         reason: '未命中路由规则，回退为默认能力类型',
+        confidence: 0.2,
+        pinned: false,
         candidates: [],
-        needConfirmation: false,
       };
     }
 
     return {
-      capabilityType: bestType,
+      capabilityType: bestType as CapabilityType,
       capabilityName: this.typeLabel(bestType),
       reason: `启发式推断：命中 ${bestType} 类型关键词（得分 ${bestScore}）`,
+      confidence: Math.min(0.3 + bestScore / 50, 0.6),
+      pinned: false,
       candidates: filtered
         .filter(([, s]) => s > 0)
         .map(([type, score]) => ({
@@ -282,19 +508,94 @@ export class RoutingEngineService {
           score,
           toolIds: [],
         })),
-      needConfirmation: false,
     };
   }
 
-  /** 结合 Policy 判断路由级是否需确认（验收标准 3） */
+  private async maybeApplyLlmClassify(
+    tenantId: string,
+    input: string,
+    allowedTypes: string[],
+    fallback: CapabilityRouteResult,
+    options?: Pick<RouteFullOptions, 'enableLlmClassify'>,
+  ): Promise<CapabilityRouteResult | null> {
+    const enabled =
+      options?.enableLlmClassify ??
+      (await this.llmClassify.isEnabled(tenantId));
+    if (!enabled) return null;
+
+    const llmResult = await this.llmClassify.classify(tenantId, input, allowedTypes);
+    if (!llmResult) return null;
+
+    return {
+      capabilityType: llmResult.capabilityType,
+      capabilityName: this.typeLabel(llmResult.capabilityType),
+      reason: `LLM 分类：${llmResult.reason}`,
+      confidence: llmResult.confidence,
+      pinned: false,
+      candidates: fallback.candidates,
+    };
+  }
+
+  private async filterToolIdsByKind(
+    tenantId: string,
+    toolIds: string[],
+    toolKind?: RoutingConditions['toolKind'],
+  ): Promise<string[]> {
+    if (!toolKind || toolIds.length === 0) return toolIds;
+
+    const tools = await this.prisma.tool.findMany({
+      where: {
+        tenantId,
+        id: { in: toolIds },
+        status: 'enabled',
+        type: toolKind as ToolType,
+      },
+      select: { id: true },
+    });
+    return tools.map((t) => t.id);
+  }
+
+  private async resolveActionIntraFromSignal(
+    tenantId: string,
+    input: string,
+    userId?: string,
+  ): Promise<IntraCapabilityRouteResult | null> {
+    const signal = this.httpQueryTrigger.parseSignal(input);
+    if (!signal) return null;
+
+    const tool = await this.httpQueryTrigger.findByToolCode(tenantId, signal.toolCode);
+    if (!tool) {
+      return {
+        toolIds: [],
+        reason: `检测到 HTTP 查询信号，但未找到 toolCode=${signal.toolCode}`,
+        needConfirmation: false,
+        toolKind: 'http_query',
+        signalToolCode: signal.toolCode,
+      };
+    }
+
+    const needConfirmation = await this.checkNeedConfirmation(
+      tenantId,
+      'action',
+      [tool.id],
+      userId,
+    );
+
+    return {
+      toolIds: [tool.id],
+      reason: `HTTP 查询信号命中 toolCode=${signal.toolCode}`,
+      needConfirmation,
+      toolKind: 'http_query',
+      signalToolCode: signal.toolCode,
+    };
+  }
+
   private async checkNeedConfirmation(
     tenantId: string,
     capabilityType: string,
     toolIds: string[],
     userId?: string,
   ): Promise<boolean> {
-    // 先检查路由规则自身的 needConfirmation
-    // 再通过 Policy 评估
     try {
       const decision = await this.policyService.evaluate(
         {

@@ -27,6 +27,10 @@ export const PROMPT_KEYS = {
   CONNECTOR_ER_DATA_SCOPE_SYSTEM: 'connector.er_data_scope.system',
   /** ER 限制字段分析 user 骨架 */
   CONNECTOR_ER_DATA_SCOPE_USER: 'connector.er_data_scope.user',
+  /** action 能力内 HTTP 查询工具目录（Prompt 注入 {{toolCatalog}}） */
+  ACTION_HTTP_QUERY_CATALOG: 'action.http_query.catalog',
+  /** Stage1 可选 LLM 能力类型分类 system */
+  ROUTING_CLASSIFY_SYSTEM: 'routing.classify.system',
 } as const;
 
 export type PromptKey = (typeof PROMPT_KEYS)[keyof typeof PROMPT_KEYS];

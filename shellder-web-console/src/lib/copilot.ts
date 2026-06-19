@@ -12,10 +12,70 @@ function copilotApiBase(): string {
 
 export interface CopilotConfig {
   theme?: Record<string, unknown>;
-  features?: { enableHistory?: boolean; enableTask?: boolean; enableConfirmation?: boolean };
+  features?: CopilotFeatures;
   welcomeMessage?: string | null;
   placeholder?: string | null;
   maxHistoryMessages?: number;
+}
+
+export type CopilotRoutingMode = 'auto' | 'pinned' | 'hybrid';
+
+export interface CopilotFeatures {
+  enableHistory?: boolean;
+  enableTask?: boolean;
+  enableConfirmation?: boolean;
+  routingMode?: CopilotRoutingMode;
+  showCapabilitySelector?: boolean;
+  clarifyOnLowConfidence?: boolean;
+  confidenceThreshold?: number;
+  allowedCapabilities?: CapabilityTypeKey[];
+  [key: string]: unknown;
+}
+
+export interface CopilotRoutingResultContent {
+  type: 'routing_result';
+  capabilityType?: string;
+  capabilityName?: string;
+  reason?: string;
+  needConfirmation?: boolean;
+  pinnedCapability?: boolean;
+  typeStage?: {
+    reason: string;
+    confidence: number;
+    pinned: boolean;
+  };
+  intraStage?: {
+    ruleId?: string;
+    ruleName?: string;
+    toolIds: string[];
+    reason: string;
+  };
+  resolvedToolIds?: string[];
+}
+
+export function resolveCopilotRoutingMode(config: CopilotConfig | null): CopilotRoutingMode {
+  return config?.features?.routingMode ?? 'auto';
+}
+
+export function resolveShowCapabilitySelector(
+  config: CopilotConfig | null,
+  mode: CopilotRoutingMode,
+): boolean {
+  if (mode === 'pinned') return true;
+  if (mode === 'hybrid') return config?.features?.showCapabilitySelector ?? true;
+  return config?.features?.showCapabilitySelector ?? false;
+}
+
+export function findLatestRoutingResult(
+  messages: CopilotMessage[],
+): CopilotRoutingResultContent | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = messages[i].content;
+    if (content?.type === 'routing_result') {
+      return content as unknown as CopilotRoutingResultContent;
+    }
+  }
+  return null;
 }
 
 export interface CopilotTokenResponse {
@@ -224,13 +284,14 @@ export async function copilotCreateSession(
   token: string,
   options?: { title?: string; capabilityType?: CapabilityTypeKey },
 ): Promise<CopilotSession> {
+  const body: Record<string, unknown> = {};
+  if (options?.title) body.title = options.title;
+  if (options?.capabilityType) body.capabilityType = options.capabilityType;
+
   const res = await fetch(`${copilotApiBase()}/sessions`, {
     method: 'POST',
     headers: copilotHeaders(token),
-    body: JSON.stringify({
-      title: options?.title,
-      capabilityType: options?.capabilityType,
-    }),
+    body: JSON.stringify(body),
   });
   return readCopilotJson<CopilotSession>(res, '创建会话失败');
 }

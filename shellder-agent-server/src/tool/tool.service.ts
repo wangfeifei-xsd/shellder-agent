@@ -19,11 +19,17 @@ import {
 } from './schema-validator.util';
 import {
   DEFAULT_SQL_CONFIG,
+  HttpQueryParameter,
+  HttpQueryToolConfig,
   HttpToolConfig,
   SqlToolConfig,
   ToolConfig,
   TOOL_TYPE_CONNECTOR_TYPE,
 } from './tool.types';
+import {
+  assertValidToolCode,
+  parametersToInputSchema,
+} from './http-query.config.util';
 
 /** 详情中「最近调用日志」展示条数 */
 const RECENT_CALL_LIMIT = 20;
@@ -319,6 +325,10 @@ export class ToolService {
         const http = this.normalizeHttpConfig(src.http);
         return { http };
       }
+      case 'http_query': {
+        const httpQuery = this.normalizeHttpQueryConfig(src.httpQuery);
+        return { httpQuery };
+      }
       case 'workflow': {
         const steps = Array.isArray(src.workflow?.steps) ? src.workflow!.steps : [];
         return { workflow: { steps } };
@@ -372,7 +382,101 @@ export class ToolService {
           ? (c.headers as Record<string, string>)
           : {},
       bodyTemplate: c.bodyTemplate,
+      queryMapping: c.queryMapping,
+      bodyMapping: c.bodyMapping,
+      responseMapping: c.responseMapping,
     };
+  }
+
+  private normalizeHttpQueryConfig(raw?: HttpQueryToolConfig): HttpQueryToolConfig {
+    if (!raw?.toolCode?.trim()) {
+      throw new BadRequestException({
+        code: 'HTTP_QUERY_CONFIG_INVALID',
+        message: 'HTTP 查询工具须配置 toolCode',
+      });
+    }
+    try {
+      assertValidToolCode(raw.toolCode.trim());
+    } catch (err) {
+      throw new BadRequestException({
+        code: 'HTTP_QUERY_CONFIG_INVALID',
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    const method = (raw.invoke?.method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'POST') {
+      throw new BadRequestException({
+        code: 'HTTP_QUERY_CONFIG_INVALID',
+        message: 'invoke.method 仅支持 GET 或 POST',
+      });
+    }
+
+    const parameters = this.normalizeHttpQueryParameters(raw.parameters);
+    const path = raw.invoke?.path?.trim() ?? '';
+    if (!path) {
+      throw new BadRequestException({
+        code: 'HTTP_QUERY_CONFIG_INVALID',
+        message: 'invoke.path 不能为空',
+      });
+    }
+
+    const timeoutMs = raw.invoke?.timeoutMs;
+    if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 100)) {
+      throw new BadRequestException({
+        code: 'HTTP_QUERY_CONFIG_INVALID',
+        message: 'invoke.timeoutMs 须为不小于 100 的整数',
+      });
+    }
+
+    return {
+      toolCode: raw.toolCode.trim(),
+      intentTags: this.strArray(raw.intentTags),
+      priority: typeof raw.priority === 'number' ? raw.priority : undefined,
+      parameters,
+      invoke: {
+        method: method as 'GET' | 'POST',
+        path,
+        queryMapping: raw.invoke?.queryMapping,
+        bodyMapping: raw.invoke?.bodyMapping,
+        timeoutMs,
+      },
+      response: {
+        type: raw.response?.type,
+        successPath: raw.response?.successPath,
+        successValue: raw.response?.successValue,
+        fieldMapping: raw.response?.fieldMapping,
+        replyTextPath: raw.response?.replyTextPath,
+      },
+    };
+  }
+
+  private normalizeHttpQueryParameters(raw?: HttpQueryParameter[]): HttpQueryParameter[] {
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((p) => p && typeof p.name === 'string' && p.name.trim())
+      .map((p) => ({
+        name: p.name.trim(),
+        type: p.type || 'string',
+        required: Boolean(p.required),
+        description: p.description,
+      }));
+  }
+
+  /** 由 parameters 推导 inputSchema（管理端保存时可选用） */
+  deriveInputSchemaFromHttpQuery(config: HttpQueryToolConfig): Record<string, unknown> {
+    return parametersToInputSchema(config.parameters);
+  }
+
+  async findHttpQueryByCode(tenantId: string, toolCode: string): Promise<Tool | null> {
+    const tools = await this.prisma.tool.findMany({
+      where: { tenantId, type: 'http_query' },
+    });
+    for (const tool of tools) {
+      const cfg = this.readConfig(tool).httpQuery;
+      if (cfg?.toolCode === toolCode) return tool;
+    }
+    return null;
   }
 
   /** 关联连接器校验：同租户、类型匹配、满足连接器 allowedToolScopes 约束。 */

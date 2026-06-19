@@ -12,6 +12,7 @@ import {
   Query,
   Req,
   Res,
+  BadRequestException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { Public } from '../auth/decorators/public.decorator';
@@ -29,6 +30,7 @@ import { OpenApiAppService } from '../openapi/openapi-app.service';
 import { OpenApiCallLogService } from '../openapi/openapi-call-log.service';
 import { CopilotAuthService, CopilotJwtPayload } from './copilot-auth.service';
 import { CopilotConfigService } from './copilot-config.service';
+import { resolveRoutingMode } from './copilot-routing.features';
 import { CreateCopilotSessionDto, UpdateCopilotSessionDto } from './dto/copilot-session.dto';
 import {
   CopilotTokenExchangeDto,
@@ -88,6 +90,7 @@ export class CopilotWidgetController {
 
   constructor(
     private readonly authService: CopilotAuthService,
+    private readonly configService: CopilotConfigService,
     private readonly appService: OpenApiAppService,
     private readonly callLogService: OpenApiCallLogService,
     private readonly prisma: PrismaService,
@@ -144,12 +147,21 @@ export class CopilotWidgetController {
     try {
       const principalContext = this.authService.snapshotPrincipalContext(payload);
 
+      const copilotConfig = await this.configService.getConfigByAppId(payload.appId);
+      const routingMode = resolveRoutingMode(copilotConfig?.features ?? {});
+      if (routingMode === 'pinned' && !body.capabilityType) {
+        throw new BadRequestException({
+          code: 'COPILOT_CAPABILITY_REQUIRED',
+          message: 'routingMode=pinned 时创建会话必须传入 capabilityType',
+        });
+      }
+
       const session = await this.prisma.session.create({
         data: {
           tenantId: payload.tenantId,
           userId: payload.sub,
           title: body.title ?? null,
-          capabilityType: body.capabilityType,
+          capabilityType: body.capabilityType ?? null,
           principalContext: (principalContext ?? undefined) as
             | Prisma.InputJsonValue
             | undefined,
@@ -660,7 +672,7 @@ export class CopilotWidgetController {
       strategy: 'BFF 薄层，会话/消息/SSE/确认/任务委托 AgentRuntimeService（与 OpenAPI 对齐）',
       endpoints: [
         { method: 'POST', path: '/auth/token', description: '换票，获取 Copilot JWT', auth: 'Client ID + Client Secret' },
-        { method: 'POST', path: '/sessions', description: '创建会话（capabilityType 必填，手动选择）', auth: 'Bearer Copilot JWT' },
+        { method: 'POST', path: '/sessions', description: '创建会话（capabilityType 可选；routingMode=pinned 时必填）', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/sessions', description: '历史会话列表', auth: 'Bearer Copilot JWT' },
         { method: 'GET', path: '/sessions/:id', description: '会话详情（消息 + 任务）', auth: 'Bearer Copilot JWT' },
         { method: 'PATCH', path: '/sessions/:id', description: '更新会话（如重命名）', auth: 'Bearer Copilot JWT' },

@@ -316,6 +316,8 @@ export default function CopilotPreviewPage() {
             />
             <Paragraph type="secondary" className="!mb-4 !-mt-2 text-xs">
               仅问答型能力生效；须先选择租户。选项受知识库「wiki 路径前缀」约束，换票时服务端会校验。
+              路由模式（auto / pinned / hybrid）请在{' '}
+              <Link to="/copilot-admin">Copilot 配置</Link> 中设置，预览将随换票 config 生效。
             </Paragraph>
             <Space>
               <Button type="primary" icon={<PlayCircleOutlined />} onClick={handlePreview}>

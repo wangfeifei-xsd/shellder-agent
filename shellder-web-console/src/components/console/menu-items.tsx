@@ -76,6 +76,10 @@ export const consoleMenuItems: MenuProps['items'] = [
         label: <Link to="/query/db-channel-tools">数据库连接工具</Link>,
       },
       { key: '/query/query-test', label: <Link to="/query/query-test">查询测试</Link> },
+      {
+        key: '/query/channel-debug',
+        label: <Link to="/query/channel-debug">通道调试</Link>,
+      },
     ],
   },
   {
@@ -161,7 +165,7 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'routing',
     icon: <ApartmentOutlined />,
-    label: '能力路由（实验中）',
+    label: '能力路由',
     children: [
       { key: '/routing/rules', label: <Link to="/routing/rules">路由规则</Link> },
       { key: '/routing/test', label: <Link to="/routing/test">路由测试</Link> },
@@ -180,10 +184,10 @@ export const consoleMenuItems: MenuProps['items'] = [
   {
     key: 'tool',
     icon: <ToolOutlined />,
-    label: '工具管理（实验中）',
+    label: '工具管理',
     children: [
+      { key: '/tools/http-query', label: <Link to="/tools/http-query">查询工具</Link> },
       { key: '/tools', label: <Link to="/tools">工具列表</Link> },
-      { key: '/tools/sql', label: <Link to="/tools/sql">查询通道调试</Link> },
     ],
   },
   {

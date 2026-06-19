@@ -5,7 +5,6 @@ import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/jwt.types';
 import { PolicyService } from '../policy/policy.service';
 import { PolicyDecision } from '../policy/policy.types';
-import { decryptSecret } from '../connector/connector-secret.util';
 import { ErDiagramService } from '../connector/er-diagram.service';
 import { buildPrincipalContextSnapshot } from '../copilot/principal-context.types';
 import { PrincipalContext } from '../agent-runtime/agent-runtime.types';
@@ -19,11 +18,8 @@ import { QueryPrincipalContextFieldsDto } from './dto/query-principal-context.dt
 import { TestSqlDto, TestToolDto } from './dto/test-tool.dto';
 import { ToolService } from './tool.service';
 import { validateAgainstSchema, SchemaValidationResult } from './schema-validator.util';
-import {
-  HttpToolConfig,
-  SqlToolConfig,
-  TOOL_TYPE_CAPABILITY,
-} from './tool.types';
+import { SqlToolConfig, TOOL_TYPE_CAPABILITY } from './tool.types';
+import { ToolInvocationService } from './tool-invocation.service';
 
 /** 调用测试响应（执行计划 §4.4：原始请求/响应、转换结果、schema 校验结果、Policy 决策） */
 export interface ToolTestResult {
@@ -68,6 +64,7 @@ export class ToolTestService {
     private readonly erDiagram: ErDiagramService,
     private readonly dataScopeResolve: DataScopeResolveService,
     private readonly sqlScopeFilter: SqlScopeFilterService,
+    private readonly invocation: ToolInvocationService,
   ) {}
 
   private principalFromDto(
@@ -95,54 +92,79 @@ export class ToolTestService {
   /** 通用调用测试（action / notification / workflow；query 型走模板或建议改用 SQL 测试）。 */
   async test(user: AuthUser, tool: Tool, dto: TestToolDto): Promise<ToolTestResult> {
     const params = dto.params ?? {};
-    const decision = await this.evaluatePolicy(user, tool, JSON.stringify(params));
-
-    // Policy 拒绝 / 需确认：不执行外部调用（验收标准 2）
-    const shortCircuit = this.shortCircuitByPolicy(decision);
-    if (shortCircuit) {
-      await this.recordAudit(user, tool, {
-        status: shortCircuit.status === 'denied' ? 'failed' : 'pending',
-        durationMs: 0,
-        highRisk: decision.highRisk,
-        summary: shortCircuit.message,
-      });
-      return {
-        policy: decision,
-        inputValidation: { valid: true, errors: [] },
-        executed: false,
-        status: shortCircuit.status,
-        durationMs: 0,
-        message: shortCircuit.message,
-      };
-    }
-
-    // 入参 schema 校验
-    const inputValidation = validateAgainstSchema(tool.inputSchema, params);
-    if (!inputValidation.valid) {
-      await this.recordAudit(user, tool, {
-        status: 'failed',
-        durationMs: 0,
-        highRisk: decision.highRisk,
-        summary: `入参 schema 校验未通过：${inputValidation.errors.join('；')}`,
-      });
-      return {
-        policy: decision,
-        inputValidation,
-        executed: false,
-        status: 'failed',
-        durationMs: 0,
-        message: '入参未通过 inputSchema 校验，未执行调用',
-      };
-    }
 
     switch (tool.type) {
       case 'action':
       case 'notification':
-        return this.executeHttp(user, tool, params, decision, inputValidation);
-      case 'query':
+      case 'http_query': {
+        const result = await this.invocation.invoke(tool, params, {
+          tenantId: tool.tenantId,
+          userId: user.id,
+          callerName: user.username,
+          source: 'admin_test',
+          requestSummary: JSON.stringify(params).slice(0, 256),
+        });
+        return result;
+      }
+      case 'query': {
+        const decision = await this.evaluatePolicy(user, tool, JSON.stringify(params));
+        const shortCircuit = this.shortCircuitByPolicy(decision);
+        if (shortCircuit) {
+          await this.recordAudit(user, tool, {
+            status: shortCircuit.status === 'denied' ? 'failed' : 'pending',
+            durationMs: 0,
+            highRisk: decision.highRisk,
+            summary: shortCircuit.message,
+          });
+          return {
+            policy: decision,
+            inputValidation: { valid: true, errors: [] },
+            executed: false,
+            status: shortCircuit.status,
+            durationMs: 0,
+            message: shortCircuit.message,
+          };
+        }
+        const inputValidation = validateAgainstSchema(tool.inputSchema, params);
+        if (!inputValidation.valid) {
+          await this.recordAudit(user, tool, {
+            status: 'failed',
+            durationMs: 0,
+            highRisk: decision.highRisk,
+            summary: `入参 schema 校验未通过：${inputValidation.errors.join('；')}`,
+          });
+          return {
+            policy: decision,
+            inputValidation,
+            executed: false,
+            status: 'failed',
+            durationMs: 0,
+            message: '入参未通过 inputSchema 校验，未执行调用',
+          };
+        }
         return this.executeQueryViaTemplate(user, tool, params, decision, inputValidation);
+      }
       case 'workflow':
-      default:
+      default: {
+        const decision = await this.evaluatePolicy(user, tool, JSON.stringify(params));
+        const shortCircuit = this.shortCircuitByPolicy(decision);
+        if (shortCircuit) {
+          await this.recordAudit(user, tool, {
+            status: shortCircuit.status === 'denied' ? 'failed' : 'pending',
+            durationMs: 0,
+            highRisk: decision.highRisk,
+            summary: shortCircuit.message,
+          });
+          return {
+            policy: decision,
+            inputValidation: { valid: true, errors: [] },
+            executed: false,
+            status: shortCircuit.status,
+            durationMs: 0,
+            message: shortCircuit.message,
+          };
+        }
+        const inputValidation = validateAgainstSchema(tool.inputSchema, params);
         return {
           policy: decision,
           inputValidation,
@@ -151,6 +173,7 @@ export class ToolTestService {
           durationMs: 0,
           message: '流程型工具的编排执行属于 12-Agent 运行时 / 13-四类能力，调用测试仅完成 Policy 与入参校验',
         };
+      }
     }
   }
 
@@ -431,101 +454,6 @@ export class ToolTestService {
 
   // ── 执行实现 ─────────────────────────────────────────────
 
-  private async executeHttp(
-    user: AuthUser,
-    tool: Tool,
-    params: Record<string, unknown>,
-    decision: PolicyDecision,
-    inputValidation: SchemaValidationResult,
-  ): Promise<ToolTestResult> {
-    const expected = tool.type === 'notification' ? 'notification' : 'http';
-    const connector = await this.requireConnector(tool, expected);
-    const http = this.readHttpConfig(tool);
-    const url = this.joinUrl(connector.target, http.path);
-    const method = (http.method || 'POST').toUpperCase();
-    const headers = {
-      'Content-Type': 'application/json',
-      ...this.buildAuthHeaders(connector),
-      ...(http.headers ?? {}),
-    };
-    const hasBody = method !== 'GET' && method !== 'HEAD';
-    const body = hasBody ? JSON.stringify(http.bodyTemplate ?? params) : undefined;
-
-    const rawRequest = {
-      method,
-      url,
-      headers: this.maskHeaders(headers),
-      body: hasBody ? (http.bodyTemplate ?? params) : undefined,
-    };
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), tool.timeoutMs ?? 10000);
-    const start = Date.now();
-    try {
-      const res = await fetch(url, { method, headers, body, signal: controller.signal });
-      const durationMs = Date.now() - start;
-      const text = await res.text();
-      const parsed = this.tryParseJson(text);
-      const ok = res.status < 400;
-      const outputValidation = ok
-        ? validateAgainstSchema(tool.outputSchema, parsed)
-        : undefined;
-
-      await this.recordExternalCall(
-        user,
-        tool,
-        connector,
-        ok ? 'success' : 'failed',
-        durationMs,
-        ok ? null : `HTTP ${res.status}`,
-        res.status,
-      );
-      await this.recordAudit(user, tool, {
-        status: ok ? 'success' : 'failed',
-        durationMs,
-        highRisk: decision.highRisk,
-        summary: `${method} ${url} → HTTP ${res.status}`,
-      });
-
-      return {
-        policy: decision,
-        inputValidation,
-        outputValidation,
-        executed: true,
-        status: ok ? 'success' : 'failed',
-        rawRequest,
-        rawResponse: { status: res.status, body: parsed ?? text },
-        transformedResult: parsed ?? text,
-        durationMs,
-        message: ok ? `调用成功（HTTP ${res.status}）` : `调用返回 HTTP ${res.status}`,
-      };
-    } catch (err) {
-      const durationMs = Date.now() - start;
-      const aborted = err instanceof Error && err.name === 'AbortError';
-      const message = aborted
-        ? `调用超时（>${tool.timeoutMs}ms）`
-        : `调用失败：${err instanceof Error ? err.message : String(err)}`;
-      await this.recordExternalCall(user, tool, connector, 'failed', durationMs, message);
-      await this.recordAudit(user, tool, {
-        status: 'failed',
-        durationMs,
-        highRisk: decision.highRisk,
-        summary: message,
-      });
-      return {
-        policy: decision,
-        inputValidation,
-        executed: true,
-        status: 'failed',
-        rawRequest,
-        durationMs,
-        message,
-      };
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   /** query 型在通用调用测试中：取首个 SQL 模板执行；无模板则提示改用 SQL 测试。 */
   private async executeQueryViaTemplate(
     user: AuthUser,
@@ -657,10 +585,6 @@ export class ToolTestService {
     );
   }
 
-  private readHttpConfig(tool: Tool): HttpToolConfig {
-    return this.toolService.readConfig(tool).http ?? { method: 'POST', path: '' };
-  }
-
   private resolveSql(dto: TestSqlDto, sqlConfig: SqlToolConfig): string {
     if (dto.sql && dto.sql.trim()) return dto.sql;
     if (dto.templateId) {
@@ -669,60 +593,5 @@ export class ToolTestService {
       return tpl.sql;
     }
     throw new Error('请提供 SQL 或选择 SQL 模板');
-  }
-
-  private buildAuthHeaders(connector: Connector): Record<string, string> {
-    const secret = decryptSecret(
-      (connector.config as { secretCipher?: string | null })?.secretCipher,
-    );
-    const headers: Record<string, string> = {};
-    if (!secret) return headers;
-    switch (connector.authType) {
-      case 'basic': {
-        const u = String(secret.username ?? '');
-        const p = String(secret.password ?? '');
-        headers.Authorization = `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;
-        break;
-      }
-      case 'bearer':
-        if (secret.token) headers.Authorization = `Bearer ${String(secret.token)}`;
-        break;
-      case 'api_key': {
-        const name = String(secret.headerName ?? 'X-API-Key');
-        if (secret.apiKey) headers[name] = String(secret.apiKey);
-        break;
-      }
-      case 'custom':
-        for (const [k, v] of Object.entries(secret)) {
-          if (k.startsWith('header.')) headers[k.slice('header.'.length)] = String(v);
-        }
-        break;
-      default:
-        break;
-    }
-    return headers;
-  }
-
-  /** 回显请求头时脱敏 Authorization / 密钥头 */
-  private maskHeaders(headers: Record<string, string>): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(headers)) {
-      out[k] = /authorization|key|token|secret/i.test(k) ? '******' : v;
-    }
-    return out;
-  }
-
-  private joinUrl(base: string, path: string): string {
-    if (!path) return base;
-    return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-  }
-
-  private tryParseJson(text: string): unknown {
-    if (!text) return null;
-    try {
-      return JSON.parse(text);
-    } catch {
-      return undefined;
-    }
   }
 }

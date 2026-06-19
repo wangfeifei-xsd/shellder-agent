@@ -1,23 +1,12 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import { AuditStatus, Prisma, Task, Tool } from '@prisma/client';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Prisma, Task, Tool } from '@prisma/client';
 import type { InputJsonValue } from '@prisma/client/runtime/library';
 import { ApprovalService } from '../approval/approval.service';
 import { getCapabilityHandler } from '../agent-runtime/capability-handlers';
 import { RuntimeContext, SseEvent } from '../agent-runtime/agent-runtime.types';
-import { AuditService } from '../audit/audit.service';
-import { decryptSecret } from '../connector/connector-secret.util';
 import { PrismaService } from '../prisma/prisma.service';
-import { SqlToolService } from '../tool/sql-tool.service';
-import {
-  HttpToolConfig,
-  SqlToolConfig,
-  WorkflowToolConfig,
-} from '../tool/tool.types';
+import { WorkflowToolConfig } from '../tool/tool.types';
+import { WorkflowToolInvoker } from '../tool/invoke/workflow-tool.invoker';
 import { TaskService } from './task.service';
 import {
   CapabilityExecutionResult,
@@ -43,8 +32,7 @@ export class TaskExecutionService {
     private readonly prisma: PrismaService,
     private readonly taskService: TaskService,
     private readonly approvalService: ApprovalService,
-    private readonly auditService: AuditService,
-    private readonly sqlToolService: SqlToolService,
+    private readonly workflowInvoker: WorkflowToolInvoker,
   ) {}
 
   async prepareTask(taskId: string): Promise<PrepareTaskResult> {
@@ -387,96 +375,16 @@ export class TaskExecutionService {
     };
   }
 
-  // ── 子 Tool 执行（与 WorkflowCapabilityHandler 对齐）────────
+  // ── 子 Tool 执行（WorkflowToolInvoker 统一）────────
 
   private async executeSubTool(tool: Tool & { connector: any }, ctx: RuntimeContext) {
-    if (tool.status === 'disabled') {
-      throw new Error(`子工具「${tool.name}」已停用`);
-    }
-
-    switch (tool.type) {
-      case 'query':
-        return this.executeQuerySubTool(tool, ctx);
-      case 'action':
-      case 'notification':
-        return this.executeHttpSubTool(tool, ctx);
-      default:
-        return { message: `子工具类型 ${tool.type} 暂不支持嵌套编排` };
-    }
-  }
-
-  private async executeQuerySubTool(tool: any, ctx: RuntimeContext) {
-    if (!tool.connector) throw new Error(`查询子工具「${tool.name}」未关联连接器`);
-    if (tool.connector.type !== 'db_readonly') {
-      throw new Error(`查询子工具「${tool.name}」连接器类型非 db_readonly`);
-    }
-
-    const sqlConfig: SqlToolConfig = (tool.config as any)?.sql ?? {
-      tableBlacklist: [],
-      fieldBlacklist: [],
-      maxRows: 100,
-      maxExecutionMs: 3000,
-      templates: [],
-    };
-
-    const sql = sqlConfig.templates?.[0]?.sql;
-    if (!sql) throw new Error(`查询子工具「${tool.name}」无 SQL 模板`);
-
-    const result = await this.sqlToolService.execute(tool.connector, sql, {}, sqlConfig);
-    return { rows: result.rows, rowCount: result.rowCount, durationMs: result.durationMs };
-  }
-
-  private async executeHttpSubTool(tool: any, ctx: RuntimeContext) {
-    if (!tool.connector) throw new Error(`操作子工具「${tool.name}」未关联连接器`);
-
-    const httpConfig: HttpToolConfig = (tool.config as any)?.http ?? {
-      method: 'POST',
-      path: '',
-    };
-    const url = this.joinUrl(tool.connector.target, httpConfig.path);
-    const method = (httpConfig.method || 'POST').toUpperCase();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...this.buildAuthHeaders(tool.connector),
-      ...(httpConfig.headers ?? {}),
-    };
-
-    const requestBody = httpConfig.bodyTemplate ?? { message: ctx.userMessage };
-    const hasBody = method !== 'GET' && method !== 'HEAD';
-    const body = hasBody ? JSON.stringify(requestBody) : undefined;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), tool.timeoutMs ?? 10000);
-
-    try {
-      const res = await fetch(url, { method, headers, body, signal: controller.signal });
-      clearTimeout(timer);
-
-      const text = await res.text();
-      const parsed = this.tryParseJson(text);
-
-      if (res.status >= 400) {
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-      }
-
-      await this.auditService.logExternalCall({
-        tenantId: ctx.tenantId,
-        connectorId: tool.connector.id,
-        target: tool.connector.target,
-        method,
-        callerUserId: ctx.userId,
-        requestSummary: `[Workflow/${tool.name}]`,
-        status: AuditStatus.success,
-        statusCode: res.status,
-        durationMs: 0,
-        errorMessage: null,
-      });
-
-      return { status: res.status, data: parsed ?? text };
-    } catch (err) {
-      clearTimeout(timer);
-      throw err;
-    }
+    return this.workflowInvoker.executeSubTool(tool.id, {
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      userMessage: ctx.userMessage,
+      sessionId: ctx.sessionId,
+      source: 'worker',
+    });
   }
 
   // ── helpers ─────────────────────────────────────────────────
@@ -535,46 +443,6 @@ export class TaskExecutionService {
         message: `工具调用结束: ${String(event.data.toolName ?? 'unknown')}`,
         detail: event.data,
       });
-    }
-  }
-
-  private buildAuthHeaders(connector: any): Record<string, string> {
-    const secret = decryptSecret(connector.config?.secretCipher);
-    const headers: Record<string, string> = {};
-    if (!secret) return headers;
-
-    switch (connector.authType) {
-      case 'basic': {
-        const u = String(secret.username ?? '');
-        const p = String(secret.password ?? '');
-        headers.Authorization = `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;
-        break;
-      }
-      case 'bearer':
-        if (secret.token) headers.Authorization = `Bearer ${String(secret.token)}`;
-        break;
-      case 'api_key': {
-        const name = String(secret.headerName ?? 'X-API-Key');
-        if (secret.apiKey) headers[name] = String(secret.apiKey);
-        break;
-      }
-      default:
-        break;
-    }
-    return headers;
-  }
-
-  private joinUrl(base: string, path: string): string {
-    if (!path) return base;
-    return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-  }
-
-  private tryParseJson(text: string): unknown {
-    if (!text) return null;
-    try {
-      return JSON.parse(text);
-    } catch {
-      return undefined;
     }
   }
 }

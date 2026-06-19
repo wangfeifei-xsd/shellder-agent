@@ -11,6 +11,7 @@ export type SseEventType =
   | 'delta'
   | 'tool_start'
   | 'tool_end'
+  | 'tool_resolve'
   | 'confirm_required'
   | 'done'
   | 'error';

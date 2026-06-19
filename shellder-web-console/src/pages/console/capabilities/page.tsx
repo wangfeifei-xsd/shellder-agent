@@ -297,6 +297,27 @@ export default function CapabilitiesPage() {
         )}
       </Row>
 
+      {selectedType === 'action' && (
+        <Alert
+          type="info"
+          showIcon
+          className="mb-4"
+          message="操作型 E2E 验收"
+          description={
+            <>
+              请先在{' '}
+              <Link to="/tools/http-query">工具管理 / 查询工具</Link> 或{' '}
+              <Link to="/tools">工具列表</Link> 配置 HTTP Tool 并完成页内 invoke 调试。
+              <br />
+              <strong>http_query</strong>：可输入信号{' '}
+              <Text code>[查询工具:tool_code {'{'}&quot;param&quot;:&quot;value&quot;{'}'}]</Text>，或绑定能力路由后输入自然语言。
+              <br />
+              <strong>action</strong>：输入与 Tool 描述匹配的指令；高风险操作可能返回待确认节点。
+            </>
+          }
+        />
+      )}
+
       <Card className="mb-6">
         <TextArea
           value={inputText}

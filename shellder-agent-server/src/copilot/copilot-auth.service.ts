@@ -15,6 +15,7 @@ import {
   normalizeWikiPrefixes,
 } from './principal-context.types';
 import { KnowledgeTenantScopeService } from '../knowledge/knowledge-tenant-scope.service';
+import { mergeCopilotFeatures } from './copilot-routing.features';
 
 export const COPILOT_JWT_ISSUER = 'shellder-copilot';
 
@@ -119,7 +120,7 @@ export class CopilotAuthService {
       tenantId,
       config: {
         theme: copilotConfig.theme,
-        features: copilotConfig.features,
+        features: mergeCopilotFeatures(copilotConfig.features),
         welcomeMessage: copilotConfig.welcomeMessage,
         placeholder: copilotConfig.placeholder,
         maxHistoryMessages: copilotConfig.maxHistoryMessages,
@@ -207,7 +208,7 @@ export class CopilotAuthService {
       tenantId: params.tenantId,
       config: {
         theme: copilotConfig.theme,
-        features: copilotConfig.features,
+        features: mergeCopilotFeatures(copilotConfig.features),
         welcomeMessage: copilotConfig.welcomeMessage,
         placeholder: copilotConfig.placeholder,
         maxHistoryMessages: copilotConfig.maxHistoryMessages,

@@ -7,9 +7,10 @@ export class CreateCopilotSessionDto {
   @MaxLength(256)
   title?: string;
 
-  /** 手动选择的能力类型（必填，不走自动路由） */
+  /** 可选：auto/hybrid 下可不传，首条消息自动路由；pinned 模式下必填 */
+  @IsOptional()
   @IsEnum(CapabilityType)
-  capabilityType!: CapabilityType;
+  capabilityType?: CapabilityType;
 }
 
 export class UpdateCopilotSessionDto {

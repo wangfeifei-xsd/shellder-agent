@@ -20,6 +20,11 @@ import { UpdateToolStatusDto } from './dto/update-status.dto';
 import { UpdateToolDto } from './dto/update-tool.dto';
 import { ToolService } from './tool.service';
 import { ToolTestService } from './tool-test.service';
+import { ToolInvocationService } from './tool-invocation.service';
+import { HttpQueryTriggerService } from './http-query-trigger.service';
+import { HttpQueryAssistService } from './http-query-assist.service';
+import { HttpQueryPolishDto } from './dto/http-query-polish.dto';
+import { InvokeToolDto, ParseSignalDto } from './dto/invoke-tool.dto';
 
 /** 工具注册与管理（功能清单 §1.5）；归属「工具管理」菜单（tool） */
 @Controller('api/v1/tools')
@@ -28,11 +33,41 @@ export class ToolController {
   constructor(
     private readonly toolService: ToolService,
     private readonly toolTestService: ToolTestService,
+    private readonly invocation: ToolInvocationService,
+    private readonly httpQueryTrigger: HttpQueryTriggerService,
+    private readonly httpQueryAssist: HttpQueryAssistService,
   ) {}
 
   @Get()
   list(@CurrentUser() user: AuthUser, @Query() query: QueryToolDto) {
     return this.toolService.findMany(user, query);
+  }
+
+  /** HTTP 业务查询工具列表（type=http_query） */
+  @Get('http-query')
+  listHttpQuery(@CurrentUser() user: AuthUser, @Query() query: QueryToolDto) {
+    return this.toolService.findMany(user, { ...query, type: 'http_query' });
+  }
+
+  /** AI 润色 HTTP 查询工具表单草稿 */
+  @Post('http-query/polish-draft')
+  polishHttpQueryDraft(@CurrentUser() user: AuthUser, @Body() dto: HttpQueryPolishDto) {
+    return this.httpQueryAssist.polishDraft(user, dto);
+  }
+
+  /** 解析 LLM 信号 `[查询工具:tool_code {...}]` */
+  @Post('parse-signal')
+  parseSignal(@CurrentUser() user: AuthUser, @Body() dto: ParseSignalDto) {
+    const parsed = this.httpQueryTrigger.parseSignal(dto.text);
+    if (!parsed) {
+      return { matched: false, message: '未匹配 HTTP 查询工具信号格式' };
+    }
+    return {
+      matched: true,
+      toolCode: parsed.toolCode,
+      params: parsed.params,
+      raw: parsed.raw,
+    };
   }
 
   @Post()
@@ -85,6 +120,26 @@ export class ToolController {
   ) {
     const tool = await this.toolService.getForUser(user, id);
     return this.toolTestService.test(user, tool, dto);
+  }
+
+  /** 直连 Invoker 调试（与 test 结构对齐，http_query 优先使用） */
+  @Post(':id/invoke')
+  @Audit({ action: 'tool.invoke', module: 'tool.manage', targetType: 'tool' })
+  async invoke(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: InvokeToolDto,
+  ) {
+    const tool = await this.toolService.getForUser(user, id);
+    const params = dto.params ?? {};
+    return this.invocation.invoke(tool, params, {
+      tenantId: tool.tenantId,
+      userId: user.id,
+      callerName: user.username,
+      source: 'admin_test',
+      skipPolicy: dto.skipPolicy ?? false,
+      requestSummary: JSON.stringify(params).slice(0, 256),
+    });
   }
 
   /**

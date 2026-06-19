@@ -270,7 +270,7 @@ export default function CapabilitiesPage() {
         <Alert type="warning" showIcon message="请先在顶栏选择「当前操作租户」" description="能力按租户隔离，需选定租户后查看与维护。" />
       ) : (
         <>
-          <Alert className="mb-4" type="info" showIcon message={`当前租户：${activeTenantName ?? activeTenantId}`} description="维护平台四类能力清单（问答/查询/操作/流程），含描述、适用系统、依赖工具、权限要求。" />
+          <Alert className="mb-4" type="info" showIcon message={`当前租户：${activeTenantName ?? activeTenantId}`} description="维护平台四类能力清单。query 能力仅对应 NL2SQL（ToolType.query）；HTTP 业务查询 Tool（http_query）归属 action 能力，在路由规则或依赖工具中绑定。" />
           <Space className="mb-4" wrap>
             <Input.Search allowClear placeholder="搜索名称/描述" style={{ width: 240 }} onSearch={setKeyword} />
             <Select allowClear placeholder="类型" style={{ width: 120 }} options={CAPABILITY_TYPE_OPTIONS} value={typeFilter} onChange={setTypeFilter} />
@@ -318,7 +318,7 @@ export default function CapabilitiesPage() {
           <Form.Item label="路由优先级" name="priority" rules={[{ required: true }]} tooltip="数值越小越优先">
             <InputNumber min={1} max={10000} className="w-full" />
           </Form.Item>
-          <Form.Item label="依赖工具 ID（JSON 数组，可选）" name="dependentToolsText" tooltip='如 ["tool-id-1", "tool-id-2"]'>
+          <Form.Item label="依赖工具 ID（JSON 数组，可选）" name="dependentToolsText" tooltip='兜底 Tool；action 能力可含 http_query / action / notification ID'>
             <Input.TextArea rows={2} className="font-mono text-xs" placeholder='["tool-id-1"]' />
           </Form.Item>
           <Form.Item label="权限要求（JSON 数组，可选）" name="permissionRequirementsText" tooltip='如 ["order:read"]'>

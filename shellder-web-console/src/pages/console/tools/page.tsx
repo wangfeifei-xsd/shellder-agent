@@ -87,6 +87,9 @@ interface ToolFormValues {
   httpPath?: string;
   httpHeadersText?: string;
   httpBodyTemplateText?: string;
+  httpQueryMappingText?: string;
+  httpBodyMappingText?: string;
+  httpResponseMappingText?: string;
   // workflow
   workflowStepsText?: string;
 }
@@ -109,7 +112,10 @@ function buildConfig(v: ToolFormValues): ToolConfig {
         },
       };
     case 'action':
-    case 'notification':
+    case 'notification': {
+      const responseMapping = v.httpResponseMappingText?.trim()
+        ? parseJsonOr(v.httpResponseMappingText, undefined)
+        : undefined;
       return {
         http: {
           method: v.httpMethod ?? 'POST',
@@ -118,8 +124,16 @@ function buildConfig(v: ToolFormValues): ToolConfig {
           bodyTemplate: v.httpBodyTemplateText?.trim()
             ? parseJsonOr(v.httpBodyTemplateText, undefined)
             : undefined,
+          queryMapping: v.httpQueryMappingText?.trim()
+            ? parseJsonOr(v.httpQueryMappingText, undefined)
+            : undefined,
+          bodyMapping: v.httpBodyMappingText?.trim()
+            ? parseJsonOr(v.httpBodyMappingText, undefined)
+            : undefined,
+          responseMapping,
         },
       };
+    }
     case 'workflow':
       return { workflow: { steps: parseJsonOr(v.workflowStepsText, []) } };
     default:
@@ -143,7 +157,7 @@ const PAGE_COPY: Record<
     title: '数据库连接工具',
     createLabel: '新建数据库连接工具',
     description:
-      '查询型 Tool 即查询通道：绑定只读库连接器，承载 Policy 与审计元数据。NL2SQL 与三步试跑请在「工具管理 → 查询通道调试」；只读 SQL 直连请在「查询测试」。',
+      '查询型 Tool 即查询通道：绑定只读库连接器，承载 Policy 与审计元数据。NL2SQL 与三步试跑请在「『查询型』配置 → 通道调试」；只读 SQL 直连请在「查询测试」。',
   },
 };
 
@@ -197,7 +211,7 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
       });
       const items = isQueryOnly
         ? res.items.filter((t) => t.type === 'query')
-        : res.items.filter((t) => t.type !== 'query');
+        : res.items.filter((t) => t.type !== 'query' && t.type !== 'http_query');
       setData(items);
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载工具列表失败');
@@ -282,6 +296,15 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
         t.config.http?.bodyTemplate !== undefined
           ? JSON.stringify(t.config.http.bodyTemplate, null, 2)
           : undefined,
+      httpQueryMappingText: t.config.http?.queryMapping
+        ? JSON.stringify(t.config.http.queryMapping, null, 2)
+        : undefined,
+      httpBodyMappingText: t.config.http?.bodyMapping
+        ? JSON.stringify(t.config.http.bodyMapping, null, 2)
+        : undefined,
+      httpResponseMappingText: t.config.http?.responseMapping
+        ? JSON.stringify(t.config.http.responseMapping, null, 2)
+        : undefined,
       workflowStepsText: t.config.workflow?.steps?.length
         ? JSON.stringify(t.config.workflow.steps, null, 2)
         : undefined,
@@ -800,9 +823,30 @@ function ToolFormDrawer({
             <Form.Item
               label="请求体模板（JSON，可选）"
               name="httpBodyTemplateText"
-              tooltip="留空则调用测试时以入参作为请求体"
+              tooltip="留空则调用测试时以入参作为请求体；配置 bodyMapping 时优先走映射"
             >
               <Input.TextArea rows={3} className="font-mono text-xs" />
+            </Form.Item>
+            <Form.Item
+              label="queryMapping（JSON，可选）"
+              name="httpQueryMappingText"
+              tooltip='GET 查询参数映射，如 {"q":"keyword"}'
+            >
+              <Input.TextArea rows={3} className="font-mono text-xs" placeholder='{"q":"keyword"}' />
+            </Form.Item>
+            <Form.Item
+              label="bodyMapping（JSON，可选）"
+              name="httpBodyMappingText"
+              tooltip="POST body 字段映射；未配置时走 bodyTemplate / 入参"
+            >
+              <Input.TextArea rows={3} className="font-mono text-xs" />
+            </Form.Item>
+            <Form.Item
+              label="responseMapping（JSON，可选）"
+              name="httpResponseMappingText"
+              tooltip='{"type":"json_data","successPath":"$.code","successValue":0,"fieldMapping":{...}}'
+            >
+              <Input.TextArea rows={4} className="font-mono text-xs" />
             </Form.Item>
           </>
         )}

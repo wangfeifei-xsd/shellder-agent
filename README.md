@@ -232,7 +232,7 @@ cd shellder-agent-server && npm run check:prompt-constants
 | 问答 / 问数等业务能力 | [capabilities/](project-analysis-v1-completed/capabilities/) + [modules/02-知识库](project-analysis-v1-completed/modules/02-知识库.md) 或 [modules/03-查询型配置](project-analysis-v1-completed/modules/03-查询型配置.md) |
 | Copilot / OpenAPI 接入 | [modules/07-嵌入式Copilot](project-analysis-v1-completed/modules/07-嵌入式Copilot.md)、[modules/08-OpenAPI管理](project-analysis-v1-completed/modules/08-OpenAPI管理.md) |
 | 数据表或 ORM 变更 | [05-数据模型](project-analysis-v1-completed/05-数据模型.md) → `project-sql/` 递增 SQL → `npm run prisma:generate` |
-| 实验中菜单（任务中心、能力路由等） | 侧栏标注「（实验中）」的模块**不在 V1 验收基线内**；完整规格见仓库外 [`project-analysis/`](../project-analysis/) 初始方案 |
+| 实验中菜单（任务中心、技能书等） | 侧栏标注「（实验中）」的模块**不在 V1 验收基线内**；完整规格见仓库外 [`project-analysis/`](../project-analysis/) 初始方案 |
 
 ### 给 AI Agent 的使用建议
 
@@ -247,8 +247,8 @@ cd shellder-agent-server && npm run check:prompt-constants
 ### V1 边界速记
 
 - **已完成**：侧栏**未**标注「（实验中）」的菜单及其关联能力（见 [已完成菜单一览](project-analysis-v1-completed/README.md#已完成菜单一览)）。
-- **实验中**：任务中心、能力路由、技能书、工具管理、连接器管理、规则、审批、审计等——后端或有代码，但 UI 未纳入 V1 验收，改造勿以其为交付基线。
-- **四类业务能力**：问答 / 查询已在正式入口验证；操作 / 流程的 Runtime 已实现，管理配置仍在实验中菜单。
+- **实验中**：任务中心、技能书、连接器管理、规则、审批、审计等——后端或有代码，但 UI 未纳入 V1 验收，改造勿以其为交付基线。
+- **四类业务能力**：问答 / 查询 / **操作型（含 http_query）** 已在正式入口验证；流程型 Runtime 已实现，任务管理 UI 仍在实验中菜单。
 
 ## 常见问题
 

@@ -318,7 +318,7 @@ export default function QueryTestPage() {
               <>
                 选择查询型 Tool 后，可试跑 NL2SQL 三步流水线、管理 SQL 模板，并直连只读库执行 SELECT
                 验证约束。工具管理侧按连接器调试请前往
-                <Link to="/tools/sql" className="mx-1">
+                <Link to="/query/channel-debug" className="mx-1">
                   查询通道调试
                 </Link>
                 。

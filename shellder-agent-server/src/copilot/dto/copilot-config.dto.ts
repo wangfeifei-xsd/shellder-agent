@@ -27,7 +27,7 @@ export class CreateCopilotConfigDto {
   theme?: Record<string, unknown>;
 
   @IsOptional()
-  features?: Record<string, boolean>;
+  features?: Record<string, unknown>;
 
   @IsOptional()
   @IsString()
@@ -67,7 +67,7 @@ export class UpdateCopilotConfigDto {
   theme?: Record<string, unknown>;
 
   @IsOptional()
-  features?: Record<string, boolean>;
+  features?: Record<string, unknown>;
 
   @IsOptional()
   @IsString()

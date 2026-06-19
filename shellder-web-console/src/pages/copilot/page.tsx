@@ -44,6 +44,11 @@ import {
   extractMessageText,
   extractCitations,
   isHiddenCopilotChatMessage,
+  findLatestRoutingResult,
+  resolveCopilotRoutingMode,
+  resolveShowCapabilitySelector,
+  type CopilotRoutingMode,
+  type CopilotRoutingResultContent,
 } from '@/lib/copilot';
 import {
   useThinkingStatusText,
@@ -102,6 +107,13 @@ interface PendingInlineConfirm {
   toolName?: string;
 }
 
+interface PendingCapabilityClarify {
+  detectedType: CapabilityTypeKey;
+  detectedName: string;
+  confidence: number;
+  reason: string;
+}
+
 /**
  * 嵌入式 Copilot 主页面
  * URL: /#/copilot?clientId=xxx&clientSecret=xxx&tenantId=xxx
@@ -123,6 +135,37 @@ export default function CopilotPage() {
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [inlineConfirm, setInlineConfirm] = useState<PendingInlineConfirm | null>(null);
+  const [pendingClarify, setPendingClarify] = useState<PendingCapabilityClarify | null>(null);
+  const [capabilityCollapsed, setCapabilityCollapsed] = useState(true);
+
+  const routingMode: CopilotRoutingMode = resolveCopilotRoutingMode(config);
+  const showCapabilitySelector = resolveShowCapabilitySelector(config, routingMode);
+
+  const checkLowConfidenceClarify = useCallback(
+    (msgs: CopilotMessage[]) => {
+      if (config?.features?.clarifyOnLowConfidence === false) return;
+      const threshold = config?.features?.confidenceThreshold ?? 0.4;
+      const routing = findLatestRoutingResult(msgs);
+      if (!routing?.typeStage || routing.typeStage.pinned) return;
+      if (routing.typeStage.confidence >= threshold) return;
+      const detected = routing.capabilityType;
+      if (
+        detected !== 'qa' &&
+        detected !== 'query' &&
+        detected !== 'action' &&
+        detected !== 'workflow'
+      ) {
+        return;
+      }
+      setPendingClarify({
+        detectedType: detected,
+        detectedName: routing.capabilityName ?? CAPABILITY_META[detected].label,
+        confidence: routing.typeStage.confidence,
+        reason: routing.typeStage.reason,
+      });
+    },
+    [config],
+  );
 
   const [sessions, setSessions] = useState<CopilotSession[]>([]);
   const [confirmations, setConfirmations] = useState<CopilotConfirmation[]>([]);
@@ -202,16 +245,27 @@ export default function CopilotPage() {
     const authToken = tokenRef.current;
     if (!authToken) return null;
     if (sessionId) return sessionId;
-    if (!selectedCapabilityType) {
-      message.warning('请先手动选择能力类型（查询/问答/操作/流程）');
+
+    if (routingMode === 'pinned' && !selectedCapabilityType) {
+      message.warning('pinned 模式下请先选择能力类型');
       return null;
     }
-    const session = await copilotCreateSession(authToken, {
-      capabilityType: selectedCapabilityType,
-    });
+
+    const createOptions =
+      routingMode === 'pinned' || (routingMode === 'hybrid' && selectedCapabilityType)
+        ? { capabilityType: selectedCapabilityType! }
+        : undefined;
+
+    const session = await copilotCreateSession(authToken, createOptions);
     setSessionId(session.id);
+    if (session.capabilityType) {
+      const cap = session.capabilityType;
+      if (cap === 'qa' || cap === 'query' || cap === 'action' || cap === 'workflow') {
+        setSelectedCapabilityType(cap);
+      }
+    }
     return session.id;
-  }, [sessionId, selectedCapabilityType]);
+  }, [sessionId, selectedCapabilityType, routingMode]);
 
   const connectSSE = useCallback(
     (sid: string, authToken: string, onRuntimeEvent?: (type: string, data: Record<string, unknown>) => void) => {
@@ -250,8 +304,8 @@ export default function CopilotPage() {
   const handleSend = async () => {
     const authToken = tokenRef.current;
     if (!inputValue.trim() || !authToken) return;
-    if (!sessionId && !selectedCapabilityType) {
-      message.warning('请先手动选择能力类型（查询/问答/操作/流程）');
+    if (!sessionId && routingMode === 'pinned' && !selectedCapabilityType) {
+      message.warning('pinned 模式下请先选择能力类型');
       return;
     }
 
@@ -336,7 +390,17 @@ export default function CopilotPage() {
         }
         if (type === 'done') {
           setStreaming(false);
-          void refreshSessionDetail(sid, authToken).catch(() => {});
+          void refreshSessionDetail(sid, authToken)
+            .then((detail) => {
+              checkLowConfidenceClarify(detail.messages);
+              if (detail.capabilityType) {
+                const cap = detail.capabilityType;
+                if (cap === 'qa' || cap === 'query' || cap === 'action' || cap === 'workflow') {
+                  setSelectedCapabilityType(cap);
+                }
+              }
+            })
+            .catch(() => {});
         }
         if (type === 'error') {
           setStreaming(false);
@@ -356,7 +420,8 @@ export default function CopilotPage() {
 
       if (result.reply && !streamText) {
         setStreaming(false);
-        await refreshSessionDetail(sid, authToken);
+        const detail = await refreshSessionDetail(sid, authToken);
+        checkLowConfidenceClarify(detail.messages);
       }
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : '发送失败');
@@ -438,7 +503,8 @@ export default function CopilotPage() {
 
   const handleClearSession = useCallback(() => {
     resetCurrentSession();
-    message.success('已清除当前会话，可重新选择能力类型开始对话');
+    setPendingClarify(null);
+    message.success('已清除当前会话，可开始新对话');
   }, [resetCurrentSession]);
 
   const handleDeleteSession = async (sid: string) => {
@@ -578,10 +644,20 @@ export default function CopilotPage() {
             inputValue={inputValue}
             sessionId={sessionId}
             selectedCapabilityType={selectedCapabilityType}
+            routingMode={routingMode}
+            showCapabilitySelector={showCapabilitySelector}
+            capabilityCollapsed={capabilityCollapsed}
+            onCapabilityCollapsedChange={setCapabilityCollapsed}
             sending={sending}
             streaming={streaming}
             config={config}
             inlineConfirm={inlineConfirm}
+            pendingClarify={pendingClarify}
+            onDismissClarify={() => setPendingClarify(null)}
+            onClarifyReset={() => {
+              setPendingClarify(null);
+              resetCurrentSession({ resetCapabilityType: true });
+            }}
             onInlineConfirm={(action) => {
               if (inlineConfirm?.approvalId) {
                 void handleConfirm(inlineConfirm.approvalId, action);
@@ -595,6 +671,7 @@ export default function CopilotPage() {
                 setMessages([]);
                 setSessionTasks([]);
                 setInlineConfirm(null);
+                setPendingClarify(null);
               }
               setSelectedCapabilityType(type);
             }}
@@ -631,10 +708,17 @@ function ChatPanel({
   inputValue,
   sessionId,
   selectedCapabilityType,
+  routingMode,
+  showCapabilitySelector,
+  capabilityCollapsed,
+  onCapabilityCollapsedChange,
   sending,
   streaming,
   config,
   inlineConfirm,
+  pendingClarify,
+  onDismissClarify,
+  onClarifyReset,
   onInlineConfirm,
   onInputChange,
   onCapabilityTypeChange,
@@ -647,10 +731,17 @@ function ChatPanel({
   inputValue: string;
   sessionId: string | null;
   selectedCapabilityType: CapabilityTypeKey | null;
+  routingMode: CopilotRoutingMode;
+  showCapabilitySelector: boolean;
+  capabilityCollapsed: boolean;
+  onCapabilityCollapsedChange: (v: boolean) => void;
   sending: boolean;
   streaming: boolean;
   config: CopilotConfig | null;
   inlineConfirm: PendingInlineConfirm | null;
+  pendingClarify: PendingCapabilityClarify | null;
+  onDismissClarify: () => void;
+  onClarifyReset: () => void;
   onInlineConfirm: (action: 'approve' | 'reject') => void;
   onInputChange: (v: string) => void;
   onCapabilityTypeChange: (v: CapabilityTypeKey) => void;
@@ -659,6 +750,18 @@ function ChatPanel({
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const hasConversation = messages.length > 0 || !!sessionId;
+  const routingResult = findLatestRoutingResult(messages);
+  const requiresCapabilityBeforeSend =
+    routingMode === 'pinned' && !sessionId && !selectedCapabilityType;
+  const selectorLocked =
+    routingMode === 'pinned' || (routingMode !== 'hybrid' && !!sessionId);
+  const showCollapsedToggle =
+    routingMode === 'auto' && !showCapabilitySelector && !sessionId;
+  const showSelectorPanel =
+    showCapabilitySelector ||
+    routingMode === 'pinned' ||
+    routingMode === 'hybrid' ||
+    (!capabilityCollapsed && showCollapsedToggle);
 
   return (
     <div className="flex h-full flex-col">
@@ -695,6 +798,9 @@ function ChatPanel({
             </div>
           </div>
         )}
+        {routingResult && (
+          <RoutingResultBanner routing={routingResult} />
+        )}
         {messages.filter((msg) => !isHiddenCopilotChatMessage(msg)).map((msg) => (
           <MessageBubble
             key={msg.id}
@@ -724,12 +830,61 @@ function ChatPanel({
         <div ref={messagesEndRef} />
       </div>
 
+      <Modal
+        title="能力类型识别置信度较低"
+        open={!!pendingClarify}
+        onCancel={onDismissClarify}
+        footer={[
+          <Button key="reset" onClick={onClarifyReset}>
+            重新选择能力
+          </Button>,
+          <Button key="ok" type="primary" onClick={onDismissClarify}>
+            继续使用
+          </Button>,
+        ]}
+      >
+        {pendingClarify && (
+          <div className="space-y-2 text-sm">
+            <p>
+              系统识别为
+              <Tag color="blue" className="mx-1">
+                {pendingClarify.detectedName}
+              </Tag>
+              （置信度 {(pendingClarify.confidence * 100).toFixed(0)}%）
+            </p>
+            <p className="text-gray-500">{pendingClarify.reason}</p>
+            <p className="text-gray-500">
+              若识别有误，可清除会话并手动指定能力类型后重新提问。
+            </p>
+          </div>
+        )}
+      </Modal>
+
       <div className="border-t bg-gray-50/80 p-3">
-        <CapabilityTypeSelector
-          selected={selectedCapabilityType}
-          locked={!!sessionId}
-          onChange={onCapabilityTypeChange}
-        />
+        {showCollapsedToggle && (
+          <button
+            type="button"
+            className="mb-2 text-xs text-gray-500 hover:text-gray-700"
+            onClick={() => onCapabilityCollapsedChange(!capabilityCollapsed)}
+          >
+            {capabilityCollapsed ? '指定能力 ▸' : '指定能力 ▾'}
+          </button>
+        )}
+        {showSelectorPanel && (
+          <CapabilityTypeSelector
+            selected={selectedCapabilityType}
+            locked={selectorLocked}
+            readOnly={routingMode === 'pinned' && !!sessionId}
+            onChange={onCapabilityTypeChange}
+          />
+        )}
+        {routingMode === 'pinned' && selectedCapabilityType && sessionId && (
+          <div className="mb-2">
+            <Tag color="purple">
+              已锁定：{CAPABILITY_META[selectedCapabilityType].label}
+            </Tag>
+          </div>
+        )}
         <div className="flex gap-2">
           <TextArea
             value={inputValue}
@@ -743,18 +898,50 @@ function ChatPanel({
             placeholder={config?.placeholder ?? '请输入您的问题…'}
             autoSize={{ minRows: 1, maxRows: 4 }}
             className="flex-1"
-            disabled={sending || !!inlineConfirm || (!sessionId && !selectedCapabilityType)}
+            disabled={sending || !!inlineConfirm || requiresCapabilityBeforeSend}
           />
           <Button
             type="primary"
             icon={<SendOutlined />}
             onClick={onSend}
             loading={sending}
-            disabled={!inputValue.trim() || !!inlineConfirm || (!sessionId && !selectedCapabilityType)}
+            disabled={
+              !inputValue.trim() || !!inlineConfirm || requiresCapabilityBeforeSend
+            }
           />
         </div>
       </div>
     </div>
+  );
+}
+
+function RoutingResultBanner({ routing }: { routing: CopilotRoutingResultContent }) {
+  const type = routing.capabilityType as CapabilityTypeKey | undefined;
+  const meta = type ? CAPABILITY_META[type] : undefined;
+  const ruleName = routing.intraStage?.ruleName;
+
+  return (
+    <Alert
+      type="info"
+      showIcon
+      className="text-xs"
+      message={
+        <span>
+          识别为
+          {meta ? (
+            <Tag color="blue" className="mx-1">
+              {meta.label}
+            </Tag>
+          ) : (
+            routing.capabilityName ?? routing.capabilityType
+          )}
+          {ruleName ? ` · 规则「${ruleName}」` : null}
+          {routing.typeStage && !routing.typeStage.pinned
+            ? ` · 置信度 ${(routing.typeStage.confidence * 100).toFixed(0)}%`
+            : null}
+        </span>
+      }
+    />
   );
 }
 
@@ -777,18 +964,24 @@ function ChatAvatar({ role }: { role: 'user' | 'assistant' }) {
 function CapabilityTypeSelector({
   selected,
   locked,
+  readOnly,
   onChange,
 }: {
   selected: CapabilityTypeKey | null;
   locked: boolean;
+  readOnly?: boolean;
   onChange: (v: CapabilityTypeKey) => void;
 }) {
   return (
     <div className="mb-2 grid grid-cols-4 gap-1 rounded-lg bg-white p-0.5 shadow-sm ring-1 ring-gray-200/80">
       {CAPABILITY_OPTIONS.map((opt) => {
         const isActive = selected === opt.value;
-        const disabled = locked && !isActive;
-        const tooltipTitle = disabled ? `${opt.label}（清除会话后可切换）` : opt.label;
+        const disabled = readOnly || (locked && !isActive);
+        const tooltipTitle = disabled
+          ? readOnly
+            ? `${opt.label}（只读）`
+            : `${opt.label}（清除会话后可切换）`
+          : opt.label;
         return (
           <Tooltip key={opt.value} title={tooltipTitle}>
             <span className="inline-flex w-full">

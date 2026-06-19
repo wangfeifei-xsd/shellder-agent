@@ -37,7 +37,7 @@ interface CopilotConfigItem {
   name: string;
   status: 'enabled' | 'disabled';
   domainWhitelist: string[];
-  features: Record<string, boolean>;
+  features: Record<string, unknown>;
   welcomeMessage: string | null;
   placeholder: string | null;
   maxHistoryMessages: number;
@@ -45,6 +45,8 @@ interface CopilotConfigItem {
   createdAt: string;
   app?: { id: string; name: string; clientId: string; status: string };
 }
+
+type CopilotRoutingMode = 'auto' | 'pinned' | 'hybrid';
 
 export default function CopilotAdminPage() {
   const { activeTenantId, tenants: boundTenants } = useActiveTenant();
@@ -132,6 +134,10 @@ export default function CopilotAdminPage() {
       enableHistory: true,
       enableTask: true,
       enableConfirmation: true,
+      routingMode: 'auto',
+      showCapabilitySelector: false,
+      clarifyOnLowConfidence: true,
+      confidenceThreshold: 0.4,
     });
     setModalOpen(true);
   };
@@ -144,6 +150,10 @@ export default function CopilotAdminPage() {
       enableHistory: record.features?.enableHistory ?? true,
       enableTask: record.features?.enableTask ?? true,
       enableConfirmation: record.features?.enableConfirmation ?? true,
+      routingMode: (record.features?.routingMode as CopilotRoutingMode) ?? 'auto',
+      showCapabilitySelector: record.features?.showCapabilitySelector ?? false,
+      clarifyOnLowConfidence: record.features?.clarifyOnLowConfidence ?? true,
+      confidenceThreshold: record.features?.confidenceThreshold ?? 0.4,
     });
     setModalOpen(true);
   };
@@ -174,6 +184,10 @@ export default function CopilotAdminPage() {
         enableHistory: values.enableHistory ?? true,
         enableTask: values.enableTask ?? true,
         enableConfirmation: values.enableConfirmation ?? true,
+        routingMode: (values.routingMode as CopilotRoutingMode) ?? 'auto',
+        showCapabilitySelector: values.showCapabilitySelector ?? false,
+        clarifyOnLowConfidence: values.clarifyOnLowConfidence ?? true,
+        confidenceThreshold: Number(values.confidenceThreshold ?? 0.4),
       },
       welcomeMessage: values.welcomeMessage || null,
       placeholder: values.placeholder || null,
@@ -224,6 +238,20 @@ export default function CopilotAdminPage() {
       render: (s: string) => (
         <Tag color={s === 'enabled' ? 'success' : 'default'}>{s === 'enabled' ? '启用' : '禁用'}</Tag>
       ),
+    }),
+    withNowrap<CopilotConfigItem>({
+      title: '路由模式',
+      key: 'routingMode',
+      width: 90,
+      render: (_: unknown, r: CopilotConfigItem) => {
+        const mode = (r.features?.routingMode as string) ?? 'auto';
+        const labels: Record<string, string> = {
+          auto: '自动',
+          pinned: '定向',
+          hybrid: '混合',
+        };
+        return labels[mode] ?? mode;
+      },
     }),
     withNowrap<CopilotConfigItem>({
       title: '域名白名单',
@@ -339,7 +367,7 @@ export default function CopilotAdminPage() {
             <Input placeholder="请输入您的问题…" />
           </Form.Item>
           <Form.Item label="功能开关">
-            <Space>
+            <Space wrap>
               <Form.Item name="enableHistory" valuePropName="checked" noStyle>
                 <Switch checkedChildren="历史会话" unCheckedChildren="历史会话" />
               </Form.Item>
@@ -350,6 +378,41 @@ export default function CopilotAdminPage() {
                 <Switch checkedChildren="待确认" unCheckedChildren="待确认" />
               </Form.Item>
             </Space>
+          </Form.Item>
+          <Form.Item
+            name="routingMode"
+            label="能力路由模式"
+            tooltip="auto：首条消息自动识别；pinned：创建会话须指定能力；hybrid：可选手动覆盖"
+          >
+            <Select
+              options={[
+                { value: 'auto', label: 'auto — 自动路由（默认）' },
+                { value: 'pinned', label: 'pinned — 定向锁定' },
+                { value: 'hybrid', label: 'hybrid — 混合' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="showCapabilitySelector"
+            label="展示能力选择 Tab"
+            valuePropName="checked"
+            tooltip="auto 模式下默认隐藏；hybrid 默认展示"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="clarifyOnLowConfidence"
+            label="低置信度澄清提示"
+            valuePropName="checked"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            name="confidenceThreshold"
+            label="低置信阈值（0~1）"
+            rules={[{ type: 'number', min: 0, max: 1 }]}
+          >
+            <Input type="number" step={0.05} min={0} max={1} />
           </Form.Item>
           <Form.Item name="maxHistoryMessages" label="历史消息最大加载条数">
             <Input type="number" />

@@ -1,10 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AuditStatus, Tool } from '@prisma/client';
+import { Tool } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { AuditService } from '../audit/audit.service';
-import { SqlToolService } from '../tool/sql-tool.service';
-import { ToolService } from '../tool/tool.service';
-import { decryptSecret } from '../connector/connector-secret.util';
+import { WorkflowToolInvoker } from '../tool/invoke/workflow-tool.invoker';
 import {
   CapabilityHandler,
   CapabilityHandlerResult,
@@ -12,17 +9,14 @@ import {
   SseEvent,
 } from '../agent-runtime/agent-runtime.types';
 import { CapabilityResult, WorkflowStepResult } from './capability-result';
-import { WorkflowToolConfig, WorkflowStep, SqlToolConfig, HttpToolConfig } from '../tool/tool.types';
+import { WorkflowToolConfig } from '../tool/tool.types';
 
 /**
  * 流程型能力 Handler（§5.4）。
  *
- * 多步骤编排；串联查询/操作/通知：
- * - Workflow Tool + 按需 Query/Action/Notification
- * - 任务状态化（09）；job-worker 执行长流程
- * - 步骤日志写入 Task 执行日志
- * - 异步执行与状态跟踪；中断、确认、继续
- * - 长任务在任务中心可见进度（验收标准 4）
+ * 多步骤编排；串联查询/操作/通知/HTTP 查询：
+ * - 子 Tool 经 WorkflowToolInvoker 统一执行
+ * - 任务状态化（09）；步骤日志写入 Task
  */
 @Injectable()
 export class WorkflowCapabilityHandler implements CapabilityHandler {
@@ -31,9 +25,7 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditService: AuditService,
-    private readonly sqlToolService: SqlToolService,
-    private readonly toolService: ToolService,
+    private readonly workflowInvoker: WorkflowToolInvoker,
   ) {}
 
   async execute(
@@ -108,7 +100,6 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
       },
     });
 
-    // 创建任务（任务中心可见 — 验收标准 4）
     const task = await this.prisma.task.create({
       data: {
         tenantId: ctx.tenantId,
@@ -131,12 +122,12 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
     const stepResults: WorkflowStepResult[] = [];
     const textChunks: string[] = [`开始执行流程「${workflowTool.name}」...\n\n`];
     let allSuccess = true;
+    const visitedToolIds = new Set<string>();
 
     for (let i = 0; i < workflowConfig.steps.length; i++) {
       const step = workflowConfig.steps[i];
       const stepSeq = i + 1;
 
-      // 创建 task_step
       const taskStep = await this.prisma.taskStep.create({
         data: {
           taskId: task.id,
@@ -149,7 +140,6 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
         },
       });
 
-      // 更新任务当前节点
       await this.prisma.task.update({
         where: { id: task.id },
         data: { currentNode: step.name },
@@ -163,11 +153,21 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
       const stepStartTime = Date.now();
       let stepOutput: unknown = null;
       let stepError: string | undefined;
-      let stepStatus: 'completed' | 'failed' = 'completed';
 
       try {
         if (step.toolId) {
-          stepOutput = await this.executeSubTool(step.toolId, ctx);
+          stepOutput = await this.workflowInvoker.executeSubTool(
+            step.toolId,
+            {
+              tenantId: ctx.tenantId,
+              userId: ctx.userId,
+              userMessage: ctx.userMessage,
+              sessionId: ctx.sessionId,
+              callerName: ctx.username,
+              source: 'runtime',
+            },
+            { visitedToolIds, depth: 1 },
+          );
         } else {
           stepOutput = { message: `步骤「${step.name}」执行完成（无关联子工具）` };
         }
@@ -201,8 +201,9 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
       } catch (err) {
         const stepDuration = Date.now() - stepStartTime;
         stepError = err instanceof Error ? err.message : String(err);
-        stepStatus = 'failed';
         allSuccess = false;
+
+        this.logger.error(`Workflow 步骤失败 ${step.name}: ${stepError}`);
 
         await this.prisma.taskStep.update({
           where: { id: taskStep.id },
@@ -282,97 +283,6 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
     };
   }
 
-  private async executeSubTool(toolId: string, ctx: RuntimeContext): Promise<unknown> {
-    const tool = await this.prisma.tool.findUnique({
-      where: { id: toolId },
-      include: { connector: true },
-    });
-
-    if (!tool) throw new Error(`子工具 ${toolId} 不存在`);
-    if (tool.status === 'disabled') throw new Error(`子工具「${tool.name}」已停用`);
-
-    switch (tool.type) {
-      case 'query':
-        return this.executeQuerySubTool(tool, ctx);
-      case 'action':
-      case 'notification':
-        return this.executeHttpSubTool(tool, ctx);
-      default:
-        return { message: `子工具类型 ${tool.type} 暂不支持嵌套编排` };
-    }
-  }
-
-  private async executeQuerySubTool(tool: any, ctx: RuntimeContext): Promise<unknown> {
-    if (!tool.connector) throw new Error(`查询子工具「${tool.name}」未关联连接器`);
-    if (tool.connector.type !== 'db_readonly') {
-      throw new Error(`查询子工具「${tool.name}」连接器类型非 db_readonly`);
-    }
-
-    const sqlConfig: SqlToolConfig = (tool.config as any)?.sql ?? {
-      tableBlacklist: [],
-      fieldBlacklist: [],
-      maxRows: 100,
-      maxExecutionMs: 3000,
-      templates: [],
-    };
-
-    const sql = sqlConfig.templates?.[0]?.sql;
-    if (!sql) throw new Error(`查询子工具「${tool.name}」无 SQL 模板`);
-
-    const result = await this.sqlToolService.execute(tool.connector, sql, {}, sqlConfig);
-    return { rows: result.rows, rowCount: result.rowCount, durationMs: result.durationMs };
-  }
-
-  private async executeHttpSubTool(tool: any, ctx: RuntimeContext): Promise<unknown> {
-    if (!tool.connector) throw new Error(`操作子工具「${tool.name}」未关联连接器`);
-
-    const httpConfig: HttpToolConfig = (tool.config as any)?.http ?? { method: 'POST', path: '' };
-    const url = this.joinUrl(tool.connector.target, httpConfig.path);
-    const method = (httpConfig.method || 'POST').toUpperCase();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...this.buildAuthHeaders(tool.connector),
-      ...(httpConfig.headers ?? {}),
-    };
-
-    const requestBody = httpConfig.bodyTemplate ?? { message: ctx.userMessage };
-    const hasBody = method !== 'GET' && method !== 'HEAD';
-    const body = hasBody ? JSON.stringify(requestBody) : undefined;
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), tool.timeoutMs ?? 10000);
-
-    try {
-      const res = await fetch(url, { method, headers, body, signal: controller.signal });
-      clearTimeout(timer);
-
-      const text = await res.text();
-      const parsed = this.tryParseJson(text);
-
-      if (res.status >= 400) {
-        throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
-      }
-
-      await this.auditService.logExternalCall({
-        tenantId: ctx.tenantId,
-        connectorId: tool.connector.id,
-        target: tool.connector.target,
-        method,
-        callerUserId: ctx.userId,
-        requestSummary: `[Workflow/${tool.name}]`,
-        status: AuditStatus.success,
-        statusCode: res.status,
-        durationMs: 0,
-        errorMessage: null,
-      });
-
-      return { status: res.status, data: parsed ?? text };
-    } catch (err) {
-      clearTimeout(timer);
-      throw err;
-    }
-  }
-
   private async logTaskEvent(
     taskId: string,
     stepId: string | null,
@@ -391,47 +301,7 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
   }
 
   private readWorkflowConfig(tool: Tool): WorkflowToolConfig {
-    const config = (tool.config as any)?.workflow;
+    const config = (tool.config as { workflow?: WorkflowToolConfig })?.workflow;
     return config ?? { steps: [] };
-  }
-
-  private buildAuthHeaders(connector: any): Record<string, string> {
-    const secret = decryptSecret(connector.config?.secretCipher);
-    const headers: Record<string, string> = {};
-    if (!secret) return headers;
-
-    switch (connector.authType) {
-      case 'basic': {
-        const u = String(secret.username ?? '');
-        const p = String(secret.password ?? '');
-        headers.Authorization = `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;
-        break;
-      }
-      case 'bearer':
-        if (secret.token) headers.Authorization = `Bearer ${String(secret.token)}`;
-        break;
-      case 'api_key': {
-        const name = String(secret.headerName ?? 'X-API-Key');
-        if (secret.apiKey) headers[name] = String(secret.apiKey);
-        break;
-      }
-      default:
-        break;
-    }
-    return headers;
-  }
-
-  private joinUrl(base: string, path: string): string {
-    if (!path) return base;
-    return `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-  }
-
-  private tryParseJson(text: string): unknown {
-    if (!text) return null;
-    try {
-      return JSON.parse(text);
-    } catch {
-      return undefined;
-    }
   }
 }

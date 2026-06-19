@@ -1,6 +1,6 @@
 import { apiFetch } from './api';
 
-export type ToolType = 'query' | 'action' | 'workflow' | 'notification';
+export type ToolType = 'query' | 'http_query' | 'action' | 'workflow' | 'notification';
 export type ToolStatus = 'enabled' | 'disabled';
 export type ToolRiskLevel = 'low' | 'medium' | 'high';
 
@@ -32,6 +32,39 @@ export interface HttpToolConfig {
   path: string;
   headers?: Record<string, string>;
   bodyTemplate?: unknown;
+  queryMapping?: Record<string, string>;
+  bodyMapping?: Record<string, string>;
+  responseMapping?: HttpQueryResponseConfig;
+}
+
+export interface HttpQueryParameter {
+  name: string;
+  type: string;
+  required?: boolean;
+  description?: string;
+}
+
+export interface HttpQueryResponseConfig {
+  type?: 'text_reply' | 'json_data' | 'play_audio';
+  successPath?: string;
+  successValue?: string | number;
+  fieldMapping?: Record<string, string>;
+  replyTextPath?: string;
+}
+
+export interface HttpQueryToolConfig {
+  toolCode: string;
+  intentTags?: string[];
+  priority?: number;
+  parameters: HttpQueryParameter[];
+  invoke: {
+    method: 'GET' | 'POST';
+    path: string;
+    queryMapping?: Record<string, string>;
+    bodyMapping?: Record<string, string>;
+    timeoutMs?: number;
+  };
+  response: HttpQueryResponseConfig;
 }
 
 export interface WorkflowToolConfig {
@@ -40,6 +73,7 @@ export interface WorkflowToolConfig {
 
 export interface ToolConfig {
   sql?: SqlToolConfig;
+  httpQuery?: HttpQueryToolConfig;
   http?: HttpToolConfig;
   workflow?: WorkflowToolConfig;
 }
@@ -204,6 +238,74 @@ export function deleteTool(id: string) {
   return apiFetch<{ id: string }>(`${BASE}/${id}`, { method: 'DELETE' });
 }
 
+export function invokeTool(
+  id: string,
+  params: Record<string, unknown>,
+  opts?: { skipPolicy?: boolean },
+) {
+  return apiFetch<ToolTestResult>(`${BASE}/${id}/invoke`, {
+    method: 'POST',
+    body: { params, skipPolicy: opts?.skipPolicy },
+  });
+}
+
+export function listHttpQueryTools(
+  query: {
+    tenantId?: string;
+    status?: ToolStatus;
+    keyword?: string;
+    page?: number;
+    pageSize?: number;
+  } = {},
+) {
+  return apiFetch<PagedResult<Tool>>(`${BASE}/http-query`, { query: query as QueryParams });
+}
+
+export interface ParseSignalResult {
+  matched: boolean;
+  toolCode?: string;
+  params?: Record<string, unknown>;
+  raw?: string;
+  message?: string;
+}
+
+export function parseHttpQuerySignal(text: string) {
+  return apiFetch<ParseSignalResult>(`${BASE}/parse-signal`, {
+    method: 'POST',
+    body: { text },
+  });
+}
+
+export interface HttpQueryPolishResult {
+  draft: Record<string, unknown>;
+  rationale: string;
+  warnings?: string[];
+}
+
+export function polishHttpQueryDraft(
+  tenantId: string,
+  draft: Record<string, unknown>,
+  instruction?: string,
+) {
+  return apiFetch<HttpQueryPolishResult>(`${BASE}/http-query/polish-draft`, {
+    method: 'POST',
+    body: { tenantId, draft, instruction },
+  });
+}
+
+export function parametersToInputSchema(parameters: HttpQueryParameter[]): Record<string, unknown> {
+  const properties: Record<string, unknown> = {};
+  const required: string[] = [];
+  for (const p of parameters) {
+    properties[p.name] = {
+      type: p.type || 'string',
+      ...(p.description ? { description: p.description } : {}),
+    };
+    if (p.required) required.push(p.name);
+  }
+  return { type: 'object', properties, required };
+}
+
 export function testTool(id: string, params: Record<string, unknown>) {
   return apiFetch<ToolTestResult>(`${BASE}/${id}/test`, {
     method: 'POST',
@@ -285,6 +387,7 @@ export function queryE2ePreviewTool(
 
 export const TOOL_TYPE_META: Record<ToolType, { label: string; color: string }> = {
   query: { label: '查询型', color: 'geekblue' },
+  http_query: { label: 'HTTP查询', color: 'blue' },
   action: { label: '操作型', color: 'volcano' },
   workflow: { label: '流程型', color: 'purple' },
   notification: { label: '通知型', color: 'cyan' },
@@ -294,8 +397,10 @@ export const TOOL_TYPE_OPTIONS = (
   Object.entries(TOOL_TYPE_META) as [ToolType, { label: string }][]
 ).map(([value, m]) => ({ value, label: m.label }));
 
-/** 工具管理列表：不含查询型（查询型在『查询型』配置 → 数据库连接工具维护） */
-export const TOOL_TYPE_OPTIONS_EXCLUDING_QUERY = TOOL_TYPE_OPTIONS.filter((o) => o.value !== 'query');
+/** 工具管理列表：不含 query / http_query */
+export const TOOL_TYPE_OPTIONS_EXCLUDING_QUERY = TOOL_TYPE_OPTIONS.filter(
+  (o) => o.value !== 'query' && o.value !== 'http_query',
+);
 
 /** 数据库连接工具：仅查询型 */
 export const TOOL_TYPE_OPTIONS_QUERY_ONLY = TOOL_TYPE_OPTIONS.filter((o) => o.value === 'query');
@@ -313,6 +418,7 @@ export const RISK_LEVEL_OPTIONS = (
 /** Tool 类型 → 期望连接器类型（前端绑定提示） */
 export const TOOL_TYPE_CONNECTOR_TYPE: Record<ToolType, string | null> = {
   query: 'db_readonly',
+  http_query: 'http',
   action: 'http',
   notification: 'notification',
   workflow: null,

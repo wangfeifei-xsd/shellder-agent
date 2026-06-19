@@ -40,14 +40,9 @@ export interface RoutingConditions {
   keywords?: string[];
   patterns?: string[];
   intents?: string[];
-}
-
-export interface RoutingTestResult {
-  capabilityType: string;
-  capabilityName: string;
-  reason: string;
-  candidates: RoutingCandidate[];
-  needConfirmation: boolean;
+  /** action 能力内：限定 Tool 类型（http_query / action / notification） */
+  toolKind?: 'http_query' | 'action' | 'notification';
+  minScore?: number;
 }
 
 export interface RoutingCandidate {
@@ -56,6 +51,41 @@ export interface RoutingCandidate {
   type: string;
   score: number;
   toolIds: string[];
+}
+
+export interface RoutingTypeStage {
+  reason: string;
+  confidence: number;
+  pinned: boolean;
+}
+
+export interface RoutingIntraStage {
+  ruleId?: string;
+  ruleName?: string;
+  toolIds: string[];
+  reason: string;
+  toolKind?: string;
+  signalToolCode?: string;
+}
+
+export interface IntraCapabilityRouteResult {
+  toolIds: string[];
+  ruleId?: string;
+  ruleName?: string;
+  reason: string;
+  needConfirmation: boolean;
+  toolKind?: string;
+  signalToolCode?: string;
+}
+
+export interface RoutingTestResult {
+  capabilityType: string;
+  capabilityName: string;
+  reason: string;
+  candidates: RoutingCandidate[];
+  needConfirmation: boolean;
+  typeStage?: RoutingTypeStage;
+  intraStage?: RoutingIntraStage;
 }
 
 export interface PagedResult<T> {
@@ -194,9 +224,32 @@ export function suggestRoutingRuleWithAi(input: {
 
 // ── 路由测试 API ─────────────────────────────────────────
 
-export function testRouting(input: { tenantId: string; input: string; userId?: string }) {
+export function testRouting(input: {
+  tenantId: string;
+  input: string;
+  userId?: string;
+  pinnedCapabilityType?: CapabilityType;
+}) {
   return apiFetch<RoutingTestResult>('/api/v1/routing/test', { method: 'POST', body: input });
 }
+
+export function testIntraRouting(input: {
+  tenantId: string;
+  capabilityType: CapabilityType;
+  input: string;
+  userId?: string;
+}) {
+  return apiFetch<IntraCapabilityRouteResult>('/api/v1/routing/test/intra', {
+    method: 'POST',
+    body: input,
+  });
+}
+
+export const ROUTING_TOOL_KIND_OPTIONS: { value: RoutingConditions['toolKind']; label: string }[] = [
+  { value: 'http_query', label: 'HTTP 查询（http_query）' },
+  { value: 'action', label: '操作（action）' },
+  { value: 'notification', label: '通知（notification）' },
+];
 
 // ── 展示元数据 ────────────────────────────────────────────
 

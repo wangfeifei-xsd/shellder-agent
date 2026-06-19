@@ -1,4 +1,5 @@
 import { lazy } from 'react';
+import { Navigate } from 'react-router-dom';
 import type { RouteObject } from 'react-router-dom';
 import ConsoleLayout from '@/components/console/ConsoleLayout';
 import CopilotLayout from '@/components/copilot/CopilotLayout';
@@ -20,8 +21,9 @@ const CapabilitiesCatalogPage = lazy(() => import('@/pages/console/routing/capab
 const CapabilitiesDemoPage = lazy(() => import('@/pages/console/capabilities/page'));
 const SkillPage = lazy(() => import('@/pages/console/skills/page'));
 const SkillExecutionsPage = lazy(() => import('@/pages/console/skills/executions/page'));
+const HttpQueryToolPage = lazy(() => import('@/pages/console/tools/http-query/page'));
 const ToolPage = lazy(() => import('@/pages/console/tools/page'));
-const SqlToolPage = lazy(() => import('@/pages/console/tools/sql/page'));
+const ChannelDebugPage = lazy(() => import('@/pages/console/query/channel-debug/page'));
 const ConnectorPage = lazy(() => import('@/pages/console/connectors/page'));
 const DbConnectorPage = lazy(() => import('@/pages/console/query/db-connectors/page'));
 const DbErPage = lazy(() => import('@/pages/console/query/db-er/page'));
@@ -93,13 +95,15 @@ export const appRoutes: RouteObject[] = [
       { path: 'capabilities', element: <CapabilitiesDemoPage /> },
       { path: 'skills', element: <SkillPage /> },
       { path: 'skills/executions', element: <SkillExecutionsPage /> },
+      { path: 'tools/http-query', element: <HttpQueryToolPage /> },
       { path: 'tools', element: <ToolPage /> },
-      { path: 'tools/sql', element: <SqlToolPage /> },
+      { path: 'tools/sql', element: <Navigate to="/query/channel-debug" replace /> },
       { path: 'connectors', element: <ConnectorPage /> },
       { path: 'connectors/db-schema', element: <DbSchemaLegacyRedirect /> },
       { path: 'query/db-connectors', element: <DbConnectorPage /> },
       { path: 'query/db-er', element: <DbErPage /> },
       { path: 'query/db-channel-tools', element: <DbChannelToolsPage /> },
+      { path: 'query/channel-debug', element: <ChannelDebugPage /> },
       { path: 'query/query-test', element: <QueryTestPage /> },
       { path: 'rules', element: <RuleConfigPage /> },
       { path: 'rule-hits', element: <RuleHitsPage /> },

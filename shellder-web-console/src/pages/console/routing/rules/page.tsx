@@ -29,10 +29,12 @@ import {
 } from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
+  ROUTING_TOOL_KIND_OPTIONS,
   Capability,
   CAPABILITY_TYPE_META,
   CapabilityType,
   CreateRoutingRuleInput,
+  RoutingConditions,
   RoutingRule,
   RoutingRuleStatus,
   UpdateRoutingRuleInput,
@@ -44,6 +46,7 @@ import {
   updateRoutingRule,
   updateRoutingRuleStatus,
 } from '@/lib/capability';
+import { Tool, ToolType, TOOL_TYPE_META, listTools } from '@/lib/tool';
 
 const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '—');
 
@@ -54,7 +57,8 @@ interface RuleFormValues {
   keywordsText?: string;
   patternsText?: string;
   intentsText?: string;
-  toolIdsText?: string;
+  toolKind?: 'http_query' | 'action' | 'notification';
+  toolIds?: string[];
   priority: number;
   needConfirmation: boolean;
 }
@@ -71,6 +75,8 @@ export default function RoutingRulesPage() {
   const [statusFilter, setStatusFilter] = useState<RoutingRuleStatus | undefined>();
 
   const [capabilities, setCapabilities] = useState<Capability[]>([]);
+  const [tools, setTools] = useState<Tool[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<RoutingRule | undefined>();
   const [submitting, setSubmitting] = useState(false);
@@ -115,9 +121,72 @@ export default function RoutingRulesPage() {
     }
   }, [activeTenantId, message]);
 
+  const loadTools = useCallback(async () => {
+    if (!activeTenantId) {
+      setTools([]);
+      return;
+    }
+    setToolsLoading(true);
+    try {
+      const res = await listTools({ tenantId: activeTenantId, pageSize: 200 });
+      setTools(res.items);
+    } catch (err) {
+      setTools([]);
+      message.error(err instanceof Error ? err.message : '加载工具列表失败');
+    } finally {
+      setToolsLoading(false);
+    }
+  }, [activeTenantId, message]);
+
   useEffect(() => { void load(); void loadCapabilities(); }, [load, loadCapabilities]);
 
-  const capOptions = useMemo(() => capabilities.map((c) => ({ value: c.id, label: `${c.name}（${CAPABILITY_TYPE_META[c.type].label}）` })), [capabilities]);
+  const capOptions = useMemo(() => capabilities.map((c) => ({ value: c.id, label: `${c.name}（${CAPABILITY_TYPE_META[c.type].label}）`, type: c.type })), [capabilities]);
+  const watchedCapabilityId = Form.useWatch('capabilityId', form);
+  const watchedCapabilityType = useMemo(
+    () => capabilities.find((c) => c.id === watchedCapabilityId)?.type,
+    [capabilities, watchedCapabilityId],
+  );
+  const watchedToolKind = Form.useWatch('toolKind', form);
+  const watchedToolIds = Form.useWatch('toolIds', form);
+
+  const allowedToolTypes = useMemo((): ToolType[] => {
+    switch (watchedCapabilityType) {
+      case 'query':
+        return ['query'];
+      case 'action':
+        if (watchedToolKind) return [watchedToolKind];
+        return ['action', 'notification', 'http_query'];
+      case 'workflow':
+        return ['workflow'];
+      default:
+        return [];
+    }
+  }, [watchedCapabilityType, watchedToolKind]);
+
+  const toolOptions = useMemo(
+    () =>
+      tools
+        .filter((t) => {
+          if (allowedToolTypes.length > 0 && !allowedToolTypes.includes(t.type)) return false;
+          return t.status === 'enabled' || (watchedToolIds ?? []).includes(t.id);
+        })
+        .map((t) => ({
+          value: t.id,
+          label: `${t.name}（${TOOL_TYPE_META[t.type].label}${t.status === 'disabled' ? ' · 已停用' : ''}）`,
+        })),
+    [tools, allowedToolTypes, watchedToolIds],
+  );
+
+  useEffect(() => {
+    if (!drawerOpen || toolsLoading) return;
+    const current = form.getFieldValue('toolIds') as string[] | undefined;
+    if (!current?.length || allowedToolTypes.length === 0) return;
+    const validIds = new Set(toolOptions.map((o) => o.value));
+    const filtered = current.filter((id) => validIds.has(id));
+    if (filtered.length !== current.length) {
+      form.setFieldsValue({ toolIds: filtered });
+    }
+  }, [drawerOpen, toolsLoading, allowedToolTypes, toolOptions, form]);
 
   const resetAiAssist = () => {
     setAiIntent('');
@@ -131,6 +200,7 @@ export default function RoutingRulesPage() {
     form.resetFields();
     form.setFieldsValue({ priority: 100, needConfirmation: false });
     resetAiAssist();
+    void loadTools();
     setDrawerOpen(true);
   };
 
@@ -194,10 +264,12 @@ export default function RoutingRulesPage() {
       keywordsText: rule.conditions.keywords?.length ? JSON.stringify(rule.conditions.keywords) : undefined,
       patternsText: rule.conditions.patterns?.length ? JSON.stringify(rule.conditions.patterns) : undefined,
       intentsText: rule.conditions.intents?.length ? JSON.stringify(rule.conditions.intents) : undefined,
-      toolIdsText: rule.toolIds?.length ? JSON.stringify(rule.toolIds) : undefined,
+      toolKind: rule.conditions.toolKind,
+      toolIds: rule.toolIds ?? [],
       priority: rule.priority,
       needConfirmation: rule.needConfirmation,
     });
+    void loadTools();
     setDrawerOpen(true);
   };
 
@@ -208,13 +280,15 @@ export default function RoutingRulesPage() {
     let keywords: string[] = [];
     let patterns: string[] = [];
     let intents: string[] = [];
-    let toolIds: string[] = [];
     try { if (v.keywordsText?.trim()) keywords = JSON.parse(v.keywordsText); } catch { message.error('关键词格式非法'); return; }
     try { if (v.patternsText?.trim()) patterns = JSON.parse(v.patternsText); } catch { message.error('正则模式格式非法'); return; }
     try { if (v.intentsText?.trim()) intents = JSON.parse(v.intentsText); } catch { message.error('意图标签格式非法'); return; }
-    try { if (v.toolIdsText?.trim()) toolIds = JSON.parse(v.toolIdsText); } catch { message.error('工具 ID 格式非法'); return; }
+    const toolIds = v.toolIds ?? [];
 
-    const conditions = { keywords, patterns, intents };
+    const conditions: RoutingConditions = { keywords, patterns, intents };
+    if (v.toolKind) {
+      conditions.toolKind = v.toolKind;
+    }
 
     setSubmitting(true);
     try {
@@ -461,6 +535,9 @@ export default function RoutingRulesPage() {
           <Form.Item label="关联能力" name="capabilityId" rules={[{ required: true, message: '请选择关联能力' }]}>
             <Select placeholder="选择能力" options={capOptions} />
           </Form.Item>
+          <Typography.Paragraph type="secondary" className="!mb-3 text-xs">
+            规则仅在所选<strong>能力内</strong>匹配用户输入后绑定 Tool。操作型能力可绑 action / notification / http_query Tool。
+          </Typography.Paragraph>
           <Form.Item label="规则名称" name="name" rules={[{ required: true, message: '请输入规则名称' }]}>
             <Input placeholder="如：订单查询路由规则" />
           </Form.Item>
@@ -484,11 +561,53 @@ export default function RoutingRulesPage() {
           <Form.Item label="意图标签（JSON 字符串数组，保留）" name="intentsText" tooltip="保留接口，供 NLU 引擎扩展">
             <Input.TextArea rows={2} className="font-mono text-xs" placeholder='["order_query"]' />
           </Form.Item>
+          {watchedCapabilityType === 'action' && (
+            <Form.Item
+              label="Tool 类型过滤（toolKind，可选）"
+              name="toolKind"
+              tooltip="限定本规则绑定的 toolIds 仅解析为指定 Tool 类型；HTTP 业务查询选 http_query"
+            >
+              <Select allowClear placeholder="不限" options={ROUTING_TOOL_KIND_OPTIONS} />
+            </Form.Item>
+          )}
 
           <Typography.Title level={5}>可调用工具</Typography.Title>
-          <Form.Item label="工具 ID 列表（JSON 字符串数组）" name="toolIdsText" tooltip="命中规则时可调用的工具范围">
-            <Input.TextArea rows={2} className="font-mono text-xs" placeholder='["tool-id-1", "tool-id-2"]' />
+          <Form.Item
+            name="toolIds"
+            label="工具"
+            tooltip={
+              watchedCapabilityType === 'qa'
+                ? '问答型能力通常无需绑定 Tool'
+                : '命中规则后调用的 Tool；选项为当前租户下已配置工具，并按关联能力类型过滤'
+            }
+          >
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              loading={toolsLoading}
+              disabled={allowedToolTypes.length === 0}
+              placeholder={
+                allowedToolTypes.length === 0
+                  ? '问答型能力无需绑定工具'
+                  : toolOptions.length === 0
+                    ? '当前租户暂无可用工具，请先在工具管理或查询型配置中创建'
+                    : '选择可调用工具（可多选）'
+              }
+              options={toolOptions}
+            />
           </Form.Item>
+          {watchedCapabilityType === 'query' && (
+            <Typography.Paragraph type="secondary" className="!mb-0 text-xs">
+              查询型能力仅可选择 NL2SQL 类型（ToolType.query）工具。
+            </Typography.Paragraph>
+          )}
+          {watchedCapabilityType === 'action' && watchedToolKind && (
+            <Typography.Paragraph type="secondary" className="!mb-0 text-xs">
+              已按 toolKind={watchedToolKind} 过滤可选工具。
+            </Typography.Paragraph>
+          )}
         </Form>
       </Drawer>
     </>
