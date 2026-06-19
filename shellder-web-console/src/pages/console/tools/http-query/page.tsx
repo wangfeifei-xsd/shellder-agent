@@ -1,6 +1,6 @@
 'use client';
 
-import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, FormOutlined, RobotOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, FormOutlined, RobotOutlined, DownloadOutlined } from '@ant-design/icons';
 import {
   Empty,
   Alert,
@@ -22,8 +22,14 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
+import {
+  renderEllipsisLink,
+  renderOptionalText,
+  tableEllipsisLayout,
+  withNowrap,
+} from '@/components/console/tableEllipsis';
 import { ToolTestResultView } from '@/components/console/ToolTestResultView';
-import { Connector, listConnectors } from '@/lib/connector';
+import { Connector, getConnector, listConnectors } from '@/lib/connector';
 import {
   CreateToolInput,
   HttpQueryParameter,
@@ -46,6 +52,10 @@ import {
   updateToolStatus,
 } from '@/lib/tool';
 import { HTTP_QUERY_PRESET } from './http-query-preset';
+import {
+  downloadHttpQueryDevDoc,
+  toolToHttpQueryDevDocInput,
+} from './http-query-dev-doc';
 
 const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '—');
 
@@ -190,6 +200,48 @@ export default function HttpQueryToolPage() {
       setConnectors([]);
     }
   }, [activeTenantId]);
+
+  useEffect(() => {
+    void loadConnectors();
+  }, [loadConnectors]);
+
+  const resolveConnectorTarget = useCallback(
+    async (connectorId: string | null | undefined): Promise<string | undefined> => {
+      if (!connectorId) return undefined;
+      const cached = connectors.find((c) => c.id === connectorId);
+      if (cached) return cached.target;
+      try {
+        const connector = await getConnector(connectorId);
+        return connector.target;
+      } catch {
+        return undefined;
+      }
+    },
+    [connectors],
+  );
+
+  const handleExportDevDoc = useCallback(
+    async (tool: Tool | ToolDetail) => {
+      const hq = tool.config.httpQuery;
+      if (!hq?.toolCode?.trim()) {
+        message.warning('该工具缺少 toolCode，无法导出对接文档');
+        return;
+      }
+      try {
+        const connectorTarget = await resolveConnectorTarget(tool.connectorId);
+        downloadHttpQueryDevDoc(
+          toolToHttpQueryDevDocInput(tool, {
+            connectorTarget,
+            tenantName: activeTenantName,
+          }),
+        );
+        message.success('对接文档已导出');
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : '导出失败');
+      }
+    },
+    [activeTenantName, message, resolveConnectorTarget],
+  );
 
   const connectorOptions = useMemo(
     () => connectors.map((c) => ({ value: c.id, label: `${c.name}（${c.target}）` })),
@@ -345,42 +397,64 @@ export default function HttpQueryToolPage() {
   };
 
   const columns: ColumnsType<Tool> = [
-    { title: '名称', dataIndex: 'name', key: 'name' },
-    {
+    withNowrap<Tool>({
+      title: '名称',
+      dataIndex: 'name',
+      width: 180,
+      render: (v: string, row) => renderEllipsisLink(v, () => void openDetail(row)),
+    }),
+    withNowrap<Tool>({
       title: 'toolCode',
       key: 'toolCode',
-      render: (_, r) => r.config.httpQuery?.toolCode ?? '—',
-    },
-    {
+      width: 140,
+      ellipsis: true,
+      render: (_, r) => renderOptionalText(r.config.httpQuery?.toolCode),
+    }),
+    withNowrap<Tool>({
       title: '连接器',
       key: 'connector',
-      render: (_, r) => r.connector?.name ?? '—',
-    },
-    {
+      width: 140,
+      ellipsis: true,
+      render: (_, r) => renderOptionalText(r.connector?.name),
+    }),
+    withNowrap<Tool>({
       title: '方法 / 路径',
       key: 'invoke',
+      width: 200,
+      ellipsis: true,
       render: (_, r) => {
         const inv = r.config.httpQuery?.invoke;
-        return inv ? `${inv.method} ${inv.path}` : '—';
+        const text = inv ? `${inv.method} ${inv.path}` : null;
+        return renderOptionalText(text);
       },
-    },
-    {
+    }),
+    withNowrap<Tool>({
       title: '状态',
       dataIndex: 'status',
+      width: 90,
       render: (s: ToolStatus) => (
         <Tag color={s === 'enabled' ? 'green' : 'default'}>{s === 'enabled' ? '启用' : '停用'}</Tag>
       ),
-    },
-    {
+    }),
+    withNowrap<Tool>({
       title: '操作',
       key: 'actions',
+      width: 360,
       render: (_, r) => (
-        <Space wrap>
+        <Space size="small">
           <Button type="link" size="small" onClick={() => openDetail(r)}>
             详情
           </Button>
           <Button type="link" size="small" onClick={() => openEdit(r)}>
             编辑
+          </Button>
+          <Button
+            type="link"
+            size="small"
+            icon={<DownloadOutlined />}
+            onClick={() => void handleExportDevDoc(r)}
+          >
+            导出对接文档
           </Button>
           <Button type="link" size="small" onClick={() => toggleStatus(r)}>
             {r.status === 'enabled' ? '停用' : '启用'}
@@ -402,7 +476,7 @@ export default function HttpQueryToolPage() {
           </Button>
         </Space>
       ),
-    },
+    }),
   ];
 
   return (
@@ -452,6 +526,7 @@ export default function HttpQueryToolPage() {
             dataSource={data}
             pagination={false}
             locale={{ emptyText: <Empty description="该租户暂无 HTTP 查询工具" /> }}
+            {...tableEllipsisLayout}
           />
 
           <Typography.Title level={5} className="mt-8">
@@ -590,7 +665,20 @@ export default function HttpQueryToolPage() {
         title={detail ? `详情：${detail.name}` : '详情'}
         open={!!detail}
         onCancel={() => setDetail(undefined)}
-        footer={null}
+        footer={
+          detail ? (
+            <Space>
+              <Button onClick={() => setDetail(undefined)}>关闭</Button>
+              <Button
+                type="primary"
+                icon={<DownloadOutlined />}
+                onClick={() => void handleExportDevDoc(detail)}
+              >
+                导出对接文档
+              </Button>
+            </Space>
+          ) : null
+        }
         width={720}
       >
         {detail && (
