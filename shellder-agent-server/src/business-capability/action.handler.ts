@@ -3,7 +3,6 @@ import { Tool, ToolType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ToolInvocationService } from '../tool/tool-invocation.service';
 import { HttpQueryTriggerService } from '../tool/http-query-trigger.service';
-import { parseHttpQuerySignal } from '../tool/http-query-signal.util';
 import {
   CapabilityHandler,
   CapabilityHandlerResult,
@@ -74,8 +73,10 @@ export class ActionCapabilityHandler implements CapabilityHandler {
     }
 
     if (tool.type === 'http_query') {
-      const signal = parseHttpQuerySignal(ctx.userMessage);
-      const params = signal?.params ?? {};
+      const { params } = await this.httpQueryTrigger.resolveInvokeParams(
+        tool,
+        ctx.userMessage,
+      );
       return this.runToolInvoke(tool, params, ctx, emitSse, 'http_query');
     }
 
@@ -143,7 +144,7 @@ export class ActionCapabilityHandler implements CapabilityHandler {
         toolName: tool.name,
         toolId: tool.id,
         toolKind: 'http_query',
-        input: triggerResult.signal?.params,
+        input: triggerResult.resolvedParams ?? triggerResult.signal?.params,
       },
     });
     emitSse({

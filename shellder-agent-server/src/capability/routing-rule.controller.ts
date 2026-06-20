@@ -17,6 +17,8 @@ import { RoutingRuleService } from './routing-rule.service';
 import { CreateRoutingRuleDto } from './dto/create-routing-rule.dto';
 import { QueryRoutingRuleDto } from './dto/query-routing-rule.dto';
 import { RoutingRuleAiSuggestDto } from './dto/routing-rule-ai-suggest.dto';
+import { RoutingRuleAiOptimizeDto } from './dto/routing-rule-ai-optimize.dto';
+import { RoutingRuleTestConditionsDto } from './dto/routing-rule-test-conditions.dto';
 import { UpdateRoutingRuleDto } from './dto/update-routing-rule.dto';
 import { UpdateRoutingRuleStatusDto } from './dto/update-routing-rule-status.dto';
 
@@ -43,6 +45,23 @@ export class RoutingRuleController {
   })
   aiSuggest(@CurrentUser() user: AuthUser, @Body() dto: RoutingRuleAiSuggestDto) {
     return this.routingRuleAssist.suggest(user, dto);
+  }
+
+  /** POST /api/v1/routing-rules/test-conditions — 即时测试 conditions 匹配 */
+  @Post('test-conditions')
+  testConditions(@CurrentUser() user: AuthUser, @Body() dto: RoutingRuleTestConditionsDto) {
+    return this.routingRuleAssist.testConditions(user, dto);
+  }
+
+  /** POST /api/v1/routing-rules/ai-optimize-conditions — 未命中时 LLM 优化匹配条件 */
+  @Post('ai-optimize-conditions')
+  @Audit({
+    action: 'routingRule.aiOptimizeConditions',
+    module: 'routing.manage',
+    targetType: 'routing_rule',
+  })
+  aiOptimizeConditions(@CurrentUser() user: AuthUser, @Body() dto: RoutingRuleAiOptimizeDto) {
+    return this.routingRuleAssist.optimizeConditions(user, dto);
   }
 
   @Post()

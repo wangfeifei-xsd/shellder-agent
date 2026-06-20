@@ -1,6 +1,6 @@
 'use client';
 
-import { PlusOutlined, ReloadOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { PlusOutlined, ReloadOutlined, ThunderboltOutlined, ExperimentOutlined } from '@ant-design/icons';
 import {
   Alert,
   App,
@@ -11,6 +11,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Select,
   Space,
   Switch,
@@ -35,6 +36,7 @@ import {
   CapabilityType,
   CreateRoutingRuleInput,
   RoutingConditions,
+  RoutingConditionsTestResult,
   RoutingRule,
   RoutingRuleStatus,
   UpdateRoutingRuleInput,
@@ -42,13 +44,46 @@ import {
   deleteRoutingRule,
   listCapabilities,
   listRoutingRules,
+  optimizeRoutingConditionsWithAi,
   suggestRoutingRuleWithAi,
+  testRoutingConditions,
   updateRoutingRule,
   updateRoutingRuleStatus,
 } from '@/lib/capability';
-import { Tool, ToolType, TOOL_TYPE_META, listTools } from '@/lib/tool';
+import { Tool, ToolType, TOOL_TYPE_META, fetchAllTools } from '@/lib/tool';
 
 const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '—');
+
+function parseConditionsFields(v: {
+  keywordsText?: string;
+  patternsText?: string;
+  intentsText?: string;
+  toolKind?: RuleFormValues['toolKind'];
+}): { conditions: RoutingConditions; error?: string } {
+  let keywords: string[] = [];
+  let patterns: string[] = [];
+  let intents: string[] = [];
+  try {
+    if (v.keywordsText?.trim()) keywords = JSON.parse(v.keywordsText);
+  } catch {
+    return { conditions: {}, error: '关键词格式非法' };
+  }
+  try {
+    if (v.patternsText?.trim()) patterns = JSON.parse(v.patternsText);
+  } catch {
+    return { conditions: {}, error: '正则模式格式非法' };
+  }
+  try {
+    if (v.intentsText?.trim()) intents = JSON.parse(v.intentsText);
+  } catch {
+    return { conditions: {}, error: '意图标签格式非法' };
+  }
+  const conditions: RoutingConditions = { keywords, patterns, intents };
+  if (v.toolKind) {
+    conditions.toolKind = v.toolKind;
+  }
+  return { conditions };
+}
 
 interface RuleFormValues {
   capabilityId: string;
@@ -85,6 +120,13 @@ export default function RoutingRulesPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiRationale, setAiRationale] = useState<string | null>(null);
   const [aiWarnings, setAiWarnings] = useState<string[]>([]);
+  const [condTestModalOpen, setCondTestModalOpen] = useState(false);
+  const [condTestInput, setCondTestInput] = useState('');
+  const [condTestLoading, setCondTestLoading] = useState(false);
+  const [condTestResult, setCondTestResult] = useState<RoutingConditionsTestResult | undefined>();
+  const [condOptimizeLoading, setCondOptimizeLoading] = useState(false);
+  const [condOptimizeRationale, setCondOptimizeRationale] = useState<string | null>(null);
+  const [condOptimizeWarnings, setCondOptimizeWarnings] = useState<string[]>([]);
 
   const activeTenantName = useMemo(
     () => tenants.find((t) => t.id === activeTenantId)?.name,
@@ -128,8 +170,8 @@ export default function RoutingRulesPage() {
     }
     setToolsLoading(true);
     try {
-      const res = await listTools({ tenantId: activeTenantId, pageSize: 200 });
-      setTools(res.items);
+      const items = await fetchAllTools({ tenantId: activeTenantId });
+      setTools(items);
     } catch (err) {
       setTools([]);
       message.error(err instanceof Error ? err.message : '加载工具列表失败');
@@ -195,11 +237,20 @@ export default function RoutingRulesPage() {
     setAiWarnings([]);
   };
 
+  const resetCondTest = () => {
+    setCondTestModalOpen(false);
+    setCondTestInput('');
+    setCondTestResult(undefined);
+    setCondOptimizeRationale(null);
+    setCondOptimizeWarnings([]);
+  };
+
   const openCreate = () => {
     setEditing(undefined);
     form.resetFields();
     form.setFieldsValue({ priority: 100, needConfirmation: false });
     resetAiAssist();
+    resetCondTest();
     void loadTools();
     setDrawerOpen(true);
   };
@@ -256,6 +307,7 @@ export default function RoutingRulesPage() {
   const openEdit = (rule: RoutingRule) => {
     setEditing(rule);
     resetAiAssist();
+    resetCondTest();
     form.resetFields();
     form.setFieldsValue({
       capabilityId: rule.capabilityId,
@@ -273,22 +325,134 @@ export default function RoutingRulesPage() {
     setDrawerOpen(true);
   };
 
+  const buildConditionsFromForm = (): { conditions: RoutingConditions; error?: string } => {
+    const v = form.getFieldsValue();
+    return parseConditionsFields({
+      keywordsText: v.keywordsText,
+      patternsText: v.patternsText,
+      intentsText: v.intentsText,
+      toolKind: v.toolKind,
+    });
+  };
+
+  const handleCondTest = async () => {
+    if (!activeTenantId) {
+      message.warning('请先选择操作租户');
+      return;
+    }
+    const testInput = condTestInput.trim();
+    if (!testInput) {
+      message.warning('请输入测试语句');
+      return;
+    }
+    const { conditions, error } = buildConditionsFromForm();
+    if (error) {
+      message.error(error);
+      return;
+    }
+    if (
+      !(conditions.keywords?.length || conditions.patterns?.length || conditions.intents?.length)
+    ) {
+      message.warning('请先填写关键词、正则或意图标签');
+      return;
+    }
+
+    setCondTestLoading(true);
+    setCondTestResult(undefined);
+    setCondOptimizeRationale(null);
+    setCondOptimizeWarnings([]);
+    try {
+      const result = await testRoutingConditions({
+        tenantId: activeTenantId,
+        input: testInput,
+        conditions,
+      });
+      setCondTestResult(result);
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '匹配测试失败');
+    } finally {
+      setCondTestLoading(false);
+    }
+  };
+
+  const handleCondOptimize = async () => {
+    if (!activeTenantId) {
+      message.warning('请先选择操作租户');
+      return;
+    }
+    const capabilityId = form.getFieldValue('capabilityId') as string | undefined;
+    if (!capabilityId) {
+      message.warning('请先选择关联能力');
+      return;
+    }
+    const testInput = condTestInput.trim();
+    if (!testInput) {
+      message.warning('请输入测试语句');
+      return;
+    }
+    const { conditions, error } = buildConditionsFromForm();
+    if (error) {
+      message.error(error);
+      return;
+    }
+
+    setCondOptimizeLoading(true);
+    setCondOptimizeRationale(null);
+    setCondOptimizeWarnings([]);
+    try {
+      const optimized = await optimizeRoutingConditionsWithAi({
+        tenantId: activeTenantId,
+        capabilityId,
+        testInput,
+        conditions,
+        ruleName: form.getFieldValue('name') as string | undefined,
+        ruleDescription: form.getFieldValue('description') as string | undefined,
+      });
+      form.setFieldsValue({
+        keywordsText: JSON.stringify(optimized.keywords, null, 2),
+        patternsText: optimized.patterns.length
+          ? JSON.stringify(optimized.patterns, null, 2)
+          : undefined,
+        intentsText: optimized.intents.length
+          ? JSON.stringify(optimized.intents, null, 2)
+          : undefined,
+      });
+      setCondOptimizeRationale(optimized.rationale);
+      setCondOptimizeWarnings(optimized.warnings ?? []);
+      setCondTestResult({
+        score: optimized.previewScore,
+        hit: optimized.previewHit,
+        matchedKeywords: optimized.matchedKeywords,
+        matchedPatterns: optimized.matchedPatterns,
+        matchedIntents: optimized.matchedIntents,
+        invalidPatterns: [],
+      });
+      message.success(
+        optimized.previewHit ? '已优化匹配条件，测试输入可命中' : '已生成优化建议，请核对后再次测试',
+      );
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'AI 优化失败');
+    } finally {
+      setCondOptimizeLoading(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!activeTenantId) { message.warning('请先选择租户'); return; }
     const v = await form.validateFields();
 
-    let keywords: string[] = [];
-    let patterns: string[] = [];
-    let intents: string[] = [];
-    try { if (v.keywordsText?.trim()) keywords = JSON.parse(v.keywordsText); } catch { message.error('关键词格式非法'); return; }
-    try { if (v.patternsText?.trim()) patterns = JSON.parse(v.patternsText); } catch { message.error('正则模式格式非法'); return; }
-    try { if (v.intentsText?.trim()) intents = JSON.parse(v.intentsText); } catch { message.error('意图标签格式非法'); return; }
-    const toolIds = v.toolIds ?? [];
-
-    const conditions: RoutingConditions = { keywords, patterns, intents };
-    if (v.toolKind) {
-      conditions.toolKind = v.toolKind;
+    const parsed = parseConditionsFields({
+      keywordsText: v.keywordsText,
+      patternsText: v.patternsText,
+      intentsText: v.intentsText,
+      toolKind: v.toolKind,
+    });
+    if (parsed.error) {
+      message.error(parsed.error);
+      return;
     }
+    const { conditions } = parsed;
+    const toolIds = v.toolIds ?? [];
 
     setSubmitting(true);
     try {
@@ -551,7 +715,18 @@ export default function RoutingRulesPage() {
             <Switch checkedChildren="是" unCheckedChildren="否" />
           </Form.Item>
 
-          <Typography.Title level={5}>匹配条件（conditions）</Typography.Title>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <Typography.Title level={5} className="!mb-0">
+              匹配条件（conditions）
+            </Typography.Title>
+            <Button
+              type="primary"
+              icon={<ExperimentOutlined />}
+              onClick={() => setCondTestModalOpen(true)}
+            >
+              测试匹配
+            </Button>
+          </div>
           <Form.Item label="关键词（JSON 字符串数组）" name="keywordsText" tooltip='输入文本包含任一关键词即匹配。如 ["查询","订单"]'>
             <Input.TextArea rows={2} className="font-mono text-xs" placeholder='["查询", "订单"]' />
           </Form.Item>
@@ -561,6 +736,15 @@ export default function RoutingRulesPage() {
           <Form.Item label="意图标签（JSON 字符串数组，保留）" name="intentsText" tooltip="保留接口，供 NLU 引擎扩展">
             <Input.TextArea rows={2} className="font-mono text-xs" placeholder='["order_query"]' />
           </Form.Item>
+          <Alert
+            className="mb-4"
+            type="info"
+            showIcon
+            icon={<ExperimentOutlined />}
+            message="配置完成后可测试匹配效果"
+            description="点击右上角「测试匹配」弹出测试窗口，用真实问法验证 keywords / patterns；未命中可 LLM 优化并回填。"
+          />
+
           {watchedCapabilityType === 'action' && (
             <Form.Item
               label="Tool 类型过滤（toolKind，可选）"
@@ -610,6 +794,111 @@ export default function RoutingRulesPage() {
           )}
         </Form>
       </Drawer>
+
+      <Modal
+        title={
+          <Space>
+            <ExperimentOutlined className="text-[#1677ff]" />
+            <span>匹配条件测试</span>
+          </Space>
+        }
+        open={condTestModalOpen}
+        onCancel={() => setCondTestModalOpen(false)}
+        width={520}
+        destroyOnClose={false}
+        footer={
+          <Space wrap>
+            <Button onClick={() => setCondTestModalOpen(false)}>关闭</Button>
+            <Button
+              type="primary"
+              icon={<ExperimentOutlined />}
+              loading={condTestLoading}
+              onClick={() => void handleCondTest()}
+            >
+              测试匹配
+            </Button>
+            <Button
+              icon={<ThunderboltOutlined />}
+              loading={condOptimizeLoading}
+              disabled={!condTestInput.trim()}
+              onClick={() => void handleCondOptimize()}
+              style={{ background: '#fa8c16', borderColor: '#fa8c16', color: '#fff' }}
+            >
+              LLM 优化条件
+            </Button>
+          </Space>
+        }
+      >
+        <Typography.Paragraph type="secondary" className="!mb-3 text-xs">
+          用真实用户问法测试当前表单中的 keywords / patterns / intents（子串 + 正则，与路由引擎一致）。
+        </Typography.Paragraph>
+        <Input.TextArea
+          rows={3}
+          placeholder="例如：小视科技的张三考的咋样啊"
+          value={condTestInput}
+          onChange={(e) => {
+            setCondTestInput(e.target.value);
+            setCondTestResult(undefined);
+            setCondOptimizeRationale(null);
+            setCondOptimizeWarnings([]);
+          }}
+          disabled={condTestLoading || condOptimizeLoading}
+        />
+        {condTestResult && (
+          <Alert
+            className="mt-4"
+            type={condTestResult.hit ? 'success' : 'error'}
+            showIcon
+            message={
+              condTestResult.hit
+                ? `命中（得分 ${condTestResult.score}）`
+                : `未命中（得分 ${condTestResult.score}）`
+            }
+            description={
+              <div className="text-xs">
+                {condTestResult.matchedKeywords.length > 0 && (
+                  <div>关键词：{condTestResult.matchedKeywords.join('、')}</div>
+                )}
+                {condTestResult.matchedPatterns.length > 0 && (
+                  <div>正则：{condTestResult.matchedPatterns.join('、')}</div>
+                )}
+                {condTestResult.matchedIntents.length > 0 && (
+                  <div>意图：{condTestResult.matchedIntents.join('、')}</div>
+                )}
+                {condTestResult.invalidPatterns.length > 0 && (
+                  <div className="text-orange-600">
+                    无效正则：{condTestResult.invalidPatterns.join('；')}
+                  </div>
+                )}
+                {!condTestResult.hit &&
+                  condTestResult.matchedKeywords.length === 0 &&
+                  condTestResult.matchedPatterns.length === 0 &&
+                  condTestResult.matchedIntents.length === 0 && (
+                    <div>当前条件与测试输入无子串/正则匹配，可点击「LLM 优化条件」自动增补。</div>
+                  )}
+              </div>
+            }
+          />
+        )}
+        {condOptimizeRationale && (
+          <Alert className="mt-3" type="info" showIcon message={condOptimizeRationale} />
+        )}
+        {condOptimizeWarnings.length > 0 && (
+          <Alert
+            className="mt-2"
+            type="warning"
+            showIcon
+            message="优化提示"
+            description={
+              <ul className="mb-0 pl-4">
+                {condOptimizeWarnings.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            }
+          />
+        )}
+      </Modal>
     </>
   );
 }

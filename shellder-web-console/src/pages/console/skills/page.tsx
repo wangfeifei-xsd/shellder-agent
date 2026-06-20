@@ -30,7 +30,7 @@ import {
   withNowrap,
 } from '@/components/console/tableEllipsis';
 import { useActiveTenant } from '@/components/console/ActiveTenantContext';
-import { Tool, listTools } from '@/lib/tool';
+import { Tool, fetchAllTools } from '@/lib/tool';
 import {
   CAPABILITY_TYPE_META,
   CAPABILITY_TYPE_OPTIONS,
@@ -170,8 +170,8 @@ export default function SkillPage() {
   const loadTools = useCallback(async () => {
     if (!activeTenantId) return;
     try {
-      const res = await listTools({ tenantId: activeTenantId, pageSize: 200 });
-      setTools(res.items);
+      const items = await fetchAllTools({ tenantId: activeTenantId });
+      setTools(items);
     } catch { setTools([]); }
   }, [activeTenantId]);
 

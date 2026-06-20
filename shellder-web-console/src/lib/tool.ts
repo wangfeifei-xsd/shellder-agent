@@ -203,6 +203,29 @@ type QueryParams = Record<string, string | number | undefined | null>;
 
 const BASE = '/api/v1/tools';
 
+/** 后端 listTools 的 pageSize 上限为 100 */
+const TOOL_LIST_PAGE_SIZE = 100;
+
+export type ListToolsQuery = Parameters<typeof listTools>[0];
+
+/** 分页拉取租户下全部工具（用于下拉选项等需全量数据的场景） */
+export async function fetchAllTools(
+  query: Omit<NonNullable<ListToolsQuery>, 'page' | 'pageSize'> = {},
+): Promise<Tool[]> {
+  const all: Tool[] = [];
+  let page = 1;
+  let total = 0;
+
+  do {
+    const res = await listTools({ ...query, page, pageSize: TOOL_LIST_PAGE_SIZE });
+    total = res.total;
+    all.push(...res.items);
+    page += 1;
+  } while (all.length < total);
+
+  return all;
+}
+
 export function listTools(
   query: {
     tenantId?: string;

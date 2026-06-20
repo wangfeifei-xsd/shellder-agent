@@ -28,6 +28,8 @@ export const MENU_PERMISSION_KEY: Record<string, string> = {
   '/': 'workbench',
   knowledge: 'knowledge',
   query: 'query',
+  connector: 'connector',
+  tool: 'tool',
   prompt: 'prompt',
   session: 'session',
   capability: 'capability',
@@ -39,8 +41,6 @@ export const MENU_PERMISSION_KEY: Record<string, string> = {
   task: 'task',
   routing: 'routing',
   skill: 'skill',
-  tool: 'tool',
-  connector: 'connector',
   rule: 'rule',
   approval: 'approval',
   audit: 'audit',
@@ -80,6 +80,31 @@ export const consoleMenuItems: MenuProps['items'] = [
         key: '/query/channel-debug',
         label: <Link to="/query/channel-debug">通道调试</Link>,
       },
+    ],
+  },
+  {
+    key: 'connector',
+    icon: <CloudServerOutlined />,
+    label: '连接器管理',
+    children: [{ key: '/connectors', label: <Link to="/connectors">连接器列表</Link> }],
+  },
+  {
+    key: 'tool',
+    icon: <ToolOutlined />,
+    label: '工具管理',
+    children: [
+      { key: '/tools/http-query', label: <Link to="/tools/http-query">查询工具</Link> },
+      { key: '/tools', label: <Link to="/tools">工具列表</Link> },
+    ],
+  },
+  {
+    key: 'routing',
+    icon: <ApartmentOutlined />,
+    label: '能力路由',
+    children: [
+      { key: '/routing/rules', label: <Link to="/routing/rules">路由规则</Link> },
+      { key: '/routing/test', label: <Link to="/routing/test">路由测试</Link> },
+      { key: '/routing/capabilities', label: <Link to="/routing/capabilities">能力目录</Link> },
     ],
   },
   {
@@ -163,16 +188,6 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
-    key: 'routing',
-    icon: <ApartmentOutlined />,
-    label: '能力路由',
-    children: [
-      { key: '/routing/rules', label: <Link to="/routing/rules">路由规则</Link> },
-      { key: '/routing/test', label: <Link to="/routing/test">路由测试</Link> },
-      { key: '/routing/capabilities', label: <Link to="/routing/capabilities">能力目录</Link> },
-    ],
-  },
-  {
     key: 'skill',
     icon: <BookOutlined />,
     label: '技能书管理（实验中）',
@@ -180,21 +195,6 @@ export const consoleMenuItems: MenuProps['items'] = [
       { key: '/skills', label: <Link to="/skills">技能书列表</Link> },
       { key: '/skills/executions', label: <Link to="/skills/executions">调用记录</Link> },
     ],
-  },
-  {
-    key: 'tool',
-    icon: <ToolOutlined />,
-    label: '工具管理',
-    children: [
-      { key: '/tools/http-query', label: <Link to="/tools/http-query">查询工具</Link> },
-      { key: '/tools', label: <Link to="/tools">工具列表</Link> },
-    ],
-  },
-  {
-    key: 'connector',
-    icon: <CloudServerOutlined />,
-    label: '连接器管理（实验中）',
-    children: [{ key: '/connectors', label: <Link to="/connectors">连接器列表</Link> }],
   },
   {
     key: 'rule',

@@ -222,6 +222,55 @@ export function suggestRoutingRuleWithAi(input: {
   });
 }
 
+/** conditions 即时匹配测试结果 */
+export interface RoutingConditionsTestResult {
+  score: number;
+  hit: boolean;
+  matchedKeywords: string[];
+  matchedPatterns: string[];
+  matchedIntents: string[];
+  invalidPatterns: string[];
+}
+
+export function testRoutingConditions(input: {
+  tenantId: string;
+  input: string;
+  conditions: RoutingConditions;
+}) {
+  return apiFetch<RoutingConditionsTestResult>(`${RULE_BASE}/test-conditions`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
+/** LLM 优化后的 conditions */
+export interface RoutingConditionsOptimizeResult {
+  keywords: string[];
+  patterns: string[];
+  intents: string[];
+  rationale: string;
+  warnings?: string[];
+  previewScore: number;
+  previewHit: boolean;
+  matchedKeywords: string[];
+  matchedPatterns: string[];
+  matchedIntents: string[];
+}
+
+export function optimizeRoutingConditionsWithAi(input: {
+  tenantId: string;
+  capabilityId: string;
+  testInput: string;
+  conditions: RoutingConditions;
+  ruleName?: string;
+  ruleDescription?: string;
+}) {
+  return apiFetch<RoutingConditionsOptimizeResult>(`${RULE_BASE}/ai-optimize-conditions`, {
+    method: 'POST',
+    body: input,
+  });
+}
+
 // ── 路由测试 API ─────────────────────────────────────────
 
 export function testRouting(input: {

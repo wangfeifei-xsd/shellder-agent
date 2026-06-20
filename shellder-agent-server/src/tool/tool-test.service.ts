@@ -139,7 +139,10 @@ export class ToolTestService {
             executed: false,
             status: 'failed',
             durationMs: 0,
-            message: '入参未通过 inputSchema 校验，未执行调用',
+            message:
+              inputValidation.errors.length > 0
+                ? `入参未通过 inputSchema 校验，未执行调用：${inputValidation.errors.join('；')}`
+                : '入参未通过 inputSchema 校验，未执行调用',
           };
         }
         return this.executeQueryViaTemplate(user, tool, params, decision, inputValidation);

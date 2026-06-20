@@ -12,6 +12,11 @@ import {
   RoutingCandidate,
   RoutingTestResult,
 } from './dto/routing-test.dto';
+import {
+  evaluateRoutingConditions,
+  RoutingConditionsMatchDetail,
+  RoutingConditionsShape,
+} from './routing-conditions.util';
 
 /** 路由规则 conditions DSL 结构 */
 interface RoutingConditions {
@@ -420,40 +425,16 @@ export class RoutingEngineService {
 
   // ── 匹配算法 ────────────────────────────────────────────
 
+  /**  dry-run：仅评估 conditions 与输入的匹配（供规则编辑页即时测试） */
+  evaluateConditions(
+    input: string,
+    conditions: RoutingConditionsShape,
+  ): RoutingConditionsMatchDetail {
+    return evaluateRoutingConditions(input, conditions);
+  }
+
   private calculateScore(input: string, conditions: RoutingConditions): number {
-    let score = 0;
-    const lowerInput = input.toLowerCase();
-
-    if (conditions.keywords && conditions.keywords.length > 0) {
-      for (const kw of conditions.keywords) {
-        if (lowerInput.includes(kw.toLowerCase())) {
-          score += 10;
-        }
-      }
-    }
-
-    if (conditions.patterns && conditions.patterns.length > 0) {
-      for (const pattern of conditions.patterns) {
-        try {
-          const re = new RegExp(pattern, 'i');
-          if (re.test(input)) {
-            score += 20;
-          }
-        } catch {
-          // 无效正则跳过
-        }
-      }
-    }
-
-    if (conditions.intents && conditions.intents.length > 0) {
-      for (const intent of conditions.intents) {
-        if (lowerInput.includes(intent.toLowerCase())) {
-          score += 15;
-        }
-      }
-    }
-
-    return score;
+    return evaluateRoutingConditions(input, conditions).score;
   }
 
   /** 无规则命中时，按内置关键词启发式推断能力类型 */

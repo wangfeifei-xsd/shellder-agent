@@ -87,13 +87,17 @@ export class ToolInvocationService {
         highRisk: decision.highRisk,
         summary: `入参 schema 校验未通过：${inputValidation.errors.join('；')}`,
       });
+      const detail =
+        inputValidation.errors.length > 0
+          ? `：${inputValidation.errors.join('；')}`
+          : '';
       return {
         policy: decision,
         inputValidation,
         executed: false,
         status: 'failed',
         durationMs: 0,
-        message: '入参未通过 inputSchema 校验，未执行调用',
+        message: `入参未通过 inputSchema 校验，未执行调用${detail}`,
       };
     }
 

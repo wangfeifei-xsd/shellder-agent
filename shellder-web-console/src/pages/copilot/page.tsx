@@ -71,26 +71,40 @@ const STREAMING_MSG_ID = '__streaming__';
 
 const CAPABILITY_META: Record<
   CapabilityTypeKey,
-  { label: string; activeClass: string; icon: React.ReactNode }
+  {
+    label: string;
+    activeClass: string;
+    idleClass: string;
+    hoverClass: string;
+    icon: React.ReactNode;
+  }
 > = {
   qa: {
     label: '问答',
-    activeClass: 'border-cyan-500 bg-cyan-50 text-cyan-700 shadow-sm',
+    activeClass: 'border-emerald-500 bg-emerald-500 text-white shadow-sm',
+    idleClass: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    hoverClass: 'hover:border-emerald-300 hover:bg-emerald-100',
     icon: <MessageOutlined />,
   },
   query: {
     label: '查询',
-    activeClass: 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm',
+    activeClass: 'border-sky-500 bg-sky-500 text-white shadow-sm',
+    idleClass: 'border-sky-200 bg-sky-50 text-sky-700',
+    hoverClass: 'hover:border-sky-300 hover:bg-sky-100',
     icon: <SearchOutlined />,
   },
   action: {
     label: '操作',
-    activeClass: 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm',
+    activeClass: 'border-amber-500 bg-amber-500 text-white shadow-sm',
+    idleClass: 'border-amber-200 bg-amber-50 text-amber-700',
+    hoverClass: 'hover:border-amber-300 hover:bg-amber-100',
     icon: <ThunderboltOutlined />,
   },
   workflow: {
     label: '流程',
-    activeClass: 'border-purple-500 bg-purple-50 text-purple-700 shadow-sm',
+    activeClass: 'border-violet-500 bg-violet-500 text-white shadow-sm',
+    idleClass: 'border-violet-200 bg-violet-50 text-violet-700',
+    hoverClass: 'hover:border-violet-300 hover:bg-violet-100',
     icon: <NodeIndexOutlined />,
   },
 };
@@ -136,7 +150,6 @@ export default function CopilotPage() {
   const [streaming, setStreaming] = useState(false);
   const [inlineConfirm, setInlineConfirm] = useState<PendingInlineConfirm | null>(null);
   const [pendingClarify, setPendingClarify] = useState<PendingCapabilityClarify | null>(null);
-  const [capabilityCollapsed, setCapabilityCollapsed] = useState(true);
 
   const routingMode: CopilotRoutingMode = resolveCopilotRoutingMode(config);
   const showCapabilitySelector = resolveShowCapabilitySelector(config, routingMode);
@@ -646,8 +659,6 @@ export default function CopilotPage() {
             selectedCapabilityType={selectedCapabilityType}
             routingMode={routingMode}
             showCapabilitySelector={showCapabilitySelector}
-            capabilityCollapsed={capabilityCollapsed}
-            onCapabilityCollapsedChange={setCapabilityCollapsed}
             sending={sending}
             streaming={streaming}
             config={config}
@@ -710,8 +721,6 @@ function ChatPanel({
   selectedCapabilityType,
   routingMode,
   showCapabilitySelector,
-  capabilityCollapsed,
-  onCapabilityCollapsedChange,
   sending,
   streaming,
   config,
@@ -733,8 +742,6 @@ function ChatPanel({
   selectedCapabilityType: CapabilityTypeKey | null;
   routingMode: CopilotRoutingMode;
   showCapabilitySelector: boolean;
-  capabilityCollapsed: boolean;
-  onCapabilityCollapsedChange: (v: boolean) => void;
   sending: boolean;
   streaming: boolean;
   config: CopilotConfig | null;
@@ -755,13 +762,11 @@ function ChatPanel({
     routingMode === 'pinned' && !sessionId && !selectedCapabilityType;
   const selectorLocked =
     routingMode === 'pinned' || (routingMode !== 'hybrid' && !!sessionId);
-  const showCollapsedToggle =
-    routingMode === 'auto' && !showCapabilitySelector && !sessionId;
-  const showSelectorPanel =
+  const showCapabilityPicker =
     showCapabilitySelector ||
     routingMode === 'pinned' ||
     routingMode === 'hybrid' ||
-    (!capabilityCollapsed && showCollapsedToggle);
+    (routingMode === 'auto' && !sessionId);
 
   return (
     <div className="flex h-full flex-col">
@@ -861,28 +866,19 @@ function ChatPanel({
       </Modal>
 
       <div className="border-t bg-gray-50/80 p-3">
-        {showCollapsedToggle && (
-          <button
-            type="button"
-            className="mb-2 text-xs text-gray-500 hover:text-gray-700"
-            onClick={() => onCapabilityCollapsedChange(!capabilityCollapsed)}
-          >
-            {capabilityCollapsed ? '指定能力 ▸' : '指定能力 ▾'}
-          </button>
-        )}
-        {showSelectorPanel && (
-          <CapabilityTypeSelector
-            selected={selectedCapabilityType}
-            locked={selectorLocked}
-            readOnly={routingMode === 'pinned' && !!sessionId}
-            onChange={onCapabilityTypeChange}
-          />
-        )}
-        {routingMode === 'pinned' && selectedCapabilityType && sessionId && (
+        {showCapabilityPicker && (
           <div className="mb-2">
-            <Tag color="purple">
-              已锁定：{CAPABILITY_META[selectedCapabilityType].label}
-            </Tag>
+            <CapabilityTypeSelector
+              selected={selectedCapabilityType}
+              locked={selectorLocked}
+              readOnly={routingMode === 'pinned' && !!sessionId}
+              onChange={onCapabilityTypeChange}
+            />
+            {requiresCapabilityBeforeSend && (
+              <p className="mt-1 text-center text-[11px] text-amber-600">
+                发送前请先选择能力类型
+              </p>
+            )}
           </div>
         )}
         <div className="flex gap-2">
@@ -973,7 +969,7 @@ function CapabilityTypeSelector({
   onChange: (v: CapabilityTypeKey) => void;
 }) {
   return (
-    <div className="mb-2 grid grid-cols-4 gap-1 rounded-lg bg-white p-0.5 shadow-sm ring-1 ring-gray-200/80">
+    <div className="grid grid-cols-4 gap-1">
       {CAPABILITY_OPTIONS.map((opt) => {
         const isActive = selected === opt.value;
         const disabled = readOnly || (locked && !isActive);
@@ -990,14 +986,13 @@ function CapabilityTypeSelector({
                 disabled={disabled}
                 onClick={() => onChange(opt.value)}
                 className={[
-                  'flex h-8 w-full items-center justify-center rounded-md border text-sm transition-all',
+                  'flex w-full flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1.5 text-xs transition-all',
                   'disabled:cursor-not-allowed disabled:opacity-45',
-                  isActive
-                    ? opt.activeClass
-                    : 'border-transparent text-gray-600 hover:bg-gray-50 hover:text-gray-800',
+                  isActive ? opt.activeClass : [opt.idleClass, opt.hoverClass].join(' '),
                 ].join(' ')}
               >
-                {opt.icon}
+                <span className="text-sm leading-none">{opt.icon}</span>
+                <span className="text-[10px] leading-none">{opt.label}</span>
               </button>
             </span>
           </Tooltip>

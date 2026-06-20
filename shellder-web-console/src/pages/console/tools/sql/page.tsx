@@ -34,7 +34,7 @@ import {
   Nl2SqlPreviewResult,
   QueryE2ePreviewResult,
   getTool,
-  listTools,
+  fetchAllTools,
   nl2sqlPreviewTool,
   queryE2ePreviewTool,
   updateTool,
@@ -85,9 +85,9 @@ export default function SqlToolPage() {
     try {
       const [connectorRes, toolRes] = await Promise.all([
         listConnectors({ tenantId: activeTenantId, type: 'db_readonly', pageSize: 100 }),
-        listTools({ tenantId: activeTenantId, type: 'query', pageSize: 200 }),
+        fetchAllTools({ tenantId: activeTenantId, type: 'query' }),
       ]);
-      const queryTools = toolRes.items.filter((t) => t.type === 'query');
+      const queryTools = toolRes.filter((t) => t.type === 'query');
       const byConnector: Record<string, Tool[]> = {};
       for (const t of queryTools) {
         if (!t.connectorId) continue;
