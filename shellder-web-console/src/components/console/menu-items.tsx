@@ -151,6 +151,26 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'audit',
+    icon: <AuditOutlined />,
+    label: '审计中心',
+    children: [
+      { key: '/audit', label: <Link to="/audit">工具调用审计</Link> },
+      {
+        key: '/audit/user-actions',
+        label: <Link to="/audit/user-actions">用户操作审计</Link>,
+      },
+      {
+        key: '/audit/external-calls',
+        label: <Link to="/audit/external-calls">外部接口审计</Link>,
+      },
+      {
+        key: '/audit/risk-actions',
+        label: <Link to="/audit/risk-actions">风险动作审计</Link>,
+      },
+    ],
+  },
+  {
     key: 'user',
     icon: <TeamOutlined />,
     label: '用户与权限',
@@ -212,26 +232,6 @@ export const consoleMenuItems: MenuProps['items'] = [
     children: [
       { key: '/approvals', label: <Link to="/approvals">待确认列表</Link> },
       { key: '/approvals/history', label: <Link to="/approvals/history">审批记录</Link> },
-    ],
-  },
-  {
-    key: 'audit',
-    icon: <AuditOutlined />,
-    label: '审计中心（实验中）',
-    children: [
-      { key: '/audit', label: <Link to="/audit">工具调用审计</Link> },
-      {
-        key: '/audit/user-actions',
-        label: <Link to="/audit/user-actions">用户操作审计</Link>,
-      },
-      {
-        key: '/audit/external-calls',
-        label: <Link to="/audit/external-calls">外部接口审计</Link>,
-      },
-      {
-        key: '/audit/risk-actions',
-        label: <Link to="/audit/risk-actions">风险动作审计</Link>,
-      },
     ],
   },
 ];

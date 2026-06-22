@@ -24,6 +24,7 @@ export const MENU_CATALOG = [
   { key: 'capability', label: '业务调试' },
   { key: 'copilot', label: '嵌入式 Copilot' },
   { key: 'openapi', label: 'OpenAPI 管理' },
+  { key: 'audit', label: '审计中心' },
   { key: 'user', label: '用户与权限' },
   { key: 'tenant', label: '租户管理' },
   { key: 'settings', label: '系统设置' },
@@ -31,7 +32,6 @@ export const MENU_CATALOG = [
   { key: 'skill', label: '技能书管理（实验中）' },
   { key: 'rule', label: '规则（实验中）' },
   { key: 'approval', label: '审批中心（实验中）' },
-  { key: 'audit', label: '审计中心（实验中）' },
 ] as const;
 
 export type MenuKey = (typeof MENU_CATALOG)[number]['key'];
@@ -57,7 +57,7 @@ export const MODULE_CATALOG = [
   { key: 'skill.manage', label: '技能书管理（实验中）' },
   { key: 'rule.manage', label: '规则配置（实验中）' },
   { key: 'approval.handle', label: '审批中心（实验中）' },
-  { key: 'audit.view', label: '审计中心（实验中）' },
+  { key: 'audit.view', label: '审计中心' },
 ] as const;
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]['key'];
