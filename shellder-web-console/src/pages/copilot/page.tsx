@@ -19,6 +19,7 @@ import {
   ProfileOutlined,
   DeleteOutlined,
   EditOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import type {
   CapabilityTypeKey,
@@ -117,8 +118,20 @@ type CopilotTab = 'chat' | 'history' | 'confirmations' | 'tasks';
 
 interface PendingInlineConfirm {
   approvalId: string;
+  messageId?: string;
   reason: string;
   toolName?: string;
+}
+
+async function resolvePendingApprovalId(
+  authToken: string,
+  sessionId: string | null,
+  hint?: PendingInlineConfirm | null,
+): Promise<string | null> {
+  if (hint?.approvalId) return hint.approvalId;
+  if (!sessionId) return null;
+  const items = await copilotListConfirmations(authToken, 'pending');
+  return items.find((c) => c.sessionId === sessionId)?.id ?? null;
 }
 
 interface PendingCapabilityClarify {
@@ -149,6 +162,7 @@ export default function CopilotPage() {
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [inlineConfirm, setInlineConfirm] = useState<PendingInlineConfirm | null>(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
   const [pendingClarify, setPendingClarify] = useState<PendingCapabilityClarify | null>(null);
 
   const routingMode: CopilotRoutingMode = resolveCopilotRoutingMode(config);
@@ -253,6 +267,29 @@ export default function CopilotPage() {
     setSessionTasks(detail.tasks ?? []);
     return detail;
   }, []);
+
+  const hydrateInlineConfirm = useCallback(
+    async (sid: string, authToken: string, base?: PendingInlineConfirm | null) => {
+      try {
+        const items = await copilotListConfirmations(authToken, 'pending');
+        const pending = items.find((c) => c.sessionId === sid);
+        if (!pending) return;
+        setInlineConfirm((prev) => {
+          const seed = base ?? prev;
+          if (!seed && !pending) return null;
+          return {
+            approvalId: seed?.approvalId || pending.id,
+            messageId: seed?.messageId,
+            reason: seed?.reason ?? pending.impactScope ?? '需要人工确认',
+            toolName: seed?.toolName ?? pending.actionType,
+          };
+        });
+      } catch {
+        // 列表拉取失败时保留 SSE 已展示的状态
+      }
+    },
+    [],
+  );
 
   const ensureSession = useCallback(async () => {
     const authToken = tokenRef.current;
@@ -394,11 +431,16 @@ export default function CopilotPage() {
           }
         }
         if (type === 'confirm_required') {
-          setInlineConfirm({
+          const pending: PendingInlineConfirm = {
             approvalId: String(data.approvalId ?? ''),
+            messageId: data.messageId ? String(data.messageId) : undefined,
             reason: String(data.reason ?? '需要人工确认'),
             toolName: data.toolName ? String(data.toolName) : undefined,
-          });
+          };
+          setInlineConfirm(pending);
+          if (!pending.approvalId) {
+            void hydrateInlineConfirm(sid, authToken, pending);
+          }
           setStreaming(false);
         }
         if (type === 'done') {
@@ -411,6 +453,9 @@ export default function CopilotPage() {
                 if (cap === 'qa' || cap === 'query' || cap === 'action' || cap === 'workflow') {
                   setSelectedCapabilityType(cap);
                 }
+              }
+              if (detail.status === 'pending_confirm') {
+                void hydrateInlineConfirm(sid, authToken);
               }
             })
             .catch(() => {});
@@ -471,18 +516,30 @@ export default function CopilotPage() {
       setInlineConfirm(null);
       connectSSE(sid, authToken, (type, data) => {
         if (type === 'confirm_required') {
-          setInlineConfirm({
+          const pending: PendingInlineConfirm = {
             approvalId: String(data.approvalId ?? ''),
+            messageId: data.messageId ? String(data.messageId) : undefined,
             reason: String(data.reason ?? '需要人工确认'),
             toolName: data.toolName ? String(data.toolName) : undefined,
-          });
+          };
+          setInlineConfirm(pending);
+          if (!pending.approvalId) {
+            void hydrateInlineConfirm(sid, authToken, pending);
+          }
         }
         if (type === 'done') {
-          void refreshSessionDetail(sid, authToken).catch(() => {});
+          void refreshSessionDetail(sid, authToken)
+            .then((detail) => {
+              if (detail.status === 'pending_confirm') {
+                void hydrateInlineConfirm(sid, authToken);
+              }
+            })
+            .catch(() => {});
         }
       });
       if (detail.status === 'pending_confirm') {
         void loadConfirmations();
+        void hydrateInlineConfirm(sid, authToken);
       }
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : '恢复会话失败');
@@ -553,6 +610,7 @@ export default function CopilotPage() {
   const handleConfirm = async (id: string, action: 'approve' | 'reject') => {
     const authToken = tokenRef.current;
     if (!authToken) return;
+    setConfirmSubmitting(true);
     try {
       await copilotSubmitConfirmation(authToken, id, action);
       message.success(action === 'approve' ? '已确认执行' : '已取消执行');
@@ -561,6 +619,26 @@ export default function CopilotPage() {
       if (sessionId) {
         await refreshSessionDetail(sessionId, authToken);
       }
+    } catch (e: unknown) {
+      message.error(e instanceof Error ? e.message : '操作失败');
+    } finally {
+      setConfirmSubmitting(false);
+    }
+  };
+
+  const handleInlineConfirm = async (action: 'approve' | 'reject') => {
+    const authToken = tokenRef.current;
+    if (!authToken) {
+      message.error('未获取到 Copilot 凭证');
+      return;
+    }
+    try {
+      const approvalId = await resolvePendingApprovalId(authToken, sessionId, inlineConfirm);
+      if (!approvalId) {
+        message.error('未找到待确认记录，请刷新页面或在「待确认」页操作');
+        return;
+      }
+      await handleConfirm(approvalId, action);
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : '操作失败');
     }
@@ -663,6 +741,7 @@ export default function CopilotPage() {
             streaming={streaming}
             config={config}
             inlineConfirm={inlineConfirm}
+            confirmSubmitting={confirmSubmitting}
             pendingClarify={pendingClarify}
             onDismissClarify={() => setPendingClarify(null)}
             onClarifyReset={() => {
@@ -670,9 +749,7 @@ export default function CopilotPage() {
               resetCurrentSession({ resetCapabilityType: true });
             }}
             onInlineConfirm={(action) => {
-              if (inlineConfirm?.approvalId) {
-                void handleConfirm(inlineConfirm.approvalId, action);
-              }
+              void handleInlineConfirm(action);
             }}
             onInputChange={setInputValue}
             onCapabilityTypeChange={(type) => {
@@ -725,6 +802,7 @@ function ChatPanel({
   streaming,
   config,
   inlineConfirm,
+  confirmSubmitting,
   pendingClarify,
   onDismissClarify,
   onClarifyReset,
@@ -746,6 +824,7 @@ function ChatPanel({
   streaming: boolean;
   config: CopilotConfig | null;
   inlineConfirm: PendingInlineConfirm | null;
+  confirmSubmitting: boolean;
   pendingClarify: PendingCapabilityClarify | null;
   onDismissClarify: () => void;
   onClarifyReset: () => void;
@@ -806,7 +885,10 @@ function ChatPanel({
         {routingResult && (
           <RoutingResultBanner routing={routingResult} />
         )}
-        {messages.filter((msg) => !isHiddenCopilotChatMessage(msg)).map((msg) => (
+        {messages
+          .filter((msg) => !isHiddenCopilotChatMessage(msg))
+          .filter((msg) => !(inlineConfirm && msg.type === 'confirmation'))
+          .map((msg) => (
           <MessageBubble
             key={msg.id}
             token={token}
@@ -815,21 +897,12 @@ function ChatPanel({
           />
         ))}
         {inlineConfirm && (
-          <Alert
-            type="warning"
-            showIcon
-            message={inlineConfirm.toolName ? `待确认：${inlineConfirm.toolName}` : '待确认操作'}
-            description={inlineConfirm.reason}
-            action={
-              <div className="flex gap-2">
-                <Button size="small" danger onClick={() => onInlineConfirm('reject')}>
-                  取消
-                </Button>
-                <Button size="small" type="primary" onClick={() => onInlineConfirm('approve')}>
-                  确认执行
-                </Button>
-              </div>
-            }
+          <InlineConfirmCard
+            toolName={inlineConfirm.toolName}
+            reason={inlineConfirm.reason}
+            confirmSubmitting={confirmSubmitting}
+            onReject={() => onInlineConfirm('reject')}
+            onConfirm={() => onInlineConfirm('approve')}
           />
         )}
         <div ref={messagesEndRef} />
@@ -954,6 +1027,67 @@ function ChatAvatar({ role }: { role: 'user' | 'assistant' }) {
       }}
       icon={isUser ? <UserOutlined className="text-sm" /> : <RobotOutlined className="text-sm" />}
     />
+  );
+}
+
+function InlineConfirmCard({
+  toolName,
+  reason,
+  confirmSubmitting,
+  onConfirm,
+  onReject,
+}: {
+  toolName?: string;
+  reason: string;
+  confirmSubmitting: boolean;
+  onConfirm: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <ChatAvatar role="assistant" />
+      <div className="min-w-0 max-w-[calc(100%-3rem)] flex-1">
+        <div className="overflow-hidden rounded-2xl rounded-tl-sm bg-white shadow-sm ring-1 ring-amber-200/70">
+          <div className="flex items-start gap-3 border-b border-amber-100/80 bg-gradient-to-br from-amber-50 via-white to-orange-50/40 px-4 py-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-600 shadow-sm">
+              <SafetyCertificateOutlined className="text-lg" />
+            </div>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-slate-800">需要您的确认</span>
+                <Tag
+                  bordered={false}
+                  className="m-0 rounded-md bg-amber-100 px-1.5 py-0 text-[11px] leading-5 text-amber-700"
+                >
+                  待确认
+                </Tag>
+              </div>
+              <p className="mt-1.5 text-[15px] font-medium leading-snug text-slate-900">
+                {toolName ?? '待确认操作'}
+              </p>
+            </div>
+          </div>
+          {reason ? (
+            <p className="border-b border-slate-100 px-4 py-2.5 text-xs leading-relaxed text-slate-500">
+              {reason}
+            </p>
+          ) : null}
+          <div className="flex items-center justify-end gap-2 bg-slate-50/80 px-4 py-3">
+            <Button size="small" disabled={confirmSubmitting} onClick={onReject}>
+              取消
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              loading={confirmSubmitting}
+              onClick={onConfirm}
+            >
+              确认执行
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

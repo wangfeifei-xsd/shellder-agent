@@ -4,6 +4,7 @@ import { ExperimentOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/ic
 import {
   Alert,
   App,
+  AutoComplete,
   Button,
   Descriptions,
   Drawer,
@@ -49,6 +50,7 @@ import {
   updateRule,
   updateRuleStatus,
 } from '@/lib/rule';
+import { Tool, TOOL_TYPE_META, fetchAllTools } from '@/lib/tool';
 
 const fmt = (s: string) => new Date(s).toLocaleString('zh-CN');
 
@@ -132,6 +134,9 @@ export default function RuleConfigPage() {
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
 
+  const [tools, setTools] = useState<Tool[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(false);
+
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<Rule | undefined>();
   const [submitting, setSubmitting] = useState(false);
@@ -165,6 +170,32 @@ export default function RuleConfigPage() {
     void load();
   }, [load]);
 
+  const loadTools = useCallback(async () => {
+    if (!activeTenantId) {
+      setTools([]);
+      return;
+    }
+    setToolsLoading(true);
+    try {
+      const items = await fetchAllTools({ tenantId: activeTenantId });
+      setTools(items);
+    } catch (err) {
+      setTools([]);
+      message.error(err instanceof Error ? err.message : '加载工具列表失败');
+    } finally {
+      setToolsLoading(false);
+    }
+  }, [activeTenantId, message]);
+
+  const toolNameOptions = useMemo(
+    () =>
+      tools.map((t) => ({
+        value: t.name,
+        label: `${t.name}（${TOOL_TYPE_META[t.type].label}${t.status === 'disabled' ? ' · 已停用' : ''}）`,
+      })),
+    [tools],
+  );
+
   const openCreate = () => {
     setEditing(undefined);
     form.resetFields();
@@ -179,6 +210,7 @@ export default function RuleConfigPage() {
       needConfirmation: 'unset',
       permissionScopes: [],
     });
+    void loadTools();
     setDrawerOpen(true);
   };
 
@@ -193,6 +225,7 @@ export default function RuleConfigPage() {
       description: rule.description ?? undefined,
       ...conditionsToForm(rule.conditions),
     } as RuleFormValues);
+    void loadTools();
     setDrawerOpen(true);
   };
 
@@ -268,6 +301,7 @@ export default function RuleConfigPage() {
     setDecision(undefined);
     evalForm.resetFields();
     evalForm.setFieldsValue({ needConfirmation: false, persistHits: true });
+    void loadTools();
     setEvalOpen(true);
   };
 
@@ -491,8 +525,26 @@ export default function RuleConfigPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item label="Tool 名称（精确，命中其一）" name="toolNames">
-            <Select mode="tags" allowClear placeholder="输入 Tool 名称，回车添加" />
+          <Form.Item
+            label="Tool 名称（精确，命中其一）"
+            name="toolNames"
+            tooltip="从当前租户已配置工具中选择，也可手动输入名称后回车"
+          >
+            <Select
+              mode="tags"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              loading={toolsLoading}
+              options={toolNameOptions}
+              placeholder={
+                toolsLoading
+                  ? '加载工具中…'
+                  : toolNameOptions.length === 0
+                    ? '当前租户暂无工具，可手动输入名称后回车'
+                    : '搜索并选择 Tool 名称，或手动输入后回车'
+              }
+            />
           </Form.Item>
           <Form.Item label="Tool 名称包含" name="toolNameContains">
             <Input allowClear placeholder="如 delete（忽略大小写）" />
@@ -542,7 +594,22 @@ export default function RuleConfigPage() {
         />
         <Form form={evalForm} layout="vertical">
           <Form.Item label="Tool 名称" name="toolName">
-            <Input allowClear placeholder="如 deleteUser" />
+            <AutoComplete
+              allowClear
+              options={toolNameOptions}
+              placeholder={
+                toolsLoading
+                  ? '加载工具中…'
+                  : toolNameOptions.length === 0
+                    ? '输入待评估的 Tool 名称'
+                    : '搜索选择或输入 Tool 名称'
+              }
+              filterOption={(input, option) =>
+                String(option?.label ?? option?.value ?? '')
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
+            />
           </Form.Item>
           <Form.Item label="风险等级" name="riskLevel">
             <Select allowClear options={RISK_LEVEL_OPTIONS} placeholder="不指定" />

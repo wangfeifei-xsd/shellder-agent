@@ -73,17 +73,24 @@ export class ApprovalService {
       },
     });
 
-    await this.notificationQueue.enqueueApprovalPending(
-      dto.tenantId,
-      approval.id,
-      {
-        actionType: approval.actionType,
-        actionSummary: approval.actionSummary ?? '',
-        initiatorName: approval.initiatorName ?? '',
-        approvalId: approval.id,
-      },
-      dto.taskId ?? undefined,
-    );
+    try {
+      await this.notificationQueue.enqueueApprovalPending(
+        dto.tenantId,
+        approval.id,
+        {
+          actionType: approval.actionType,
+          actionSummary: approval.actionSummary ?? '',
+          initiatorName: approval.initiatorName ?? '',
+          approvalId: approval.id,
+        },
+        dto.taskId ?? undefined,
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `审批待办通知入队失败 approval=${approval.id}，审批记录已创建: ${msg}`,
+      );
+    }
 
     return approval;
   }

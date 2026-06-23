@@ -3,6 +3,7 @@
 import { ReloadOutlined } from '@ant-design/icons';
 import {
   App,
+  Alert,
   Button,
   Descriptions,
   Drawer,
@@ -129,6 +130,24 @@ export default function RuleHitsPage() {
           规则命中记录
         </Typography.Title>
       </div>
+
+      {!activeTenantId ? (
+        <Alert
+          type="warning"
+          showIcon
+          className="mb-4"
+          message="请先在顶栏选择「当前操作租户」"
+          description="命中记录按租户隔离；嵌入 Copilot 测试时请确保与预览页使用同一租户。"
+        />
+      ) : (
+        <Alert
+          type="info"
+          showIcon
+          className="mb-4"
+          message="记录范围说明"
+          description="本页展示 Policy 显式规则（规则配置）的命中；路由规则触发的确认会以「[路由] 规则名」写入。能力路由规则本身不在此列表。"
+        />
+      )}
 
       <Space className="mb-4" wrap>
         <Input.Search

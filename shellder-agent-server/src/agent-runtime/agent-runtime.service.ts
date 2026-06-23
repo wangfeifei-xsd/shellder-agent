@@ -28,6 +28,7 @@ import {
   CONFIG_KEYS,
   SystemSettingsService,
 } from '../system-settings/system-settings.service';
+import { truncate } from '../audit/audit.constants';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ConfirmationActor } from '../approval/approval-runtime.types';
 import { SessionTitleService } from './session-title.service';
@@ -243,8 +244,26 @@ export class AgentRuntimeService {
         principalContext,
       };
 
-      // Step 3: 路由级确认拦截检查
+      // Step 3: 路由级确认拦截检查（嵌入 Copilot / 会话调试共用）
       if (routingResult.needConfirmation) {
+        const policyHitCount = await this.persistPolicyHitsForContext(user, {
+          tenantId,
+          sessionId,
+          userMessage,
+          capabilityType,
+          toolIds: ctx.toolIds,
+        });
+        if (policyHitCount === 0) {
+          await this.recordRoutingConfirmHit(user, {
+            tenantId,
+            sessionId,
+            userMessage,
+            capabilityType,
+            toolIds: ctx.toolIds,
+            routingRuleId: routingResult.intraStage?.ruleId,
+            routingRuleName: routingResult.intraStage?.ruleName,
+          });
+        }
         return await this.handleConfirmInterrupt(ctx, emitSse, '路由级确认');
       }
 
@@ -875,6 +894,111 @@ export class AgentRuntimeService {
     ]);
 
     return { id: message.id, seq: message.seq };
+  }
+
+  /**
+   * 写入 Policy 显式规则命中留痕（rule_hit）。
+   * 路由阶段 checkNeedConfirmation 为预览不落库；Runtime 在确认中断前/Tool 执行前应调用本方法。
+   */
+  /** @returns 本次写入的 Policy 规则命中条数 */
+  private async persistPolicyHitsForContext(
+    user: AuthUser,
+    params: {
+      tenantId: string;
+      sessionId: string;
+      userMessage: string;
+      capabilityType: string;
+      toolIds?: string[];
+    },
+  ): Promise<number> {
+    const { tenantId, sessionId, userMessage, capabilityType, toolIds } = params;
+    let hitCount = 0;
+
+    if (toolIds && toolIds.length > 0) {
+      for (const toolId of toolIds) {
+        const tool = await this.prisma.tool.findUnique({ where: { id: toolId } });
+        if (!tool) continue;
+        const decision = await this.policyService.evaluate(
+          {
+            tenantId,
+            userId: user.id,
+            callerName: user.username,
+            toolName: tool.name,
+            toolId: tool.id,
+            riskLevel: tool.riskLevel as 'low' | 'medium' | 'high',
+            needConfirmation: tool.needConfirmation,
+            capability: capabilityType,
+            permissionScope: tool.permissionScope,
+            requestSummary: userMessage,
+            sessionId,
+          },
+          { persistHits: true },
+        );
+        hitCount += decision.matchedRules.length;
+      }
+      return hitCount;
+    }
+
+    const decision = await this.policyService.evaluate(
+      {
+        tenantId,
+        userId: user.id,
+        callerName: user.username,
+        capability: capabilityType,
+        requestSummary: userMessage,
+        sessionId,
+      },
+      { persistHits: true },
+    );
+    return decision.matchedRules.length;
+  }
+
+  /** 路由规则触发的确认（无 Policy 规则命中时）写入 rule_hit 留痕 */
+  private async recordRoutingConfirmHit(
+    user: AuthUser,
+    params: {
+      tenantId: string;
+      sessionId: string;
+      userMessage: string;
+      capabilityType: string;
+      toolIds?: string[];
+      routingRuleId?: string;
+      routingRuleName?: string;
+    },
+  ): Promise<void> {
+    const { tenantId, sessionId, userMessage, capabilityType, toolIds, routingRuleName } =
+      params;
+    let toolName: string | null = null;
+    if (toolIds?.[0]) {
+      const tool = await this.prisma.tool.findUnique({
+        where: { id: toolIds[0] },
+        select: { name: true },
+      });
+      toolName = tool?.name ?? null;
+    }
+
+    try {
+      await this.prisma.ruleHit.create({
+        data: {
+          ruleId: null,
+          tenantId,
+          ruleName: routingRuleName
+            ? `[路由] ${routingRuleName}`
+            : '[路由] 需人工确认',
+          ruleType: 'custom',
+          ruleAction: 'need_confirm',
+          result: 'need_confirm',
+          toolName,
+          capability: capabilityType,
+          requestSummary: truncate(userMessage),
+          callerUserId: user.id,
+          sessionId,
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`路由级确认命中留痕失败：${message}`);
+    }
   }
 
   private withTimeout<T>(

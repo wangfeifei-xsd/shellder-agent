@@ -134,7 +134,10 @@ export class PolicyService {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`规则命中留痕失败：${message}`);
+      this.logger.error(
+        `规则命中留痕失败 tenant=${ctx.tenantId} session=${ctx.sessionId ?? '-'}: ${message}`,
+        err instanceof Error ? err.stack : undefined,
+      );
     }
   }
 }

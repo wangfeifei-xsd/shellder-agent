@@ -227,12 +227,13 @@ export class RoutingEngineService {
     }
 
     if (bestScore > 0 && matchedRule) {
-      const needConfirmation = await this.checkNeedConfirmation(
+      const policyNeedConfirm = await this.checkNeedConfirmation(
         tenantId,
         capabilityType,
         matchedToolIds,
         userId,
       );
+      const needConfirmation = matchedRule.needConfirmation || policyNeedConfirm;
       return {
         toolIds: matchedToolIds,
         ruleId: matchedRule.id,
@@ -578,6 +579,29 @@ export class RoutingEngineService {
     userId?: string,
   ): Promise<boolean> {
     try {
+      if (toolIds.length > 0) {
+        const tools = await this.prisma.tool.findMany({
+          where: { id: { in: toolIds }, tenantId, status: 'enabled' },
+        });
+        for (const tool of tools) {
+          const decision = await this.policyService.evaluate(
+            {
+              tenantId,
+              userId: userId ?? null,
+              toolId: tool.id,
+              toolName: tool.name,
+              riskLevel: tool.riskLevel as 'low' | 'medium' | 'high',
+              needConfirmation: tool.needConfirmation,
+              capability: capabilityType,
+              permissionScope: tool.permissionScope,
+            },
+            { persistHits: false },
+          );
+          if (decision.needConfirm) return true;
+        }
+        return false;
+      }
+
       const decision = await this.policyService.evaluate(
         {
           tenantId,

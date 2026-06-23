@@ -151,6 +151,24 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'rule',
+    icon: <ControlOutlined />,
+    label: '规则',
+    children: [
+      { key: '/rules', label: <Link to="/rules">规则配置</Link> },
+      { key: '/rule-hits', label: <Link to="/rule-hits">规则命中记录</Link> },
+    ],
+  },
+  {
+    key: 'approval',
+    icon: <FileProtectOutlined />,
+    label: '审批中心',
+    children: [
+      { key: '/approvals', label: <Link to="/approvals">待确认列表</Link> },
+      { key: '/approvals/history', label: <Link to="/approvals/history">审批记录</Link> },
+    ],
+  },
+  {
     key: 'audit',
     icon: <AuditOutlined />,
     label: '审计中心',
@@ -214,24 +232,6 @@ export const consoleMenuItems: MenuProps['items'] = [
     children: [
       { key: '/skills', label: <Link to="/skills">技能书列表</Link> },
       { key: '/skills/executions', label: <Link to="/skills/executions">调用记录</Link> },
-    ],
-  },
-  {
-    key: 'rule',
-    icon: <ControlOutlined />,
-    label: '规则（实验中）',
-    children: [
-      { key: '/rules', label: <Link to="/rules">规则配置</Link> },
-      { key: '/rule-hits', label: <Link to="/rule-hits">规则命中记录</Link> },
-    ],
-  },
-  {
-    key: 'approval',
-    icon: <FileProtectOutlined />,
-    label: '审批中心（实验中）',
-    children: [
-      { key: '/approvals', label: <Link to="/approvals">待确认列表</Link> },
-      { key: '/approvals/history', label: <Link to="/approvals/history">审批记录</Link> },
     ],
   },
 ];

@@ -125,8 +125,9 @@ export class ApprovalRuntimeService {
       where: { id: approval.id },
       data: {
         status: newStatus,
-        reviewerId: input.actor.id,
-        reviewerName: input.actor.name ?? null,
+        // Copilot/OpenAPI actor.id 可能为 copilot:app:externalUser，非 UUID，不可写入 CHAR(36)
+        reviewerId: this.resolveReviewerUserId(input.actor.id),
+        reviewerName: input.actor.name ?? input.actor.id,
         opinion: input.opinion ?? null,
         reviewedAt: now,
       },
@@ -458,5 +459,14 @@ export class ApprovalRuntimeService {
       ip: input.ip ?? null,
       requestId: input.requestId ?? null,
     });
+  }
+
+  /** 仅平台 user.id（UUID）写入 reviewer_id；Copilot/OpenAPI 外部主体仅存 reviewer_name */
+  private resolveReviewerUserId(actorId: string): string | null {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      actorId,
+    )
+      ? actorId
+      : null;
   }
 }
