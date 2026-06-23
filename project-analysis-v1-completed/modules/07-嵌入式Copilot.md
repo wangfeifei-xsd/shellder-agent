@@ -29,9 +29,10 @@
 | 多轮对话 | `/copilot/v1/sessions` |
 | 流式回复 | SSE `/copilot/v1/sessions/:id/stream` |
 | 四类能力 | Agent Runtime |
-| 待确认 | `/copilot/v1/confirmations` |
+| 待确认 | `/copilot/v1/confirmations`；内联确认卡片 + `POST .../confirmations/:id` |
 | 任务状态 | `/copilot/v1/tasks/:id` |
 | 历史会话 | 会话列表 API |
+| 规则命中留痕 | Runtime 路由级确认前写 `rule_hit`（见 [16-规则与Policy.md](./16-规则与Policy.md)） |
 
 ---
 
@@ -52,6 +53,8 @@
 
 - 租户：`tenantId` 或 `externalTenantId` 映射
 - 与 OpenAPI 共享 Runtime，**鉴权独立**
+- **待确认 UX**（2026-06）：聊天气泡式 `InlineConfirmCard`；`approvalId` 缺失时从 `/confirmations` 补查；确认提交 `POST /copilot/v1/confirmations/:id`
+- 路由级确认触发前 Runtime 写入 `rule_hit`（见 [16-规则与Policy.md](./16-规则与Policy.md)）
 - 详见 `docs/embedded-copilot-sequence.md`
 
 ---

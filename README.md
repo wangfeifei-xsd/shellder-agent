@@ -9,7 +9,7 @@
 
 > Shellder Agent 平台 Monorepo — 可运行的 Web 管理后台、主 API 与异步 Worker。
 
-本目录为 **shellder-agent 可运行代码根目录**（推 GitHub / 本地 `npm` / `docker compose` 均在此执行）。产品设计与架构文档见 [`project-analysis`](https://github.com/wangfeifei-xsd/shellder-agent/tree/master/project-analysis-v1-completed)。
+本仓库为 **shellder-agent 可运行代码根目录**（`npm` / `docker compose` 均在此执行）。产品与架构文档见 [project-analysis-v1-completed](project-analysis-v1-completed/README.md)（V1 已验收基线）；实验中模块的完整初始规格在内部 monorepo 的 `project-analysis/`，**未纳入本 GitHub 仓库**。
 
 ## 目录
 
@@ -48,11 +48,11 @@
 ## 仓库结构
 
 ```
-shellder-agent/
-├── shellder-web-console/    # Web 管理后台（CSR SPA）
-├── shellder-agent-server/   # 主 API（REST + SSE）
-├── shellder-job-worker/     # 异步 Worker（BullMQ）
-├── project-sql/             # 按模块交付的 SQL 演进
+├── shellder-web-console/           # Web 管理后台（CSR SPA）
+├── shellder-agent-server/          # 主 API（REST + SSE）
+├── shellder-job-worker/            # 异步 Worker（BullMQ）
+├── project-analysis-v1-completed/  # V1 已验收方案文档（二次开发入口）
+├── project-sql/                    # 按模块交付的 SQL 演进
 ├── docker-compose.yml
 ├── .env.example
 └── scripts/deploy.sh
@@ -63,6 +63,7 @@ shellder-agent/
 | `shellder-web-console` | Vite + React Router + Ant Design 管理后台 |
 | `shellder-agent-server` | NestJS + Prisma 主 API |
 | `shellder-job-worker` | NestJS + BullMQ 异步任务 |
+| `project-analysis-v1-completed/` | V1 已验收方案与模块说明（本仓库内可跳转） |
 | `project-sql/` | 按模块交付的 SQL 演进目录 |
 
 ## 前置要求
@@ -71,7 +72,7 @@ shellder-agent/
 - **npm** 10+（随 Node 自带即可）
 - **Docker & Docker Compose**（MySQL / Redis；Docker 方式也可直接起三端应用）
 
-> 以下命令均在 **`shellder-agent` 目录**执行（`cd shellder-agent`）。
+> 以下命令均在 **本仓库根目录**执行（克隆后 `cd shellder-agent` 即为此目录）。
 
 ## 快速开始
 
@@ -196,7 +197,7 @@ cd shellder-agent-server && npm run check:prompt-constants
 - 禁止新增 `src/**/*.prompt.ts`（白名单仅 `connector/er-diagram.prompt.ts`）
 - 禁止 `export const *_SYSTEM_PROMPT`
 
-规范详见 [`project-analysis/implementation-constraints.md`](../project-analysis/implementation-constraints.md) §1D。
+规范详见 [06-实施约束-已落地 §4 Prompt 管理](project-analysis-v1-completed/06-实施约束-已落地.md#4-prompt-管理1d)（对应内部 monorepo `project-analysis/implementation-constraints.md` §1D）。
 
 ### 默认管理员
 
@@ -232,7 +233,7 @@ cd shellder-agent-server && npm run check:prompt-constants
 | 问答 / 问数等业务能力 | [capabilities/](project-analysis-v1-completed/capabilities/) + [modules/02-知识库](project-analysis-v1-completed/modules/02-知识库.md) 或 [modules/03-查询型配置](project-analysis-v1-completed/modules/03-查询型配置.md) |
 | Copilot / OpenAPI 接入 | [modules/07-嵌入式Copilot](project-analysis-v1-completed/modules/07-嵌入式Copilot.md)、[modules/08-OpenAPI管理](project-analysis-v1-completed/modules/08-OpenAPI管理.md) |
 | 数据表或 ORM 变更 | [05-数据模型](project-analysis-v1-completed/05-数据模型.md) → `project-sql/` 递增 SQL → `npm run prisma:generate` |
-| 实验中菜单（任务中心、技能书等） | 侧栏标注「（实验中）」的模块**不在 V1 验收基线内**；完整规格见仓库外 [`project-analysis/`](../project-analysis/) 初始方案 |
+| 实验中菜单（任务中心、技能书等） | 侧栏标注「（实验中）」的模块**不在 V1 验收基线内**；边界见 [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围)，完整初始规格在内部 monorepo `project-analysis/`（未纳入本仓库） |
 
 ### 给 AI Agent 的使用建议
 
@@ -348,4 +349,5 @@ curl http://localhost:3001/health
 | 代码导航 | [`project-analysis-v1-completed/04-代码导航.md`](project-analysis-v1-completed/04-代码导航.md) |
 | 实施约束（已落地） | [`project-analysis-v1-completed/06-实施约束-已落地.md`](project-analysis-v1-completed/06-实施约束-已落地.md) |
 | SQL 演进 | [`project-sql/README.md`](project-sql/README.md) |
-| 初始方案（实验中模块等） | [`../project-analysis/`](../project-analysis/) |
+| 实验中模块边界 | [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围) |
+| 初始方案全文（仅内部 monorepo） | `project-analysis/`（与 `22.agent-analysis` 工作区同级，未推送到本仓库） |
