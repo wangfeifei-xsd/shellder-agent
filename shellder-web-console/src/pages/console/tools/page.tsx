@@ -29,6 +29,10 @@ import {
   withNowrap,
 } from '@/components/console/tableEllipsis';
 import { ToolTestResultView } from '@/components/console/ToolTestResultView';
+import {
+  WorkflowStepFormValue,
+  WorkflowStepsEditor,
+} from '@/components/console/WorkflowStepsEditor';
 import { Connector, listConnectors } from '@/lib/connector';
 import {
   CreateToolInput,
@@ -91,7 +95,7 @@ interface ToolFormValues {
   httpBodyMappingText?: string;
   httpResponseMappingText?: string;
   // workflow
-  workflowStepsText?: string;
+  workflowSteps?: WorkflowStepFormValue[];
 }
 
 function parseJsonOr<T>(text: string | undefined, fallback: T): T {
@@ -135,7 +139,15 @@ function buildConfig(v: ToolFormValues): ToolConfig {
       };
     }
     case 'workflow':
-      return { workflow: { steps: parseJsonOr(v.workflowStepsText, []) } };
+      return {
+        workflow: {
+          steps: (v.workflowSteps ?? []).map((s) => ({
+            name: s.name.trim(),
+            toolId: s.toolId,
+            description: s.description?.trim() || undefined,
+          })),
+        },
+      };
     default:
       return {};
   }
@@ -305,9 +317,13 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
       httpResponseMappingText: t.config.http?.responseMapping
         ? JSON.stringify(t.config.http.responseMapping, null, 2)
         : undefined,
-      workflowStepsText: t.config.workflow?.steps?.length
-        ? JSON.stringify(t.config.workflow.steps, null, 2)
-        : undefined,
+      workflowSteps: t.config.workflow?.steps?.length
+        ? t.config.workflow.steps.map((s) => ({
+            name: s.name,
+            toolId: s.toolId,
+            description: s.description,
+          }))
+        : [],
     });
     void loadConnectors();
     setDrawerOpen(true);
@@ -351,7 +367,7 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
     try {
       config = buildConfig(v);
     } catch {
-      message.error('类型配置（模板 / Headers / 步骤）不是合法 JSON');
+      message.error('类型配置（模板 / Headers）不是合法 JSON');
       return;
     }
 
@@ -597,6 +613,7 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
         typeLocked={isQueryOnly}
         connectorOptions={connectorOptions}
         submitting={submitting}
+        activeTenantId={activeTenantId}
         onTypeChange={setFormType}
         onClose={() => setDrawerOpen(false)}
         onSubmit={handleSubmit}
@@ -633,6 +650,7 @@ function ToolFormDrawer({
   typeLocked,
   connectorOptions,
   submitting,
+  activeTenantId,
   onTypeChange,
   onClose,
   onSubmit,
@@ -645,6 +663,7 @@ function ToolFormDrawer({
   typeLocked?: boolean;
   connectorOptions: { value: string; label: string }[];
   submitting: boolean;
+  activeTenantId?: string;
   onTypeChange: (t: ToolType) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -683,7 +702,12 @@ function ToolFormDrawer({
             <Select
               options={typeOptions}
               disabled={typeLocked}
-              onChange={onTypeChange}
+              onChange={(t: ToolType) => {
+                onTypeChange(t);
+                if (t === 'workflow' && !form.getFieldValue('workflowSteps')?.length) {
+                  form.setFieldsValue({ workflowSteps: [] });
+                }
+              }}
             />
           </Form.Item>
           <Form.Item
@@ -858,15 +882,9 @@ function ToolFormDrawer({
               className="mb-3"
               type="info"
               showIcon
-              message="流程型工具的编排执行属于 12-Agent 运行时 / 13-四类能力，本阶段仅登记步骤定义。"
+              message="按顺序配置流程步骤，每步选择一个已注册的工具（查询 / HTTP 查询 / 操作 / 通知）。保存后由 Agent 运行时按序调用。"
             />
-            <Form.Item
-              label="步骤（JSON 数组）"
-              name="workflowStepsText"
-              tooltip='[{ "name":"下单", "toolId":"<tool.id>", "description":"" }]'
-            >
-              <Input.TextArea rows={4} className="font-mono text-xs" />
-            </Form.Item>
+            <WorkflowStepsEditor tenantId={activeTenantId} excludeToolId={editing?.id} />
           </>
         )}
       </Form>
@@ -961,9 +979,32 @@ function ToolDetailView({ detail }: { detail: ToolDetail }) {
       <Typography.Title level={5} className="!mt-6">
         类型配置
       </Typography.Title>
-      <pre className="m-0 whitespace-pre-wrap text-xs bg-gray-50 p-2 rounded">
-        {JSON.stringify(detail.config, null, 2)}
-      </pre>
+      {detail.type === 'workflow' && detail.config.workflow?.steps?.length ? (
+        <Table
+          rowKey={(_, i) => String(i)}
+          size="small"
+          pagination={false}
+          dataSource={detail.config.workflow.steps}
+          columns={[
+            { title: '序号', width: 60, render: (_, __, i) => i + 1 },
+            { title: '步骤名称', dataIndex: 'name' },
+            {
+              title: '调用工具 ID',
+              dataIndex: 'toolId',
+              render: (v: string | undefined) => v || '—',
+            },
+            {
+              title: '说明',
+              dataIndex: 'description',
+              render: (v: string | undefined) => v || '—',
+            },
+          ]}
+        />
+      ) : (
+        <pre className="m-0 whitespace-pre-wrap text-xs bg-gray-50 p-2 rounded">
+          {JSON.stringify(detail.config, null, 2)}
+        </pre>
+      )}
 
       <Typography.Title level={5} className="!mt-6">
         调用统计（工具调用审计）
