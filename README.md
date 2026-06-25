@@ -9,7 +9,7 @@
 
 > Shellder Agent 平台 Monorepo — 可运行的 Web 管理后台、主 API 与异步 Worker。
 
-本仓库为 **shellder-agent 可运行代码根目录**（`npm` / `docker compose` 均在此执行）。产品与架构文档见 [project-analysis-v1-completed](project-analysis-v1-completed/README.md)（V1 已验收基线）；实验中模块的完整初始规格在内部 monorepo 的 `project-analysis/`，**未纳入本 GitHub 仓库**。
+本仓库为 **shellder-agent 可运行代码根目录**（`npm` / `docker compose` 均在此执行）。产品与架构文档见 [project-analysis-v1-completed](project-analysis-v1-completed/README.md)（V1 已验收基线）；**实验中**仅技能书管理，其完整初始规格在内部 monorepo 的 `project-analysis/`（**未纳入本 GitHub 仓库**）。
 
 ## 目录
 
@@ -30,8 +30,8 @@
 
 ## 特性
 
-- **多租户 Agent 平台** — 租户、用户、RBAC、审计、策略引擎
-- **四类业务能力** — 问答 / 查询（NL2SQL）/ 动作 / 工作流，支持 SSE 流式响应
+- **多租户 Agent 平台** — 租户、用户、RBAC、规则与 Policy、审批中心、审计
+- **四类业务能力** — 问答 / 查询（NL2SQL）/ 操作型（含 http_query）/ 工作流，支持 SSE 流式响应
 - **知识库代理** — 对接 wiki，租户级知识库管理
 - **OpenAPI & Copilot** — 对外 API 与嵌入式对话组件
 - **异步任务** — BullMQ Worker 驱动任务中心与后台作业
@@ -172,32 +172,28 @@ npm run prisma:generate
 | `npm run dev:web` | 启动管理后台（Vite） |
 | `npm run dev:server` | 启动主 API（watch 模式） |
 | `npm run dev:worker` | 启动异步 Worker |
-| `npm run build` | 构建全部 workspace |
-| `npm run lint` | 全部 workspace 代码检查 |
+| `npm run build` | 构建全部 workspace（推荐提交前执行） |
 | `npm run prisma:generate` | 生成 Prisma Client |
 
 ## 数据库
 
-结构 + 种子以 `project-sql/00-all-schema.sql`、`00-all-seed.sql` 为准，发版前由运维自行执行。
+结构 + 种子以 `project-sql/00-all-schema.sql`、`00-all-seed.sql` 为准，**新库**发版前由运维自行执行。
 
-本地开发 `npm run prisma:generate` 仅用于生成 ORM 客户端（不连库、不跑迁移）。
+**已有库升级**：勿重跑全量 DDL，按 [`project-sql/README.md`](project-sql/README.md) 执行增量目录（如 `22-tool-http-query`、`23-routing-llm-classify`）。
+
+本地开发 `npm run prisma:generate` 仅用于生成 ORM 客户端（不连库、不跑迁移）；表结构以 `project-sql/` 为准，Prisma 无 migrate 流程。
 
 ## 开发规范
 
-### Prompt 防回归（21-C）
+### Prompt 管理（21-C）
 
-在 `shellder-agent-server` 目录执行（CI 未接入前建议提交前本地跑）：
+改 Prompt 相关代码前必读 [06-实施约束-已落地 §4 Prompt 管理](project-analysis-v1-completed/06-实施约束-已落地.md#4-prompt-管理1d)。硬约束摘要：
 
-```bash
-cd shellder-agent-server && npm run check:prompt-constants
-```
-
-校验规则：
-
+- Prompt 正文以 `prompt_template` / `prompt_version` 为唯一来源（SSOT），禁止在业务代码硬编码 System Prompt
 - 禁止新增 `src/**/*.prompt.ts`（白名单仅 `connector/er-diagram.prompt.ts`）
 - 禁止 `export const *_SYSTEM_PROMPT`
 
-规范详见 [06-实施约束-已落地 §4 Prompt 管理](project-analysis-v1-completed/06-实施约束-已落地.md#4-prompt-管理1d)（对应内部 monorepo `project-analysis/implementation-constraints.md` §1D）。
+> `npm run check:prompt-constants` 自动检查脚本尚未接入；提交前请对照上文约束人工自检。
 
 ### 默认管理员
 
@@ -232,8 +228,10 @@ cd shellder-agent-server && npm run check:prompt-constants
 | 某个管理后台菜单或页面 | `modules/xx-*.md` → [04-代码导航](project-analysis-v1-completed/04-代码导航.md) → 对应 `src/pages/console/` 与 NestJS 模块 |
 | 问答 / 问数等业务能力 | [capabilities/](project-analysis-v1-completed/capabilities/) + [modules/02-知识库](project-analysis-v1-completed/modules/02-知识库.md) 或 [modules/03-查询型配置](project-analysis-v1-completed/modules/03-查询型配置.md) |
 | Copilot / OpenAPI 接入 | [modules/07-嵌入式Copilot](project-analysis-v1-completed/modules/07-嵌入式Copilot.md)、[modules/08-OpenAPI管理](project-analysis-v1-completed/modules/08-OpenAPI管理.md) |
+| 规则 / 审批 / 任务中心 | [modules/16-规则与Policy](project-analysis-v1-completed/modules/16-规则与Policy.md)、[modules/17-审批中心](project-analysis-v1-completed/modules/17-审批中心.md)、[modules/18-任务中心](project-analysis-v1-completed/modules/18-任务中心.md) |
+| 能力路由 / http_query 工具 | [modules/13-能力路由](project-analysis-v1-completed/modules/13-能力路由.md)、[modules/12-工具管理](project-analysis-v1-completed/modules/12-工具管理.md) |
 | 数据表或 ORM 变更 | [05-数据模型](project-analysis-v1-completed/05-数据模型.md) → `project-sql/` 递增 SQL → `npm run prisma:generate` |
-| 实验中菜单（任务中心、技能书等） | 侧栏标注「（实验中）」的模块**不在 V1 验收基线内**；边界见 [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围)，完整初始规格在内部 monorepo `project-analysis/`（未纳入本仓库） |
+| 实验中菜单（仅技能书） | 侧栏标注「（实验中）」的**技能书管理**不在 V1 验收基线内；边界见 [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围)。完整初始规格在内部 monorepo `project-analysis/`（未纳入本仓库） |
 
 ### 给 AI Agent 的使用建议
 
@@ -241,15 +239,15 @@ cd shellder-agent-server && npm run check:prompt-constants
 
 1. **任务相关**：目标模块的 `modules/*.md` 或 `capabilities/*.md`
 2. **定位代码**：[04-代码导航](project-analysis-v1-completed/04-代码导航.md)
-3. **硬约束**：[06-实施约束-已落地](project-analysis-v1-completed/06-实施约束-已落地.md) + 上文 [Prompt 防回归](#prompt-防回归21-c)
+3. **硬约束**：[06-实施约束-已落地](project-analysis-v1-completed/06-实施约束-已落地.md) + 上文 [Prompt 管理](#prompt-管理21-c)
 
 **原则**：以 **当前代码与 `project-analysis-v1-completed` 文档** 为准；各模块文末「对照初始方案」仅作差异参考，勿以其覆盖现网实现。
 
 ### V1 边界速记
 
-- **已完成**：侧栏**未**标注「（实验中）」的菜单及其关联能力（见 [已完成菜单一览](project-analysis-v1-completed/README.md#已完成菜单一览)）。
-- **实验中**：任务中心、技能书、规则、审批等——后端或有代码，但 UI 未纳入 V1 验收，改造勿以其为交付基线。
-- **四类业务能力**：问答 / 查询 / **操作型（含 http_query）** 已在正式入口验证；流程型 Runtime 已实现，任务管理 UI 仍在实验中菜单。
+- **已完成**：侧栏**未**标注「（实验中）」的菜单及其关联能力（见 [已完成菜单一览](project-analysis-v1-completed/README.md#已完成菜单一览)）。含规则、审批中心、任务中心、能力路由、工具管理（http_query）、审计中心等（2026-06 起已产品化）。
+- **实验中**：仅 **技能书管理**（侧栏标注「（实验中）」）；后端 `skill/` 模块存在，管理 UI 未纳入 V1 验收。
+- **四类业务能力**：问答 / 查询 / 操作型（含 http_query）/ 流程型均已通过会话调试、Copilot、OpenAPI、**能力演示**等正式入口验证；流程型任务写入任务中心 UI。
 
 ## 常见问题
 
@@ -349,5 +347,5 @@ curl http://localhost:3001/health
 | 代码导航 | [`project-analysis-v1-completed/04-代码导航.md`](project-analysis-v1-completed/04-代码导航.md) |
 | 实施约束（已落地） | [`project-analysis-v1-completed/06-实施约束-已落地.md`](project-analysis-v1-completed/06-实施约束-已落地.md) |
 | SQL 演进 | [`project-sql/README.md`](project-sql/README.md) |
-| 实验中模块边界 | [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围) |
+| 实验中模块边界（技能书） | [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围) |
 | 初始方案全文（仅内部 monorepo） | `project-analysis/`（与 `22.agent-analysis` 工作区同级，未推送到本仓库） |

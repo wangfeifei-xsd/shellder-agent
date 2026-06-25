@@ -1,7 +1,7 @@
 # shellder-agent V1 已完成方案
 
 > **用途**：以 V1 已验收功能为依据，对照 [`project-analysis`](../project-analysis/) 初始方案整理，供后续功能改造与 AI 辅助开发时快速理解现状。  
-> **代码基线**：[`shellder-agent`](../shellder-agent/)  
+> **代码基线**：本仓库根目录（`shellder-web-console`、`shellder-agent-server`、`shellder-job-worker`）
 > **验收口径**：管理后台侧栏中**未标注「（实验中）」**的菜单及其关联能力。
 
 ---
