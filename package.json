@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "shellder-agent — Shellder 平台 Monorepo",
   "workspaces": [
+    "config",
     "shellder-web-console",
     "shellder-agent-server",
     "shellder-job-worker"
@@ -12,7 +13,7 @@
     "dev:web": "npm run dev -w shellder-web-console",
     "dev:server": "npm run start:dev -w shellder-agent-server",
     "dev:worker": "npm run start:dev -w shellder-job-worker",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w @shellder/config && npm run build -w shellder-agent-server && npm run build -w shellder-job-worker && npm run build -w shellder-web-console",
     "lint": "npm run lint --workspaces --if-present",
     "prisma:generate": "npm run prisma:generate -w shellder-agent-server"
   },

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCopilotConfigDto, UpdateCopilotConfigDto } from './dto/copilot-config.dto';
 import { AuthUser } from '../auth/jwt.types';
@@ -49,8 +50,10 @@ export class CopilotConfigService {
         features: (dto.features ?? mergeCopilotFeatures(undefined)) as unknown as Prisma.InputJsonValue,
         welcomeMessage: dto.welcomeMessage ?? null,
         placeholder: dto.placeholder ?? null,
-        maxHistoryMessages: dto.maxHistoryMessages ?? 50,
-        tokenTtlSeconds: dto.tokenTtlSeconds ?? 3600,
+        maxHistoryMessages:
+          dto.maxHistoryMessages ?? applicationProperties.get().app.copilot.maxHistoryMessages,
+        tokenTtlSeconds:
+          dto.tokenTtlSeconds ?? applicationProperties.get().app.copilot.tokenTtlSeconds,
       },
     });
     return this.toView(config);

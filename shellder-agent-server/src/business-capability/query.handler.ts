@@ -15,7 +15,7 @@ import {
   SseEvent,
 } from '../agent-runtime/agent-runtime.types';
 import { CapabilityResult } from './capability-result';
-import { SqlToolConfig } from '../tool/tool.types';
+import { SqlToolConfig, DEFAULT_SQL_CONFIG } from '../tool/tool.types';
 
 /**
  * 查询型能力 Handler（§5 / 运行期三步流水线）。
@@ -245,15 +245,7 @@ export class QueryCapabilityHandler implements CapabilityHandler {
 
   private readSqlConfig(tool: Tool): SqlToolConfig {
     const config = this.toolService.readConfig(tool).sql;
-    return (
-      config ?? {
-        tableBlacklist: [],
-        fieldBlacklist: [],
-        maxRows: 100,
-        maxExecutionMs: 3000,
-        templates: [],
-      }
-    );
+    return config ?? { ...DEFAULT_SQL_CONFIG };
   }
 
   private normalizeError(err: unknown): { code?: string; errorMsg: string } {

@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { OpenApiAppService } from './openapi-app.service';
 import {
@@ -51,14 +52,14 @@ export class OpenApiAuthService {
     };
 
     const accessToken = this.jwtService.sign(payload, {
-      expiresIn: process.env.OPENAPI_TOKEN_EXPIRES_IN ?? '2h',
+      expiresIn: applicationProperties.get().auth.openapi.tokenExpiresIn,
       issuer: OPENAPI_JWT_ISSUER,
     });
 
     return {
       accessToken,
       tokenType: 'Bearer',
-      expiresIn: process.env.OPENAPI_TOKEN_EXPIRES_IN ?? '2h',
+      expiresIn: applicationProperties.get().auth.openapi.tokenExpiresIn,
       app: {
         id: app.id,
         name: app.name,

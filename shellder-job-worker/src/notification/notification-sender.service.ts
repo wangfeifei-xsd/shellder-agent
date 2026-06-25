@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { buildAuthHeaders, decryptSecret } from '../connector/connector-secret.util';
 import { renderTemplate } from './template.util';
@@ -51,11 +52,10 @@ export class NotificationSenderService {
       tpl.connectorId ||
       (await this.getSystemConnectorId());
 
-    const useMock =
-      process.env.NOTIFICATION_SEND_MOCK !== 'false' &&
-      process.env.NOTIFICATION_SEND_MOCK !== '0';
+    const app = applicationProperties.get().app;
+    const useMock = app.notification.sendMock || !connectorId;
 
-    if (useMock || !connectorId) {
+    if (useMock) {
       this.logger.log(
         `[Mock通知] tenant=${payload.tenantId} type=${payload.type} subject=${subject ?? '(无)'}\n${body}`,
       );
@@ -97,7 +97,9 @@ export class NotificationSenderService {
         method: 'POST',
         headers,
         body: JSON.stringify(requestBody),
-        signal: AbortSignal.timeout(connector.timeoutMs ?? 10_000),
+        signal: AbortSignal.timeout(
+          connector.timeoutMs ?? app.connector.defaultTimeoutMs,
+        ),
       });
       const text = await res.text();
       if (res.status >= 400) {

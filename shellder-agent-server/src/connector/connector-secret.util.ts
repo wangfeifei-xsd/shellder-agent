@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { applicationProperties } from '@shellder/config';
 import {
   createCipheriv,
   createDecipheriv,
@@ -20,21 +21,21 @@ import {
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12; // GCM 推荐 96bit IV
 const PREFIX = 'v1:'; // 密文版本前缀，便于后续轮换算法
-const DEV_FALLBACK_KEY = 'shellder-agent-dev-connector-secret-key';
 
 const logger = new Logger('ConnectorSecret');
 let warnedFallback = false;
 
 function resolveKey(): Buffer {
-  const raw = process.env.CONNECTOR_SECRET_KEY;
-  if (!raw || raw.trim().length === 0) {
+  const auth = applicationProperties.get().auth.connector;
+  const raw = auth.secretKey;
+  if (!raw) {
     if (!warnedFallback) {
       logger.warn(
         '未配置 CONNECTOR_SECRET_KEY，使用开发期默认密钥；生产环境必须配置高强度随机密钥。',
       );
       warnedFallback = true;
     }
-    return createHash('sha256').update(DEV_FALLBACK_KEY).digest();
+    return createHash('sha256').update(auth.devFallbackKey).digest();
   }
   return createHash('sha256').update(raw).digest();
 }

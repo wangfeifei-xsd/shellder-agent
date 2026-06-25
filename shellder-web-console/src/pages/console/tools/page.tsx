@@ -56,6 +56,7 @@ import {
   updateTool,
   updateToolStatus,
 } from '@/lib/tool';
+import { webEnvConfig } from '@/config/env';
 
 const fmt = (s?: string | null) => (s ? new Date(s).toLocaleString('zh-CN') : '—');
 
@@ -106,8 +107,8 @@ function buildConfig(v: ToolFormValues, preserveWorkflowSteps?: WorkflowStepDef[
         sql: {
           tableBlacklist: v.sqlTableBlacklist ?? [],
           fieldBlacklist: v.sqlFieldBlacklist ?? [],
-          maxRows: v.sqlMaxRows ?? 100,
-          maxExecutionMs: v.sqlMaxExecutionMs ?? 3000,
+          maxRows: v.sqlMaxRows ?? webEnvConfig.sqlMaxRows,
+          maxExecutionMs: v.sqlMaxExecutionMs ?? webEnvConfig.sqlMaxExecutionMs,
           templates: parseJsonOr(v.sqlTemplatesText, []),
         },
       };
@@ -253,8 +254,8 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
       needConfirmation: false,
       timeoutMs: 10000,
       inputSchemaText: DEFAULT_INPUT_SCHEMA,
-      sqlMaxRows: 100,
-      sqlMaxExecutionMs: 3000,
+      sqlMaxRows: webEnvConfig.sqlMaxRows,
+      sqlMaxExecutionMs: webEnvConfig.sqlMaxExecutionMs,
       sqlTableBlacklist: [],
       httpMethod: 'POST',
     });
@@ -283,8 +284,8 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
         : undefined,
       sqlTableBlacklist: t.config.sql?.tableBlacklist ?? [],
       sqlFieldBlacklist: t.config.sql?.fieldBlacklist ?? [],
-      sqlMaxRows: t.config.sql?.maxRows ?? 100,
-      sqlMaxExecutionMs: t.config.sql?.maxExecutionMs ?? 3000,
+      sqlMaxRows: t.config.sql?.maxRows ?? webEnvConfig.sqlMaxRows,
+      sqlMaxExecutionMs: t.config.sql?.maxExecutionMs ?? webEnvConfig.sqlMaxExecutionMs,
       sqlTemplatesText: t.config.sql?.templates?.length
         ? JSON.stringify(t.config.sql.templates, null, 2)
         : undefined,

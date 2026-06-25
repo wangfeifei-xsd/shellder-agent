@@ -4,6 +4,7 @@ import { SaveOutlined } from '@ant-design/icons';
 import { App, Button, Card, Form, Input, InputNumber, Spin, Typography } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { type ConfigMap, batchUpsertConfigs, getAllConfigs } from '@/lib/system-settings';
+import { webEnvConfig } from '@/config/env';
 
 export default function BasicSettingsPage() {
   const [form] = Form.useForm();
@@ -18,8 +19,12 @@ export default function BasicSettingsPage() {
       form.setFieldsValue({
         platformName: configs['basic.platformName']?.configValue ?? 'shellder-agent',
         platformLogo: configs['basic.platformLogo']?.configValue ?? '',
-        defaultTimeoutMs: Number(configs['basic.defaultTimeoutMs']?.configValue ?? '300000'),
-        defaultPageSize: Number(configs['basic.defaultPageSize']?.configValue ?? '20'),
+        defaultTimeoutMs: Number(
+          configs['basic.defaultTimeoutMs']?.configValue ?? String(webEnvConfig.defaultTimeoutMs),
+        ),
+        defaultPageSize: Number(
+          configs['basic.defaultPageSize']?.configValue ?? String(webEnvConfig.defaultPageSize),
+        ),
       });
     } catch (err) {
       message.error(err instanceof Error ? err.message : '加载配置失败');

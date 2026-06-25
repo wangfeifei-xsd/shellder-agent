@@ -1,0 +1,19 @@
+{
+  "name": "@shellder/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "shellder-agent 集中配置（YAML + 环境变量）",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "yaml": "^2.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

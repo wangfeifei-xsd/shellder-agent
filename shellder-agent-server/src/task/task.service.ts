@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, Task, TaskLog, TaskStatus, TaskStep } from '@prisma/client';
 import type { InputJsonValue } from '@prisma/client/runtime/library';
+import { applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
@@ -38,8 +39,8 @@ export class TaskService {
         type: dto.type ?? 'async',
         capabilityType: dto.capabilityType ?? null,
         input: (dto.input as InputJsonValue) ?? Prisma.JsonNull,
-        maxRetries: dto.maxRetries ?? 3,
-        timeoutMs: dto.timeoutMs ?? 300000,
+        maxRetries: dto.maxRetries ?? applicationProperties.get().app.task.defaultMaxRetries,
+        timeoutMs: dto.timeoutMs ?? applicationProperties.get().app.task.defaultTimeoutMs,
         scheduledAt: dto.scheduledAt ? new Date(dto.scheduledAt) : null,
       },
     });

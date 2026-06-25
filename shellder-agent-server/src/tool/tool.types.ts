@@ -1,4 +1,5 @@
 import { ToolType } from '@prisma/client';
+import { applicationProperties } from '@shellder/config';
 
 /**
  * tool.config 的内部归一化结构（按 Tool 类型使用对应子配置）。
@@ -121,13 +122,16 @@ export interface WorkflowStep {
 
 export const EMPTY_TOOL_CONFIG: ToolConfig = {};
 
-export const DEFAULT_SQL_CONFIG: SqlToolConfig = {
-  tableBlacklist: [],
-  fieldBlacklist: [],
-  maxRows: 100,
-  maxExecutionMs: 3000,
-  templates: [],
-};
+export const DEFAULT_SQL_CONFIG: SqlToolConfig = (() => {
+  const sql = applicationProperties.get().app.sql;
+  return {
+    tableBlacklist: [],
+    fieldBlacklist: [],
+    maxRows: sql.maxRows,
+    maxExecutionMs: sql.maxExecutionMs,
+    templates: [],
+  };
+})();
 
 /** 历史 config.sql 可能仍含表白名单字段（读取兼容，保存时归一为黑名单） */
 export type LegacySqlToolConfig = SqlToolConfig & {

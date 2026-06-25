@@ -1,5 +1,6 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
+import { applicationProperties } from '@shellder/config';
 import { PrismaModule } from '../prisma/prisma.module';
 import {
   DOCUMENT_PROCESSING_QUEUE,
@@ -19,14 +20,7 @@ import { TaskLifecycleNotificationService } from './task-lifecycle-notification.
   imports: [
     PrismaModule,
     BullModule.forRoot({
-      connection: {
-        host: process.env.REDIS_HOST ?? 'localhost',
-        port: Number(process.env.REDIS_PORT ?? 6379),
-        ...(process.env.REDIS_PASSWORD
-          ? { password: process.env.REDIS_PASSWORD }
-          : {}),
-        maxRetriesPerRequest: null,
-      },
+      connection: applicationProperties.getRedisConnection(),
     }),
     BullModule.registerQueue(
       { name: TASK_QUEUE },

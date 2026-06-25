@@ -1,27 +1,14 @@
 import { Injectable } from '@nestjs/common';
+import { LlmConfigKey, applicationProperties } from '@shellder/config';
 import { decryptSecret, encryptSecret } from '../connector/connector-secret.util';
 import { SystemSettingsService } from '../system-settings/system-settings.service';
 
-/** system_config 键：平台 LLM 接入（实施规格 §4） */
-export const LLM_CONFIG_KEYS = {
-  BASE_URL: 'llm.baseUrl',
-  MODEL: 'llm.model',
-  TIMEOUT_MS: 'llm.timeoutMs',
-  MAX_TOKENS: 'llm.maxTokens',
-  API_KEY_CIPHER: 'llm.apiKeyCipher',
-  CHAT_PATH: 'llm.chatPath',
-  ENABLE_THINKING: 'llm.enableThinking',
-} as const;
+/** @deprecated 使用 LlmConfigKey 枚举 */
+export const LLM_CONFIG_KEYS = LlmConfigKey;
 
-const LLM_DEFAULTS: Record<string, string> = {
-  [LLM_CONFIG_KEYS.BASE_URL]: '',
-  [LLM_CONFIG_KEYS.MODEL]: '',
-  [LLM_CONFIG_KEYS.TIMEOUT_MS]: '60000',
-  [LLM_CONFIG_KEYS.MAX_TOKENS]: '4096',
-  [LLM_CONFIG_KEYS.API_KEY_CIPHER]: '',
-  [LLM_CONFIG_KEYS.CHAT_PATH]: 'chat/completions',
-  [LLM_CONFIG_KEYS.ENABLE_THINKING]: 'false',
-};
+function getLlmDefaults(): Record<string, string> {
+  return applicationProperties.getLlmConfigDefaults();
+}
 
 export interface LlmEffectiveConfig {
   baseUrl: string;
@@ -69,9 +56,9 @@ export class LlmConfigService {
     return {
       base_url: baseUrl,
       model,
-      timeout_ms: Number(timeoutMs) || 60_000,
-      max_tokens: Number(maxTokens) || 4096,
-      chat_path: chatPath || LLM_DEFAULTS[LLM_CONFIG_KEYS.CHAT_PATH],
+      timeout_ms: Number(timeoutMs) || applicationProperties.get().app.llm.timeoutMs,
+      max_tokens: Number(maxTokens) || applicationProperties.get().app.llm.maxTokens,
+      chat_path: chatPath || getLlmDefaults()[LlmConfigKey.CHAT_PATH],
       api_key: apiKey,
       api_key_configured: Boolean(apiKey),
       enable_thinking: parseLlmBoolean(enableThinkingRaw),
@@ -144,7 +131,7 @@ export class LlmConfigService {
     if (input.chat_path !== undefined) {
       upserts.push({
         configKey: LLM_CONFIG_KEYS.CHAT_PATH,
-        configValue: input.chat_path.trim() || LLM_DEFAULTS[LLM_CONFIG_KEYS.CHAT_PATH],
+        configValue: input.chat_path.trim() || getLlmDefaults()[LlmConfigKey.CHAT_PATH],
         description: 'Chat Completions 相对路径',
       });
     }
@@ -173,7 +160,7 @@ export class LlmConfigService {
   private async getRaw(key: string): Promise<string> {
     const val = await this.settings.getConfigValue(key);
     if (val !== '') return val;
-    return LLM_DEFAULTS[key] ?? '';
+    return getLlmDefaults()[key] ?? '';
   }
 }
 

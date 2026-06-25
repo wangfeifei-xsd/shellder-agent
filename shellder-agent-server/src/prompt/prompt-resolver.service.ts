@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PromptScope, PromptVersionState } from '@prisma/client';
+import { applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { promptTemplateNotFound, promptVariableMissing } from './prompt.errors';
 import {
@@ -27,8 +28,6 @@ interface CacheEntry {
   variableSchema: unknown;
   expiresAt: number;
 }
-
-const CACHE_TTL_MS = 60_000;
 
 @Injectable()
 export class PromptResolverService {
@@ -111,7 +110,7 @@ export class PromptResolverService {
         },
         rawContent: version.content,
         variableSchema: template.variableSchema,
-        expiresAt: Date.now() + CACHE_TTL_MS,
+        expiresAt: Date.now() + applicationProperties.get().app.prompt.cacheTtlMs,
       });
       return {
         ...result,

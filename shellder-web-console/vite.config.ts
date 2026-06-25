@@ -1,29 +1,47 @@
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { applicationProperties, loadEnvFiles } from '@shellder/config';
+import { defineConfig } from 'vite';
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
-  const apiTarget = env.VITE_API_PROXY_TARGET ?? 'http://localhost:3001';
-  const port = Number(env.WEB_CONSOLE_PORT ?? env.VITE_PORT ?? 3000);
+function buildWebConfig() {
+  loadEnvFiles();
+  const web = applicationProperties.get().services.webConsole;
+  const app = applicationProperties.get().app;
+  return {
+    apiBaseUrl: web.apiBaseUrl,
+    apiProxyTarget: web.apiProxyTarget,
+    webConsoleOrigin: web.defaultOrigin,
+    webConsolePort: web.port,
+    sqlMaxRows: app.sql.maxRows,
+    sqlMaxExecutionMs: app.sql.maxExecutionMs,
+    defaultTimeoutMs: app.basic.defaultTimeoutMs,
+    defaultPageSize: app.basic.defaultPageSize,
+  };
+}
+
+export default defineConfig(() => {
+  const webConfig = buildWebConfig();
 
   return {
     plugins: [react()],
-    base: '/shellder/', // 静态资源公共路径前缀（与 agent-plant-ui /agentplatform/ 一致）
+    base: '/shellder/',
+    define: {
+      __SHELLDER_WEB_CONFIG__: JSON.stringify(webConfig),
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
       },
     },
     server: {
-      port,
+      port: webConfig.webConsolePort,
       proxy: {
         '/api': {
-          target: apiTarget,
+          target: webConfig.apiProxyTarget,
           changeOrigin: true,
         },
         '/copilot/v1': {
-          target: apiTarget,
+          target: webConfig.apiProxyTarget,
           changeOrigin: true,
         },
       },

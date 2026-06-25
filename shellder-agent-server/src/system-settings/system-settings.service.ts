@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { NotificationTemplateType, Prisma } from '@prisma/client';
+import { SystemConfigKey, applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpsertConfigDto } from './dto/upsert-config.dto';
 import {
@@ -7,44 +8,12 @@ import {
   UpdateNotificationTemplateDto,
 } from './dto/upsert-notification-template.dto';
 
-/**
- * 系统配置 configKey 常量。
- * Runtime / job-worker 读取时使用同样的 key。
- */
-export const CONFIG_KEYS = {
-  PLATFORM_NAME: 'basic.platformName',
-  PLATFORM_LOGO: 'basic.platformLogo',
-  DEFAULT_TIMEOUT_MS: 'basic.defaultTimeoutMs',
-  DEFAULT_PAGE_SIZE: 'basic.defaultPageSize',
+/** @deprecated 使用 SystemConfigKey 枚举 */
+export const CONFIG_KEYS = SystemConfigKey;
 
-  STREAM_ENABLED: 'model.streamEnabled',
-  MODEL_TIMEOUT_MS: 'model.timeoutMs',
-  MODEL_RETRY_COUNT: 'model.retryCount',
-  MODEL_RETRY_DELAY_MS: 'model.retryDelayMs',
-  CAPABILITY_RESPONSE_TEMPLATE: 'model.capabilityResponseTemplate',
-
-  NOTIFICATION_CONNECTOR_ID: 'notification.connectorId',
-
-  /** wiki 知识库服务根 URL（无尾斜杠） */
-  KNOWLEDGE_WIKI_BASE_URL: 'knowledge.wikiBaseUrl',
-  KNOWLEDGE_WIKI_TIMEOUT_MS: 'knowledge.wikiTimeoutMs',
-} as const;
-
-/** 默认配置值 */
-const DEFAULT_VALUES: Record<string, string> = {
-  [CONFIG_KEYS.PLATFORM_NAME]: 'shellder-agent',
-  [CONFIG_KEYS.PLATFORM_LOGO]: '',
-  [CONFIG_KEYS.DEFAULT_TIMEOUT_MS]: '300000',
-  [CONFIG_KEYS.DEFAULT_PAGE_SIZE]: '20',
-  [CONFIG_KEYS.STREAM_ENABLED]: 'true',
-  [CONFIG_KEYS.MODEL_TIMEOUT_MS]: '60000',
-  [CONFIG_KEYS.MODEL_RETRY_COUNT]: '3',
-  [CONFIG_KEYS.MODEL_RETRY_DELAY_MS]: '1000',
-  [CONFIG_KEYS.CAPABILITY_RESPONSE_TEMPLATE]: '{}',
-  [CONFIG_KEYS.NOTIFICATION_CONNECTOR_ID]: '',
-  [CONFIG_KEYS.KNOWLEDGE_WIKI_BASE_URL]: '',
-  [CONFIG_KEYS.KNOWLEDGE_WIKI_TIMEOUT_MS]: '30000',
-};
+function getDefaultValues(): Record<string, string> {
+  return applicationProperties.getSystemConfigDefaults();
+}
 
 @Injectable()
 export class SystemSettingsService {
@@ -60,7 +29,7 @@ export class SystemSettingsService {
     });
     const map = new Map(rows.map((r) => [r.configKey, r]));
 
-    const defaults = Object.entries(DEFAULT_VALUES)
+    const defaults = Object.entries(getDefaultValues())
       .filter(([k]) => k.startsWith(`${group}.`))
       .map(([k, v]) => ({
         configKey: k,
@@ -86,7 +55,7 @@ export class SystemSettingsService {
 
     const result: Record<string, { configValue: string; description: string | null; updatedAt: Date | null }> = {};
 
-    for (const [key, defaultVal] of Object.entries(DEFAULT_VALUES)) {
+    for (const [key, defaultVal] of Object.entries(getDefaultValues())) {
       const existing = map.get(key);
       result[key] = {
         configValue: existing?.configValue ?? defaultVal,
@@ -113,7 +82,7 @@ export class SystemSettingsService {
     const row = await this.prisma.systemConfig.findUnique({
       where: { configKey: key },
     });
-    return row?.configValue ?? DEFAULT_VALUES[key] ?? '';
+    return row?.configValue ?? getDefaultValues()[key] ?? '';
   }
 
   /** 写入/更新单条配置 */

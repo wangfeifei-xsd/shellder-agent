@@ -1,6 +1,4 @@
-# 默认只启动应用三端，MySQL / Redis 通过 .env.example 连接（不自带数据库容器）。
-# 注意：勿在 environment 里写 ${DATABASE_URL}，否则会被宿主机 .env 覆盖 .env.example。
-# 本地内置 mysql/redis：docker-compose.bundled-infra.yml
+# 默认只启动应用三端；配置见 config/（application.yml.example + .env.example）
 name: shellder-agent
 
 services:
@@ -10,10 +8,11 @@ services:
       dockerfile: shellder-agent-server/Dockerfile
     container_name: shellder-agent-server
     restart: unless-stopped
-    env_file: .env.example
+    env_file: config/.env.example
     environment:
       NODE_ENV: production
       PORT: 3001
+      SHELLDER_PROFILE: prod
     ports:
       - '3001:3001'
     healthcheck:
@@ -29,10 +28,11 @@ services:
       dockerfile: shellder-job-worker/Dockerfile
     container_name: shellder-job-worker
     restart: unless-stopped
-    env_file: .env.example
+    env_file: config/.env.example
     environment:
       NODE_ENV: production
       PORT: 3002
+      SHELLDER_PROFILE: prod
     ports:
       - '3002:3002'
     healthcheck:
@@ -50,7 +50,7 @@ services:
         VITE_API_BASE_URL: ''
     container_name: shellder-web-console
     restart: unless-stopped
-    env_file: .env.example
+    env_file: config/.env.example
     depends_on:
       shellder-agent-server:
         condition: service_healthy

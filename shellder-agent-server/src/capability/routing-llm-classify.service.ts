@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CapabilityType } from '@prisma/client';
+import { applicationProperties } from '@shellder/config';
 import { LlmService } from '../llm/llm.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PROMPT_KEYS } from '../prompt/prompt-keys';
@@ -26,7 +27,7 @@ export class RoutingLlmClassifyService {
   ) {}
 
   async isEnabled(tenantId: string): Promise<boolean> {
-    if (process.env.ROUTING_LLM_CLASSIFY_ENABLED === 'true') {
+    if (applicationProperties.get().app.routing.llmClassifyEnabled) {
       return true;
     }
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });

@@ -10,7 +10,7 @@ import { SqlToolService } from '../sql-tool.service';
 import { ToolService } from '../tool.service';
 import { ToolInvocationService } from '../tool-invocation.service';
 import { InvokeContext } from '../tool-invocation.types';
-import { SqlToolConfig } from '../tool.types';
+import { SqlToolConfig, DEFAULT_SQL_CONFIG } from '../tool.types';
 import { HttpQueryTriggerService } from '../http-query-trigger.service';
 import { mergeHttpQueryParams } from '../http-query-param.util';
 import { WorkflowStep } from '../tool.types';
@@ -200,15 +200,7 @@ export class WorkflowToolInvoker {
 
   private readSqlConfig(tool: Tool): SqlToolConfig {
     const config = this.toolService.readConfig(tool).sql;
-    return (
-      config ?? {
-        tableBlacklist: [],
-        fieldBlacklist: [],
-        maxRows: 100,
-        maxExecutionMs: 3000,
-        templates: [],
-      }
-    );
+    return config ?? { ...DEFAULT_SQL_CONFIG };
   }
 
   private async invokeHttpLikeTool(

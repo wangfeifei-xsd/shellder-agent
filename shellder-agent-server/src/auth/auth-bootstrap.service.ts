@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   CAPABILITY_KEYS,
@@ -23,7 +24,7 @@ export class AuthBootstrapService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
-    if (process.env.AUTH_BOOTSTRAP === 'false') {
+    if (!applicationProperties.get().auth.bootstrap.enabled) {
       return;
     }
     try {
@@ -57,7 +58,8 @@ export class AuthBootstrapService implements OnModuleInit {
       },
     });
 
-    const username = process.env.ADMIN_USERNAME ?? 'admin';
+    const { adminUsername, adminPassword } = applicationProperties.get().auth.bootstrap;
+    const username = adminUsername;
     const existing = await this.prisma.user.findUnique({ where: { username } });
 
     const user =
@@ -65,7 +67,7 @@ export class AuthBootstrapService implements OnModuleInit {
       (await this.prisma.user.create({
         data: {
           username,
-          passwordHash: hashPassword(process.env.ADMIN_PASSWORD ?? 'admin123'),
+          passwordHash: hashPassword(adminPassword),
           displayName: '平台管理员',
           status: 'enabled',
           isSystem: true,
@@ -74,7 +76,7 @@ export class AuthBootstrapService implements OnModuleInit {
 
     if (!existing) {
       this.logger.log(
-        `已创建默认管理员：${username} / ${process.env.ADMIN_PASSWORD ?? 'admin123'}（请尽快修改密码）`,
+        `已创建默认管理员：${username} / ${adminPassword}（请尽快修改密码）`,
       );
     }
 

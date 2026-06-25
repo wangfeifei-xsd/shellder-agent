@@ -1,13 +1,14 @@
 import { createDecipheriv, createHash } from 'crypto';
+import { applicationProperties } from '@shellder/config';
 
 const ALGORITHM = 'aes-256-gcm';
 const PREFIX = 'v1:';
-const DEV_FALLBACK_KEY = 'shellder-agent-dev-connector-secret-key';
 
 function resolveKey(): Buffer {
-  const raw = process.env.CONNECTOR_SECRET_KEY;
-  if (!raw?.trim()) {
-    return createHash('sha256').update(DEV_FALLBACK_KEY).digest();
+  const auth = applicationProperties.get().auth.connector;
+  const raw = auth.secretKey;
+  if (!raw) {
+    return createHash('sha256').update(auth.devFallbackKey).digest();
   }
   return createHash('sha256').update(raw).digest();
 }

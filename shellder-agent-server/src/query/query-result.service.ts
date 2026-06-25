@@ -1,12 +1,10 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { applicationProperties } from '@shellder/config';
 import { LlmService, StreamDeltaCallback } from '../llm/llm.service';
 import { llmNotConfigured } from '../llm/llm.errors';
 import { PROMPT_KEYS } from '../prompt/prompt-keys';
 import { PromptResolverService } from '../prompt/prompt-resolver.service';
 import { buildQueryResultUserVariables } from './query-result.variables';
-
-/** 传给 LLM 的最大行数，避免 token 溢出 */
-const MAX_ROWS_FOR_LLM = 50;
 
 export interface QueryResultInput {
   userMessage: string;
@@ -46,7 +44,7 @@ export class QueryResultService {
       throw llmNotConfigured();
     }
 
-    const displayedRows = input.rows.slice(0, MAX_ROWS_FOR_LLM);
+    const displayedRows = input.rows.slice(0, applicationProperties.get().app.query.resultMaxRowsForLlm);
     const truncated = input.rowCount > displayedRows.length;
     const columns =
       displayedRows.length > 0 ? Object.keys(displayedRows[0]) : [];

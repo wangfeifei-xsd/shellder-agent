@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { applicationProperties } from '@shellder/config';
 import type {
   CapabilityExecutionResult,
   PrepareTaskResult,
@@ -11,9 +12,6 @@ export type {
   StepExecutionResult,
 } from './task-execution.types';
 
-/**
- * 调用 shellder-agent-server 内网任务执行 API（方案 B）。
- */
 @Injectable()
 export class TaskExecutionClient {
   private readonly logger = new Logger(TaskExecutionClient.name);
@@ -21,11 +19,9 @@ export class TaskExecutionClient {
   private readonly token: string;
 
   constructor() {
-    this.baseUrl = (
-      process.env.AGENT_SERVER_INTERNAL_URL ??
-      `http://127.0.0.1:${process.env.AGENT_SERVER_PORT ?? 3001}`
-    ).replace(/\/+$/, '');
-    this.token = process.env.WORKER_INTERNAL_TOKEN ?? '';
+    const cfg = applicationProperties.get();
+    this.baseUrl = cfg.services.agentServer.internalUrl;
+    this.token = cfg.auth.worker.internalToken;
   }
 
   async prepareTask(taskId: string): Promise<PrepareTaskResult> {

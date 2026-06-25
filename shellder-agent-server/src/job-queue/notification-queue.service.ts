@@ -1,5 +1,6 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
+import { applicationProperties } from '@shellder/config';
 import { Queue } from 'bullmq';
 import {
   DEFAULT_NOTIFICATION_TEMPLATE_KEYS,
@@ -28,8 +29,11 @@ export class NotificationQueueService {
       { ...payload, templateKey },
       {
         jobId,
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 3000 },
+        attempts: applicationProperties.get().app.notification.queueAttempts,
+        backoff: {
+          type: 'exponential',
+          delay: applicationProperties.get().app.notification.queueBackoffDelayMs,
+        },
         removeOnComplete: { count: 2000 },
         removeOnFail: { count: 5000 },
       },

@@ -1,12 +1,13 @@
 import { redirectToLoginPage } from './navigation';
+import { webEnvConfig } from '@/config/env';
 
 /** 开发/生产均优先走同源 /api（Vite 或 nginx 反代）；仅显式配置 VITE_API_BASE_URL 时用绝对地址 */
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '';
+export const API_BASE_URL = webEnvConfig.apiBaseUrl;
 
 export function resolveApiOrigin(): string {
   if (API_BASE_URL) return API_BASE_URL.replace(/\/$/, '');
   if (typeof window !== 'undefined') return window.location.origin;
-  return 'http://localhost:3000';
+  return webEnvConfig.webConsoleOrigin;
 }
 
 export interface ApiErrorBody {

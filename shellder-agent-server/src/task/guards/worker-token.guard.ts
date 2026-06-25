@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { applicationProperties } from '@shellder/config';
 import { Request } from 'express';
 
 /**
@@ -14,7 +15,7 @@ export class WorkerTokenGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<Request>();
     const token = req.header('x-worker-token');
-    const expected = process.env.WORKER_INTERNAL_TOKEN;
+    const expected = applicationProperties.get().auth.worker.internalToken;
 
     if (!expected) {
       throw new UnauthorizedException({

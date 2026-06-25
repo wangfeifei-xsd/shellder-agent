@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Connector } from '@prisma/client';
 import { createConnection } from 'mysql2/promise';
 import { resolveDbConnectionParams } from '../connector/db-connection.util';
-import { LegacySqlToolConfig, SqlToolConfig } from './tool.types';
+import { LegacySqlToolConfig, SqlToolConfig, DEFAULT_SQL_CONFIG } from './tool.types';
 
 /** SQL 工具执行结果（应用层） */
 export interface SqlExecResult {
@@ -134,9 +134,9 @@ export class SqlToolService {
   ): Promise<SqlExecResult> {
     this.assertReadonlySql(rawSql, sqlConfig);
 
-    const maxRows = sqlConfig.maxRows > 0 ? sqlConfig.maxRows : 100;
+    const maxRows = sqlConfig.maxRows > 0 ? sqlConfig.maxRows : DEFAULT_SQL_CONFIG.maxRows;
     const maxExecutionMs =
-      sqlConfig.maxExecutionMs > 0 ? sqlConfig.maxExecutionMs : 3000;
+      sqlConfig.maxExecutionMs > 0 ? sqlConfig.maxExecutionMs : DEFAULT_SQL_CONFIG.maxExecutionMs;
 
     const { sql: boundSql, values } = this.bindNamedParams(
       this.stripComments(rawSql).trim().replace(/;+\s*$/, ''),

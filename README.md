@@ -53,8 +53,8 @@
 ├── shellder-job-worker/            # 异步 Worker（BullMQ）
 ├── project-analysis-v1-completed/  # V1 已验收方案文档（二次开发入口）
 ├── project-sql/                    # 按模块交付的 SQL 演进
+├── config/                         # 统一配置（application.yml、.env）
 ├── docker-compose.yml
-├── .env.example
 └── scripts/deploy.sh
 ```
 
@@ -78,13 +78,13 @@
 
 ### Docker 部署（外置 MySQL / Redis）
 
-**默认行为**：`docker compose up` 只启动三个应用容器，**不会**创建 mysql/redis。连接地址来自 **`.env.example`**（Jenkins scp 会一并下发）。
+**默认行为**：`docker compose up` 只启动三个应用容器，**不会**创建 mysql/redis。连接地址来自 **`config/.env.example`**（Jenkins scp 会一并下发）。
 
 Docker 部署**只启动应用容器**，不执行任何 SQL。库表与种子数据由运维自行维护，见 [`project-sql/README.md`](project-sql/README.md)。
 
 ```bash
-# 按需编辑 .env.example 中的 DATABASE_URL、REDIS_HOST 等
-docker compose --env-file .env.example up --build -d
+# 按需编辑 config/.env.example 中的 DATABASE_URL、REDIS_HOST 等
+docker compose --env-file config/.env.example up --build -d
 
 # 或使用部署脚本（Jenkins）
 bash scripts/deploy.sh
@@ -113,10 +113,10 @@ ssh 10.30.20.222 'cd /data/shellder-agent && bash scripts/deploy.sh'
 <details>
 <summary><strong>可选：Compose 内置 mysql / redis（仅本地验收）</strong></summary>
 
-需要本机没有占用 3306/6379；在 `.env.example` 底部取消 bundled-infra 注释段（`@mysql:3306`、`REDIS_HOST=redis`）后执行：
+需要本机没有占用 3306/6379；在 `config/.env.example` 底部取消 bundled-infra 注释段（`@mysql:3306`、`REDIS_HOST=redis`）后执行：
 
 ```bash
-docker compose --env-file .env.example --profile bundled-infra \
+docker compose --env-file config/.env.example --profile bundled-infra \
   -f docker-compose.yml -f docker-compose.bundled-infra.yml up --build -d
 ```
 
@@ -129,8 +129,8 @@ docker compose --env-file .env.example --profile bundled-infra \
 **首次克隆 / 依赖变更后（初始化一次）：**
 
 ```bash
-# 本地开发可新建 .env 覆盖 .env.example（gitignore，仅本机）；或改 .env.example 底部 bundled 段
-docker compose --env-file .env.example --profile bundled-infra \
+# 本地开发可新建 config/.env 覆盖 .env.example（gitignore，仅本机）；或改 config/.env.example 底部 bundled 段
+docker compose --env-file config/.env.example --profile bundled-infra \
   -f docker-compose.yml -f docker-compose.bundled-infra.yml up -d mysql redis
 
 npm install
@@ -139,7 +139,7 @@ npm run prisma:generate
 # 首次建库：手动执行 project-sql/00-all-schema.sql、00-all-seed.sql
 ```
 
-本地 npm 开发时，可在 `shellder-agent/` 下新建 `.env`（指向 `localhost:3306`），会优先于 `.env.example` 加载。
+本地 npm 开发时，可复制 `config/.env.example` 为 `config/.env`（指向 `localhost:3306`）。
 
 **日常启动（开 3 个终端）：**
 
@@ -262,19 +262,19 @@ npm run prisma:generate
 <details>
 <summary><strong>Can't reach database server at localhost:3306（Docker 部署）</strong></summary>
 
-容器里的 **`localhost` 不是宿主机**。请编辑 **`.env.example`**，把 `DATABASE_URL` 改成 MySQL **真实 IP**：
+容器里的 **`localhost` 不是宿主机**。请编辑 **`config/.env.example`**，把 `DATABASE_URL` 改成 MySQL **真实 IP**：
 
 ```env
 DATABASE_URL=mysql://iot5:密码@192.168.109.211:3306/agent_platform
 REDIS_HOST=10.30.20.220
 ```
 
-改完后重建容器。若仍显示 localhost，多半是宿主机 `.env` 覆盖了 `.env.example`：
+改完后重建容器。若仍显示 localhost，多半是宿主机根目录残留 `.env` 干扰了 compose 插值：
 
 ```bash
 cd /data/shellder-agent
-grep DATABASE_URL .env.example .env 2>/dev/null
-mv .env .env.bak
+grep DATABASE_URL config/.env.example 2>/dev/null
+mv .env .env.bak 2>/dev/null || true
 docker compose up -d --force-recreate shellder-agent-server
 docker exec shellder-agent-server printenv DATABASE_URL
 ```
@@ -284,26 +284,26 @@ docker exec shellder-agent-server printenv DATABASE_URL
 <details>
 <summary><strong>Environment variable not found: DATABASE_URL</strong></summary>
 
-- 确认 `shellder-agent/.env.example` 存在且含 `DATABASE_URL`
-- `docker compose` 需加 `--env-file .env.example`，或直接使用 `bash scripts/deploy.sh`
+- 确认 `shellder-agent/config/.env.example` 存在且含 `DATABASE_URL`
+- `docker compose` 需加 `--env-file config/.env.example`，或直接使用 `bash scripts/deploy.sh`
 
 </details>
 
 <details>
 <summary><strong>docker: command not found</strong></summary>
 
-需安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)，或改用本机 MySQL 8 + Redis 并修改 `.env` 连接串。
+需安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)，或改用本机 MySQL 8 + Redis 并修改 `config/.env` 连接串。
 
 </details>
 
 <details>
 <summary><strong>Authentication failed / P1000（用户 agent 密码不对）</strong></summary>
 
-说明 **MySQL 已能连上**，但 `.env` 里 `DATABASE_URL` 的账号密码与真实库不一致。
+说明 **MySQL 已能连上**，但 `config/.env` 或 `config/.env.example` 里 `DATABASE_URL` 的账号密码与真实库不一致。
 
 **若用 Docker Compose 起 MySQL：**
 
-1. 确认 `DATABASE_URL` 与 `.env` 中 `MYSQL_USER` / `MYSQL_PASSWORD` 一致（默认 `agent` / `changeme_agent`）
+1. 确认 `DATABASE_URL` 与 `config/.env` 中配置一致（bundled-infra 默认 `agent` / `changeme_agent`）
 2. 若曾改过密码或反复 `up`，旧数据卷可能仍是旧密码 → 清空卷重建：
    ```bash
    docker compose down -v

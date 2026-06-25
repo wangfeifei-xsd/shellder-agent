@@ -1,0 +1,94 @@
+# 加载顺序：application.yml.example → application.yml → application-{profile}.yml
+# 敏感项使用 ${ENV_NAME:默认值}，由 config/.env 或容器环境注入
+
+profile: ${SHELLDER_PROFILE:default}
+
+infrastructure:
+  database:
+    url: ${DATABASE_URL:mysql://localhost:3306/agent_platform}
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+
+services:
+  agent-server:
+    port: ${AGENT_SERVER_PORT:3001}
+    internal-url: ${AGENT_SERVER_INTERNAL_URL:}
+  job-worker:
+    port: ${JOB_WORKER_PORT:3002}
+  web-console:
+    port: ${WEB_CONSOLE_PORT:3000}
+    origin: ${WEB_CONSOLE_ORIGIN:}
+    api-base-url: ${VITE_API_BASE_URL:}
+    api-proxy-target: ${VITE_API_PROXY_TARGET:http://localhost:3001}
+    default-origin: ${VITE_WEB_CONSOLE_ORIGIN:http://localhost:3000}
+
+auth:
+  jwt:
+    secret: ${JWT_SECRET:change-me-dev-secret}
+    expires-in: ${JWT_EXPIRES_IN:7d}
+  connector:
+    secret-key: ${CONNECTOR_SECRET_KEY:}
+    dev-fallback-key: ${CONNECTOR_SECRET_DEV_FALLBACK_KEY:shellder-agent-dev-connector-secret-key}
+  bootstrap:
+    enabled: ${AUTH_BOOTSTRAP:true}
+    admin-username: ${ADMIN_USERNAME:admin}
+    admin-password: ${ADMIN_PASSWORD:admin123}
+  worker:
+    internal-token: ${WORKER_INTERNAL_TOKEN:}
+  openapi:
+    token-expires-in: ${OPENAPI_TOKEN_EXPIRES_IN:2h}
+
+app:
+  platform:
+    name: shellder-agent
+  basic:
+    default-timeout-ms: 300000
+    default-page-size: 20
+  capability:
+    timeout-min-ms: 30000
+    timeout-floor-ms: 180000
+    timeout-ceiling-ms: 600000
+    default-max-retries: 2
+    context-message-limit: 20
+  task:
+    default-timeout-ms: 300000
+    default-max-retries: 3
+  sql:
+    max-rows: 100
+    max-execution-ms: 3000
+  llm:
+    timeout-ms: 60000
+    max-tokens: 4096
+    chat-path: chat/completions
+    enable-thinking: false
+  model:
+    timeout-ms: 60000
+    retry-count: 3
+    retry-delay-ms: 1000
+    stream-enabled: true
+    capability-response-template: '{}'
+  knowledge:
+    wiki-base-url: ''
+    wiki-timeout-ms: 30000
+  notification:
+    connector-id: ''
+    queue-attempts: 3
+    queue-backoff-delay-ms: 3000
+    send-mock: true
+  copilot:
+    max-history-messages: 50
+    token-ttl-seconds: 3600
+  prompt:
+    cache-ttl-ms: 60000
+  connector:
+    default-timeout-ms: 10000
+  routing:
+    llm-classify-enabled: false
+  query:
+    result-max-rows-for-llm: 50
+
+monitoring:
+  grafana:
+    admin-password: ${GRAFANA_ADMIN_PASSWORD:changeme_grafana}

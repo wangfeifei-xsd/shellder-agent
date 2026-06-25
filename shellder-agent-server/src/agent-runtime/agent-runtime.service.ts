@@ -32,14 +32,7 @@ import { truncate } from '../audit/audit.constants';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ConfirmationActor } from '../approval/approval-runtime.types';
 import { SessionTitleService } from './session-title.service';
-
-/** 未配置系统设置时的兜底（与 basic.defaultTimeoutMs 默认 300000 对齐） */
-const FALLBACK_CAPABILITY_TIMEOUT_MS = 300_000;
-/** 查询型含 NL2SQL + 执行 + 结果解读，下限不低于 3 分钟 */
-const QUERY_CAPABILITY_TIMEOUT_FLOOR_MS = 180_000;
-const CAPABILITY_TIMEOUT_CEILING_MS = 600_000;
-const DEFAULT_MAX_RETRIES = 2;
-const CONTEXT_MESSAGE_LIMIT = 20;
+import { applicationProperties } from '@shellder/config';
 
 /**
  * Agent Runtime 编排骨架（架构 §4.5 / 执行计划 §4.1）。
@@ -76,13 +69,17 @@ export class AgentRuntimeService {
       CONFIG_KEYS.DEFAULT_TIMEOUT_MS,
     );
     let ms = Number(raw);
+    const app = applicationProperties.get().app;
     if (!Number.isFinite(ms) || ms <= 0) {
-      ms = FALLBACK_CAPABILITY_TIMEOUT_MS;
+      ms = app.basic.defaultTimeoutMs;
     }
     if (capabilityType === 'query') {
-      ms = Math.max(ms, QUERY_CAPABILITY_TIMEOUT_FLOOR_MS);
+      ms = Math.max(ms, app.capability.timeoutFloorMs);
     }
-    return Math.min(Math.max(ms, 30_000), CAPABILITY_TIMEOUT_CEILING_MS);
+    return Math.min(
+      Math.max(ms, app.capability.timeoutMinMs),
+      app.capability.timeoutCeilingMs,
+    );
   }
 
   /**
@@ -240,7 +237,7 @@ export class AgentRuntimeService {
         toolIds,
         needConfirmation: routingResult.needConfirmation,
         timeoutMs,
-        maxRetries: DEFAULT_MAX_RETRIES,
+        maxRetries: applicationProperties.get().app.capability.defaultMaxRetries,
         principalContext,
       };
 
@@ -618,7 +615,7 @@ export class AgentRuntimeService {
       toolIds,
       needConfirmation: false,
       timeoutMs,
-      maxRetries: DEFAULT_MAX_RETRIES,
+      maxRetries: applicationProperties.get().app.capability.defaultMaxRetries,
       principalContext: this.resolvePrincipalContext(session),
     };
 

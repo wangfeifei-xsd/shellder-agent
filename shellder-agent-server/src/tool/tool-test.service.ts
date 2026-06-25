@@ -18,7 +18,7 @@ import { QueryPrincipalContextFieldsDto } from './dto/query-principal-context.dt
 import { TestSqlDto, TestToolDto } from './dto/test-tool.dto';
 import { ToolService } from './tool.service';
 import { validateAgainstSchema, SchemaValidationResult } from './schema-validator.util';
-import { SqlToolConfig, TOOL_TYPE_CAPABILITY } from './tool.types';
+import { SqlToolConfig, TOOL_TYPE_CAPABILITY, DEFAULT_SQL_CONFIG } from './tool.types';
 import { ToolInvocationService } from './tool-invocation.service';
 
 /** 调用测试响应（执行计划 §4.4：原始请求/响应、转换结果、schema 校验结果、Policy 决策） */
@@ -583,9 +583,7 @@ export class ToolTestService {
 
   private readSqlConfig(tool: Tool): SqlToolConfig {
     const cfg = this.toolService.readConfig(tool).sql;
-    return (
-      cfg ?? { tableBlacklist: [], fieldBlacklist: [], maxRows: 100, maxExecutionMs: 3000, templates: [] }
-    );
+    return cfg ?? { ...DEFAULT_SQL_CONFIG };
   }
 
   private resolveSql(dto: TestSqlDto, sqlConfig: SqlToolConfig): string {

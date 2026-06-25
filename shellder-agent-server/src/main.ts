@@ -1,6 +1,7 @@
 import './load-env';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { applicationProperties } from '@shellder/config';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
@@ -9,7 +10,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-    origin: process.env.WEB_CONSOLE_ORIGIN ?? true,
+    origin: applicationProperties.getWebConsoleCorsOrigin(),
     credentials: true,
   });
   app.use(RequestIdMiddleware);
@@ -23,7 +24,7 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const port = Number(process.env.PORT ?? process.env.AGENT_SERVER_PORT ?? 3001);
+  const port = applicationProperties.resolveListenPort('agent-server', 3001);
   await app.listen(port);
 }
 

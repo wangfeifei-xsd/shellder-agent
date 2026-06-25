@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
+import { applicationProperties } from '@shellder/config';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AuthBootstrapService } from './auth-bootstrap.service';
 import { AuthController } from './auth.controller';
@@ -15,9 +16,9 @@ import { PermissionService } from './permission.service';
     PrismaModule,
     JwtModule.register({
       global: true,
-      secret: process.env.JWT_SECRET ?? 'change-me-dev-secret',
+      secret: applicationProperties.get().auth.jwt.secret,
       signOptions: {
-        expiresIn: process.env.JWT_EXPIRES_IN ?? '7d',
+        expiresIn: applicationProperties.get().auth.jwt.expiresIn,
       },
     }),
   ],
