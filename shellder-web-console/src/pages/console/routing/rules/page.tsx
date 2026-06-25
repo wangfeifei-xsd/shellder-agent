@@ -627,7 +627,10 @@ export default function RoutingRulesPage() {
         title={editing ? '编辑路由规则' : '新建路由规则'}
         width={560}
         open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        onClose={() => {
+          setDrawerOpen(false);
+          resetCondTest();
+        }}
         destroyOnClose
         extra={
           <Space>
@@ -793,20 +796,19 @@ export default function RoutingRulesPage() {
             </Typography.Paragraph>
           )}
         </Form>
-      </Drawer>
 
-      <Modal
-        title={
-          <Space>
-            <ExperimentOutlined className="text-[#1677ff]" />
-            <span>匹配条件测试</span>
-          </Space>
-        }
-        open={condTestModalOpen}
-        onCancel={() => setCondTestModalOpen(false)}
-        width={520}
-        destroyOnClose={false}
-        footer={
+        <Modal
+          title={
+            <Space>
+              <ExperimentOutlined className="text-[#1677ff]" />
+              <span>匹配条件测试</span>
+            </Space>
+          }
+          open={condTestModalOpen}
+          onCancel={() => setCondTestModalOpen(false)}
+          width={520}
+          destroyOnClose={false}
+          footer={
           <Space wrap>
             <Button onClick={() => setCondTestModalOpen(false)}>关闭</Button>
             <Button
@@ -898,7 +900,8 @@ export default function RoutingRulesPage() {
             }
           />
         )}
-      </Modal>
+        </Modal>
+      </Drawer>
     </>
   );
 }
