@@ -4,7 +4,7 @@
 
 本模块实现 Task 模块数据结构，包含任务（task）、任务步骤（task_step）、任务执行日志（task_log）三张表。
 
-对应功能清单 §1.3 任务中心、§4.3 Task、§4.11 异步执行（job-worker）。
+对应任务中心与异步 Worker（job-worker）模块。
 
 ## 依赖的前序模块
 

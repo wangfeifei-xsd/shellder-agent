@@ -2,7 +2,7 @@
 
 ## 作用
 
-- 新增平台**独立账号体系**与 **RBAC**（功能清单 §1.10、实施规格 §1.5）：
+- 新增平台**独立账号体系**与 **RBAC**（）：
   - `user`：平台登录账号（bcrypt 口令哈希，启用/禁用）。
   - `role`：角色，承载菜单权限、模块权限、Tool 权限范围与能力/审批策略。
   - `user_role`：用户-角色多对多。
@@ -28,7 +28,7 @@
 1. 确认已执行 `01-bootstrap`、`02-tenant-management`（含 `tenant` 默认租户 seed）。
 2. 执行本目录 `schema.sql` 建表（或运行 Prisma 迁移，见下）。
 3. 执行 `seed.sql` 写入默认管理员与超级管理员角色。
-4. 应用层：在 monorepo 根目录运行 `npm run prisma:migrate:dev`（开发）或 `npm run prisma:migrate`（部署）。
+4. 应用层：在仓库根目录运行 `npm run prisma:generate`；建表执行 `project-sql/` 对应模块 SQL
 
 > `shellder-agent-server` 启动时还会**自动幂等创建**默认管理员（见 `auth/auth-bootstrap.service.ts`），
 > 因此本地即使未手动执行 `seed.sql` 也能用 `admin/admin123` 登录。设置环境变量 `AUTH_BOOTSTRAP=false` 可关闭该行为；
@@ -62,7 +62,7 @@
 ## 注意事项
 
 - `username`、`role.code` 平台内唯一；重复创建返回 `409 CONFLICT`。
-- `user_tenant.tenant_id` 必须为 `tenant` 表已登记记录；绑定时校验存在且 `status=enabled`（实施规格 §1.4）。
+- `user_tenant.tenant_id` 必须为 `tenant` 表已登记记录；绑定时校验存在且 `status=enabled`（）。
 - 禁用用户（`status=disabled`）无法登录（验收标准 4）。
 - 内置账号 / 角色（`is_system=true`）不可删除，内置管理员不可禁用。
 - JWT 载荷含用户 ID、角色 code 列表、可访问租户 id 列表（验收标准 3）。

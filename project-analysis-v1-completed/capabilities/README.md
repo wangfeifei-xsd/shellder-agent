@@ -1,6 +1,6 @@
 # 业务能力索引
 
-> 对照 [`project-analysis/agent-platform-功能清单.md`](../project-analysis/agent-platform-功能清单.md) §5。
+> V1 已通过正式入口验证的四类业务能力说明。
 
 | 能力 | 文档 | V1 验收 |
 |------|------|---------|

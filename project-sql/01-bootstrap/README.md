@@ -15,7 +15,7 @@
 1. 创建数据库（Docker Compose 会自动创建 `agent_platform`）
 2. 执行 `schema.sql`（本文件为空操作说明，无 DDL）
 3. 执行 `seed.sql`（无数据）
-4. 在 monorepo 根目录运行 `npm run prisma:migrate:dev` 或 `npm run prisma:migrate`
+4. 在仓库根目录运行 `npm run prisma:generate`（生成 ORM 客户端；表结构以 `project-sql/` 手工 SQL 为准）
 
 ## 与 Prisma 对齐
 

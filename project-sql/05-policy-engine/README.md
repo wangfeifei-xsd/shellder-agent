@@ -2,7 +2,7 @@
 
 ## 作用
 
-实现 Policy 模块（权限判断、风险等级判断、确认拦截，架构 §4.2 / §8）及平台侧显式规则配置，支撑管理后台「知识库与规则」下的两个菜单（功能清单 §1.7 规则部分）：
+实现 Policy 模块（权限判断、风险等级判断、确认拦截，§8）及平台侧显式规则配置，支撑管理后台「知识库与规则」下的两个菜单（规则部分）：
 
 - `rule`：**规则配置** —— 显式规则（高风险识别、确认拦截、能力级限制、通用），按租户隔离，含类型、条件 DSL、动作、优先级、启用状态。
 - `rule_hit`：**规则命中记录** —— 请求命中的规则、命中时间、请求内容摘要、处理结果，关联 session/task ID。
@@ -41,8 +41,8 @@
 
 ## Policy 评估（platform-server）
 
-- `PolicyService.evaluate(context, { persistHits })` → `{ allow, needConfirm, highRisk, result, matchedRules, reason }`（架构 §4.2 API 要点）。
-- **Tool 执行前必须调用 Policy（架构 §8）**；07 工具、12 运行时、14 审批依赖本服务。
+- `PolicyService.evaluate(context, { persistHits })` → `{ allow, needConfirm, highRisk, result, matchedRules, reason }`（API 要点）。
+- **Tool 执行前必须调用 Policy（）**；07 工具、12 运行时、14 审批依赖本服务。
 - 规则按 `priority` 升序评估（数值越小越优先）：
   - `deny` → 拦截（`allow=false`）。
   - `need_confirm` → 需人工确认（`needConfirm=true`，中断执行转 14-审批）。
@@ -90,7 +90,7 @@
 
 ## 注意事项
 
-- `rule.tenant_id` 必须来自 `tenant` 表（实施规格 §1.4），创建时校验租户存在。
+- `rule.tenant_id` 必须来自 `tenant` 表（），创建时校验租户存在。
 - `rule_hit` 为保留性数据：`tenant_id` 外键 `ON DELETE RESTRICT`；`rule_id` 外键 `ON DELETE SET NULL` 以保留命中历史。
-- 本模块**不包含** SQL 表白名单、行数限制等（属 SQL 查询工具配置，执行计划 §8 / §4.2「不包含」）。
+- 本模块**不包含** SQL 表白名单、行数限制等（属 SQL 查询工具配置）。
 - `request_summary` 仅保存脱敏摘要，禁止落库口令、密钥等敏感原文。

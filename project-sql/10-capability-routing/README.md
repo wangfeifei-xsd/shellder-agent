@@ -2,7 +2,7 @@
 
 ## 模块说明
 
-本模块实现平台「能力路由」功能（功能清单 §1.4 / 架构 Capability Routing）：
+本模块实现平台「能力路由」功能（架构 Capability Routing）：
 
 1. **能力目录**（`capability` 表）：维护平台能力清单，包含四类能力（qa/query/action/workflow）的描述、适用系统、依赖工具、权限要求。
 2. **路由规则**（`routing_rule` 表）：配置能力与 Tool / 条件的关联，定义每类能力可调用范围。

@@ -9,7 +9,7 @@
 
 > Shellder Agent 平台 Monorepo — 可运行的 Web 管理后台、主 API 与异步 Worker。
 
-本仓库为 **shellder-agent 可运行代码根目录**（`npm` / `docker compose` 均在此执行）。产品与架构文档见 [project-analysis-v1-completed](project-analysis-v1-completed/README.md)（V1 已验收基线）；**实验中**仅技能书管理，其完整初始规格在内部 monorepo 的 `project-analysis/`（**未纳入本 GitHub 仓库**）。
+本仓库为 **shellder-agent 可运行代码根目录**（`npm` / `docker compose` 均在此执行）。产品与架构文档见 [project-analysis-v1-completed](project-analysis-v1-completed/README.md)（V1 已验收基线）；**实验中**仅技能书管理。
 
 ## 目录
 
@@ -187,7 +187,7 @@ npm run prisma:generate
 
 ### Prompt 管理（21-C）
 
-改 Prompt 相关代码前必读 [06-实施约束-已落地 §4 Prompt 管理](project-analysis-v1-completed/06-实施约束-已落地.md#4-prompt-管理1d)。硬约束摘要：
+改 Prompt 相关代码前必读 [06-实施约束 §4 Prompt 管理](project-analysis-v1-completed/06-实施约束-已落地.md#4-prompt-管理)。硬约束摘要：
 
 - Prompt 正文以 `prompt_template` / `prompt_version` 为唯一来源（SSOT），禁止在业务代码硬编码 System Prompt
 - 禁止新增 `src/**/*.prompt.ts`（白名单仅 `connector/er-diagram.prompt.ts`）
@@ -212,7 +212,7 @@ npm run prisma:generate
 
 | 文档 | 何时阅读 |
 |------|----------|
-| [01-范围与边界](project-analysis-v1-completed/01-范围与边界.md) | 确认 V1 已完成 / 实验中 / 与初始方案差异 |
+| [01-范围与边界](project-analysis-v1-completed/01-范围与边界.md) | 确认 V1 已完成 / 实验中 / 实现差异；**已知缺口见 §6** |
 | [02-架构设计-V1已完成](project-analysis-v1-completed/02-架构设计-V1已完成.md) | 理解模块依赖与运行时链路 |
 | [03-功能清单-V1已完成](project-analysis-v1-completed/03-功能清单-V1已完成.md) | 查已验收菜单与能力清单 |
 | [04-代码导航](project-analysis-v1-completed/04-代码导航.md) | 定位前后端目录、路由、Controller、API 前缀 |
@@ -231,7 +231,7 @@ npm run prisma:generate
 | 规则 / 审批 / 任务中心 | [modules/16-规则与Policy](project-analysis-v1-completed/modules/16-规则与Policy.md)、[modules/17-审批中心](project-analysis-v1-completed/modules/17-审批中心.md)、[modules/18-任务中心](project-analysis-v1-completed/modules/18-任务中心.md) |
 | 能力路由 / http_query 工具 | [modules/13-能力路由](project-analysis-v1-completed/modules/13-能力路由.md)、[modules/12-工具管理](project-analysis-v1-completed/modules/12-工具管理.md) |
 | 数据表或 ORM 变更 | [05-数据模型](project-analysis-v1-completed/05-数据模型.md) → `project-sql/` 递增 SQL → `npm run prisma:generate` |
-| 实验中菜单（仅技能书） | 侧栏标注「（实验中）」的**技能书管理**不在 V1 验收基线内；边界见 [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围)。完整初始规格在内部 monorepo `project-analysis/`（未纳入本仓库） |
+| 实验中菜单（仅技能书） | 侧栏标注「（实验中）」的**技能书管理**不在 V1 验收基线内；边界见 [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围) |
 
 ### 给 AI Agent 的使用建议
 
@@ -241,7 +241,7 @@ npm run prisma:generate
 2. **定位代码**：[04-代码导航](project-analysis-v1-completed/04-代码导航.md)
 3. **硬约束**：[06-实施约束-已落地](project-analysis-v1-completed/06-实施约束-已落地.md) + 上文 [Prompt 管理](#prompt-管理21-c)
 
-**原则**：以 **当前代码与 `project-analysis-v1-completed` 文档** 为准；各模块文末「对照初始方案」仅作差异参考，勿以其覆盖现网实现。
+**原则**：以 **当前代码与 `project-analysis-v1-completed` 文档** 为准。
 
 ### V1 边界速记
 
@@ -346,6 +346,6 @@ curl http://localhost:3001/health
 | V1 已完成方案（二次开发） | [`project-analysis-v1-completed/README.md`](project-analysis-v1-completed/README.md) |
 | 代码导航 | [`project-analysis-v1-completed/04-代码导航.md`](project-analysis-v1-completed/04-代码导航.md) |
 | 实施约束（已落地） | [`project-analysis-v1-completed/06-实施约束-已落地.md`](project-analysis-v1-completed/06-实施约束-已落地.md) |
+| 已知缺口（方案层） | [01-范围与边界 §6](project-analysis-v1-completed/01-范围与边界.md#6-已知缺口与后续强化) |
 | SQL 演进 | [`project-sql/README.md`](project-sql/README.md) |
 | 实验中模块边界（技能书） | [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围) |
-| 初始方案全文（仅内部 monorepo） | `project-analysis/`（与 `22.agent-analysis` 工作区同级，未推送到本仓库） |

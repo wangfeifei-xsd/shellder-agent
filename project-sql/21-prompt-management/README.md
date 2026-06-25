@@ -1,7 +1,7 @@
 # 21-prompt-management — Prompt 管理
 
 > **执行序号**：21（子阶段 21-A）  
-> **方案**：[`Prompt管理-方案.md`](../../../project-analysis/Prompt管理-方案.md)
+> **方案文档**：[modules/04-Prompt管理.md](../../project-analysis-v1-completed/modules/04-Prompt管理.md)
 
 ## 本模块作用
 
@@ -33,6 +33,6 @@ mysql -u root -p agent_platform < seed.sql
 
 ## 注意事项
 
-- V1 seed 导入 §4.1 八个 `prompt_key` 的 **published v1**，正文自现有 `*.prompt.ts` / `QaPipelineService` 迁移。
+- V1 seed 导入八个预置 `prompt_key` 的 **published v1**，正文自现有 `*.prompt.ts` / `QaPipelineService` 迁移。
 - 21-A **不**切换 Query/QA/ER 业务链路；Runtime 仍读代码内常量，Resolver 供管理端试跑与 21-B 迁移使用。
 - 每 `template_id` 至多一个 `published` 版本；发布新版本时旧 published 自动 `deprecated`。

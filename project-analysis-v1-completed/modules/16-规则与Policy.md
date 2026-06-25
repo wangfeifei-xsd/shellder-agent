@@ -79,12 +79,10 @@ RBAC：菜单 `rule`、模块 `rule.manage`。
 
 ---
 
-## 对照初始方案
+## 实现差异
 
-| 初始方案 | V1 现网 |
 |----------|---------|
 | 菜单在「知识库管理与规则」下 | **独立顶级「规则」** |
 | 标注实验中 | **已去标注并产品化** |
 | 仅 Policy 命中写 rule_hit | **补充路由级确认留痕**（无 Policy 命中时） |
 
-规格详见 [`project-analysis/agent-platform-执行计划/05-策略引擎与规则配置.md`](../../../project-analysis/agent-platform-执行计划/05-策略引擎与规则配置.md)。

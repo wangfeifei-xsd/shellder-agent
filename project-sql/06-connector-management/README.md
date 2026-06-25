@@ -2,15 +2,15 @@
 
 ## 作用
 
-实现外部连接器配置、连通性测试及管理后台菜单（功能清单 §1.6 / 架构 §4.4 Connector Management），为 **07-工具管理** 的 Query Tool（只读库）、Action Tool（HTTP）、Notification Tool 提供连接能力。
+实现外部连接器配置、连通性测试及管理后台菜单（Connector Management），为 **07-工具管理** 的 Query Tool（只读库）、Action Tool（HTTP）、Notification Tool 提供连接能力。
 
 - `connector`：**连接器配置** —— 三类连接方式（只读数据库 / HTTP API / 消息通知接口），按租户隔离，含目标系统、认证方式、超时、状态、加密凭证、可引用 Tool 范围，以及最近一次连通性测试快照。
 
-## 三类连接器用途（功能清单 §1.6）
+## 三类连接器用途（）
 
 | 类型 | 枚举值 | 用途 |
 |------|--------|------|
-| 只读数据库 | `db_readonly` | 查询型能力 / SQL Query Tool（**仅**经只读 DB，不经 HTTP 查数，架构 §4.4） |
+| 只读数据库 | `db_readonly` | 查询型能力 / SQL Query Tool（**仅**经只读 DB，不经 HTTP 查数，） |
 | HTTP API | `http` | 操作型 Action Tool、流程型外部接口步骤（**不用于**查询型数据查询） |
 | 消息通知接口 | `notification` | Notification Tool、流程型通知步骤 |
 
@@ -68,7 +68,7 @@
 | `custom` | `{ "header.X-Xxx": "..." }`（以 `header.` 前缀的键作为请求头下发） |
 
 - 加密密钥来自环境变量 `CONNECTOR_SECRET_KEY`（生产必须配置高强度随机串）；密钥经 SHA-256 派生为 32 字节。
-- **详情接口仅回显凭证字段名掩码与 `hasSecret`，禁止回传明文**（功能清单 §1.6 敏感字段脱敏）。
+- **详情接口仅回显凭证字段名掩码与 `hasSecret`，禁止回传明文**（敏感字段脱敏）。
 
 ## 连通性测试（验收标准 2）
 
@@ -87,7 +87,7 @@
 ## 租户隔离与约束
 
 - 列表 / 详情 / 写操作统一经 `PermissionService` 解析有效权限：超管可见全部并可选 `?tenantId` 过滤；非超管仅限其绑定租户。
-- `connector.tenant_id` 必须来自 `tenant` 表（实施规格 §1.4），创建时校验租户存在。
+- `connector.tenant_id` 必须来自 `tenant` 表（），创建时校验租户存在。
 - **禁用租户不可新建连接器**（验收标准 3）：创建时校验 `tenant.status != disabled`，否则返回 `TENANT_DISABLED`。
 - 不可迁移租户（更新 DTO 不含 `tenantId`）。
 

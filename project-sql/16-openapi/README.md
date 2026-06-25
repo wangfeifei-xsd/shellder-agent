@@ -3,7 +3,7 @@
 ## 归属阶段
 
 - 执行序号：15 — OpenAPI 对外接口与管理
-- 功能清单：§3 OpenAPI + §1.12 OpenAPI 管理
+- OpenAPI 对外接口与管理端应用接入
 
 ## 新增表
 
@@ -43,5 +43,5 @@
 ## 注意事项
 
 - OpenAPI 鉴权独立于管理后台 JWT，使用 Client ID + Secret → OpenAPI JWT（issuer = `shellder-openapi`）
-- 禁用租户拒绝调用（实施规格 §1.4）
+- 禁用租户拒绝调用（）
 - OpenAPI 接口路径前缀为 `/openapi/v1/`，与管理后台 `/api/v1/` 分离
