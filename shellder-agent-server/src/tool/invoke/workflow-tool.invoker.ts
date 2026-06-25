@@ -1,12 +1,20 @@
 import { Injectable } from '@nestjs/common';
-import { Tool } from '@prisma/client';
+import { Connector, Tool } from '@prisma/client';
+import { PrincipalContext } from '../../agent-runtime/agent-runtime.types';
+import { ErDiagramService } from '../../connector/er-diagram.service';
+import { DataScopeResolveService } from '../../query/data-scope-resolve.service';
+import { Nl2SqlService } from '../../query/nl2sql.service';
+import { SqlScopeFilterService } from '../../query/sql-scope-filter.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SqlToolService } from '../sql-tool.service';
 import { ToolService } from '../tool.service';
 import { ToolInvocationService } from '../tool-invocation.service';
 import { InvokeContext } from '../tool-invocation.types';
 import { SqlToolConfig } from '../tool.types';
-import { parseHttpQuerySignal } from '../http-query-signal.util';
+import { HttpQueryTriggerService } from '../http-query-trigger.service';
+import { mergeHttpQueryParams } from '../http-query-param.util';
+import { WorkflowStep } from '../tool.types';
+import { coerceWorkflowParams, resolveStepParamBindings } from '../workflow-step-params.util';
 
 export interface WorkflowSubToolContext {
   tenantId: string;
@@ -15,18 +23,26 @@ export interface WorkflowSubToolContext {
   sessionId?: string;
   callerName?: string;
   source: 'runtime' | 'worker';
+  /** 问数行级范围（与查询型 Runtime 一致） */
+  principalContext?: PrincipalContext;
 }
 
 export interface WorkflowSubToolOptions {
   visitedToolIds?: Set<string>;
   depth?: number;
+  /** 当前步骤定义（含入参绑定） */
+  step?: WorkflowStep;
+  /** 当前步骤序号（0-based） */
+  stepIndex?: number;
+  /** 已完成步骤的输出，按顺序 */
+  previousStepOutputs?: unknown[];
 }
 
 const MAX_WORKFLOW_DEPTH = 10;
 
 /**
  * 流程型子 Tool 执行（query / action / notification / http_query）。
- * 统一委托 ToolInvocationService / SqlToolService，含深度与循环检测。
+ * 统一委托 ToolInvocationService / 查询型 NL2SQL 流水线，含深度与循环检测。
  */
 @Injectable()
 export class WorkflowToolInvoker {
@@ -35,6 +51,11 @@ export class WorkflowToolInvoker {
     private readonly invocation: ToolInvocationService,
     private readonly sqlTool: SqlToolService,
     private readonly toolService: ToolService,
+    private readonly erDiagram: ErDiagramService,
+    private readonly dataScopeResolve: DataScopeResolveService,
+    private readonly nl2Sql: Nl2SqlService,
+    private readonly sqlScopeFilter: SqlScopeFilterService,
+    private readonly httpQueryTrigger: HttpQueryTriggerService,
   ) {}
 
   async executeSubTool(
@@ -64,11 +85,12 @@ export class WorkflowToolInvoker {
       case 'query':
         return this.executeQuerySubTool(tool, ctx);
       case 'action':
-      case 'notification':
-        return this.invokeHttpLikeTool(tool, { message: ctx.userMessage }, ctx);
+      case 'notification': {
+        const params = this.resolveStepInvokeParams(tool.type, tool, ctx, opts);
+        return this.invokeHttpLikeTool(tool, params, ctx);
+      }
       case 'http_query': {
-        const signal = parseHttpQuerySignal(ctx.userMessage);
-        const params = signal?.params ?? {};
+        const params = await this.resolveHttpQueryStepParams(tool, ctx, opts);
         return this.invokeHttpLikeTool(tool, params, ctx);
       }
       case 'workflow':
@@ -79,28 +101,114 @@ export class WorkflowToolInvoker {
   }
 
   private async executeQuerySubTool(
-    tool: Tool & { connector: { type: string } | null },
-    _ctx: WorkflowSubToolContext,
+    tool: Tool & { connector: Connector | null },
+    ctx: WorkflowSubToolContext,
   ): Promise<unknown> {
     if (!tool.connector) throw new Error(`查询子工具「${tool.name}」未关联连接器`);
     if (tool.connector.type !== 'db_readonly') {
       throw new Error(`查询子工具「${tool.name}」连接器类型非 db_readonly`);
     }
+    if (tool.connector.status === 'disabled') {
+      throw new Error(`关联连接器「${tool.connector.name}」已停用`);
+    }
 
-    const sqlConfig: SqlToolConfig =
-      this.toolService.readConfig(tool).sql ?? {
+    const userMessage = ctx.userMessage?.trim();
+    if (!userMessage) {
+      throw new Error(`查询子工具「${tool.name}」需要用户输入以生成 SQL，当前会话无有效问句`);
+    }
+
+    const sqlConfig = this.readSqlConfig(tool);
+    const startTime = Date.now();
+
+    const published = await this.erDiagram.getPublished(tool.connector.id);
+    if (!published?.tables?.length) {
+      throw new Error(
+        '连接器尚无已发布 ER 关系图，流程内查询不可用。请先在「库表 ER 图」中发布关系图。',
+      );
+    }
+
+    const resolved = this.dataScopeResolve.resolve(ctx.principalContext, published);
+
+    const generated = await this.nl2Sql.generate({
+      userMessage,
+      connectorId: tool.connector.id,
+      sqlConfig,
+      templates: sqlConfig.templates,
+      tenantId: ctx.tenantId,
+      scopeContext: resolved.scopeContextText,
+    });
+
+    const scoped = this.sqlScopeFilter.apply(
+      generated.sql,
+      generated.referencedTables,
+      resolved,
+      generated.params ?? {},
+    );
+
+    const result = await this.sqlTool.execute(
+      tool.connector,
+      scoped.sql,
+      scoped.params,
+      sqlConfig,
+    );
+
+    return {
+      rows: result.rows,
+      rowCount: result.rowCount,
+      durationMs: Date.now() - startTime,
+      sql: scoped.sql,
+      explanation: generated.explanation,
+      referencedTables: generated.referencedTables,
+      appliedScopeFilters: scoped.appliedScopeFilters,
+    };
+  }
+
+  private resolveStepInvokeParams(
+    _toolType: string,
+    _tool: Tool,
+    ctx: WorkflowSubToolContext,
+    opts: WorkflowSubToolOptions,
+  ): Record<string, unknown> {
+    const configured = resolveStepParamBindings(
+      opts.step?.paramBindings,
+      opts.previousStepOutputs ?? [],
+      opts.stepIndex ?? 0,
+    );
+    return coerceWorkflowParams(_tool.inputSchema, {
+      message: ctx.userMessage,
+      ...configured,
+    });
+  }
+
+  private async resolveHttpQueryStepParams(
+    tool: Tool,
+    ctx: WorkflowSubToolContext,
+    opts: WorkflowSubToolOptions,
+  ): Promise<Record<string, unknown>> {
+    const configured = resolveStepParamBindings(
+      opts.step?.paramBindings,
+      opts.previousStepOutputs ?? [],
+      opts.stepIndex ?? 0,
+    );
+    const { params: extracted } = await this.httpQueryTrigger.resolveInvokeParams(
+      tool,
+      ctx.userMessage,
+    );
+    const merged = mergeHttpQueryParams(extracted, configured);
+    return coerceWorkflowParams(tool.inputSchema, merged);
+  }
+
+  private readSqlConfig(tool: Tool): SqlToolConfig {
+    const config = this.toolService.readConfig(tool).sql;
+    return (
+      config ?? {
         tableBlacklist: [],
         fieldBlacklist: [],
         maxRows: 100,
         maxExecutionMs: 3000,
         templates: [],
-      };
-
-    const sql = sqlConfig.templates?.[0]?.sql;
-    if (!sql) throw new Error(`查询子工具「${tool.name}」无 SQL 模板`);
-
-    const result = await this.sqlTool.execute(tool.connector as any, sql, {}, sqlConfig);
-    return { rows: result.rows, rowCount: result.rowCount, durationMs: result.durationMs };
+      }
+    );
   }
 
   private async invokeHttpLikeTool(
@@ -115,6 +223,7 @@ export class WorkflowToolInvoker {
       sessionId: ctx.sessionId,
       source: ctx.source,
       skipPolicy: true,
+      principal: ctx.principalContext,
       requestSummary: `[Workflow/${tool.name}] ${ctx.userMessage}`.slice(0, 256),
     };
 

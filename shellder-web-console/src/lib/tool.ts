@@ -68,7 +68,24 @@ export interface HttpQueryToolConfig {
 }
 
 export interface WorkflowToolConfig {
-  steps: { name: string; toolId?: string; description?: string }[];
+  steps: WorkflowStepDef[];
+}
+
+export type WorkflowParamSource = 'fixed' | 'user_message' | 'previous_step';
+
+export interface WorkflowStepParamBinding {
+  paramName: string;
+  source: WorkflowParamSource;
+  fixedValue?: string;
+  fromStep?: number;
+  valuePath?: string;
+}
+
+export interface WorkflowStepDef {
+  name: string;
+  toolId?: string;
+  description?: string;
+  paramBindings?: WorkflowStepParamBinding[];
 }
 
 export interface ToolConfig {
@@ -439,6 +456,59 @@ export function queryE2ePreviewTool(
     body: { message, ...principal },
   });
 }
+
+export interface ToolInputParamDef {
+  name: string;
+  required: boolean;
+  type: string;
+  description?: string;
+}
+
+/** 列出子 Tool 需在流程步骤中配置的入参 */
+export function listToolInputParams(tool: Tool): ToolInputParamDef[] {
+  if (tool.type === 'http_query') {
+    return (tool.config.httpQuery?.parameters ?? [])
+      .filter((p) => p.name?.trim())
+      .map((p) => ({
+        name: p.name.trim(),
+        required: !!p.required,
+        type: p.type || 'string',
+        description: p.description,
+      }));
+  }
+  if (tool.type === 'query') return [];
+
+  const schema = tool.inputSchema as
+    | {
+        properties?: Record<string, { type?: string; description?: string }>;
+        required?: string[];
+      }
+    | undefined;
+  if (!schema?.properties) return [];
+
+  const requiredSet = new Set(schema.required ?? []);
+  return Object.entries(schema.properties)
+    .filter(([name]) => name !== 'message')
+    .map(([name, meta]) => ({
+      name,
+      required: requiredSet.has(name),
+      type: meta.type || 'string',
+      description: meta.description,
+    }));
+}
+
+export function defaultParamBindingsForTool(tool: Tool): WorkflowStepParamBinding[] {
+  return listToolInputParams(tool).map((p) => ({
+    paramName: p.name,
+    source: p.required ? 'user_message' : 'user_message',
+  }));
+}
+
+export const WORKFLOW_PARAM_SOURCE_OPTIONS: { value: WorkflowParamSource; label: string }[] = [
+  { value: 'user_message', label: '用户问句提取（LLM）' },
+  { value: 'fixed', label: '固定值' },
+  { value: 'previous_step', label: '引用前置步骤结果' },
+];
 
 // ── 展示元数据 ────────────────────────────────────────────
 

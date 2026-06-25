@@ -169,6 +169,16 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'task',
+    icon: <DeploymentUnitOutlined />,
+    label: '任务中心',
+    children: [
+      { key: '/tasks', label: <Link to="/tasks">任务列表</Link> },
+      { key: '/tasks/tracking', label: <Link to="/tasks/tracking">长任务跟踪</Link> },
+      { key: '/tasks/logs', label: <Link to="/tasks/logs">执行日志</Link> },
+    ],
+  },
+  {
     key: 'audit',
     icon: <AuditOutlined />,
     label: '审计中心',
@@ -213,16 +223,6 @@ export const consoleMenuItems: MenuProps['items'] = [
       { key: '/settings/llm', label: <Link to="/settings/llm">模型接入</Link> },
       { key: '/settings/model', label: <Link to="/settings/model">模型与响应配置</Link> },
       { key: '/settings/notification', label: <Link to="/settings/notification">通知配置</Link> },
-    ],
-  },
-  {
-    key: 'task',
-    icon: <DeploymentUnitOutlined />,
-    label: '任务中心（实验中）',
-    children: [
-      { key: '/tasks', label: <Link to="/tasks">任务列表</Link> },
-      { key: '/tasks/tracking', label: <Link to="/tasks/tracking">长任务跟踪</Link> },
-      { key: '/tasks/logs', label: <Link to="/tasks/logs">执行日志</Link> },
     ],
   },
   {

@@ -5,7 +5,7 @@ import { ApprovalService } from '../approval/approval.service';
 import { getCapabilityHandler } from '../agent-runtime/capability-handlers';
 import { RuntimeContext, SseEvent } from '../agent-runtime/agent-runtime.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { WorkflowToolConfig } from '../tool/tool.types';
+import { WorkflowStep, WorkflowToolConfig } from '../tool/tool.types';
 import { WorkflowToolInvoker } from '../tool/invoke/workflow-tool.invoker';
 import { TaskService } from './task.service';
 import {
@@ -125,7 +125,20 @@ export class TaskExecutionService {
 
     try {
       const ctx = this.buildRuntimeContext(task, stepInput);
-      const output = await this.executeSubTool(tool, ctx);
+      const workflowCtx = await this.buildWorkflowStepContext(task, step);
+      const output = await this.workflowInvoker.executeSubTool(
+        tool.id,
+        {
+          tenantId: ctx.tenantId,
+          userId: ctx.userId,
+          userMessage: ctx.userMessage,
+          sessionId: ctx.sessionId,
+          callerName: ctx.username,
+          source: 'worker',
+          principalContext: ctx.principalContext,
+        },
+        workflowCtx,
+      );
       const durationMs = Date.now() - startTime;
 
       await this.taskService.addLog(taskId, {
@@ -375,16 +388,51 @@ export class TaskExecutionService {
     };
   }
 
-  // ── 子 Tool 执行（WorkflowToolInvoker 统一）────────
-
-  private async executeSubTool(tool: Tool & { connector: any }, ctx: RuntimeContext) {
-    return this.workflowInvoker.executeSubTool(tool.id, {
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      userMessage: ctx.userMessage,
-      sessionId: ctx.sessionId,
-      source: 'worker',
+  private async buildWorkflowStepContext(
+    task: Task,
+    step: { seq: number; id: string },
+  ): Promise<{
+    step?: WorkflowStep;
+    stepIndex: number;
+    previousStepOutputs: unknown[];
+  }> {
+    const stepIndex = step.seq - 1;
+    const previousSteps = await this.prisma.taskStep.findMany({
+      where: {
+        taskId: task.id,
+        seq: { lt: step.seq },
+        status: 'completed',
+      },
+      orderBy: { seq: 'asc' },
     });
+    const previousStepOutputs = previousSteps.map((s) => s.output);
+
+    if (task.capabilityType !== 'workflow') {
+      return { stepIndex, previousStepOutputs };
+    }
+
+    const input = (task.input ?? {}) as Record<string, unknown>;
+    const toolIds =
+      (input.toolIds as string[] | undefined) ??
+      (input.workflowToolId ? [String(input.workflowToolId)] : []);
+    if (!toolIds.length) {
+      return { stepIndex, previousStepOutputs };
+    }
+
+    const workflowTool = await this.prisma.tool.findUnique({
+      where: { id: toolIds[0] },
+    });
+    if (!workflowTool) {
+      return { stepIndex, previousStepOutputs };
+    }
+
+    const config = this.readWorkflowConfig(workflowTool);
+    const wfStep = config.steps?.[stepIndex];
+    return {
+      step: wfStep,
+      stepIndex,
+      previousStepOutputs,
+    };
   }
 
   // ── helpers ─────────────────────────────────────────────────

@@ -86,11 +86,12 @@ export class NotificationQueueService {
   }
 
   private buildJobId(payload: NotificationJobPayload): string | undefined {
+    // BullMQ custom jobId 不允许包含 ':'，使用 '-' 分隔以保证幂等
     if (payload.taskId) {
-      return `notify:${payload.type}:${payload.taskId}`;
+      return `notify-${payload.type}-${payload.taskId}`;
     }
     if (payload.approvalId) {
-      return `notify:${payload.type}:approval:${payload.approvalId}`;
+      return `notify-${payload.type}-approval-${payload.approvalId}`;
     }
     return undefined;
   }

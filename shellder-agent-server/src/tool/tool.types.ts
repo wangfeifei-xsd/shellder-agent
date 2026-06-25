@@ -95,11 +95,28 @@ export interface WorkflowToolConfig {
   steps: WorkflowStep[];
 }
 
+export type WorkflowParamSource = 'fixed' | 'user_message' | 'previous_step';
+
+/** 流程步骤入参绑定 */
+export interface WorkflowStepParamBinding {
+  /** 参数名，对应子 Tool 的 inputSchema / httpQuery.parameters */
+  paramName: string;
+  source: WorkflowParamSource;
+  /** source=fixed 时的固定值 */
+  fixedValue?: string;
+  /** source=previous_step 时引用第几步（1-based），默认上一步 */
+  fromStep?: number;
+  /** source=previous_step 时从该步 output 取值的路径，如 rows.0.company_name */
+  valuePath?: string;
+}
+
 export interface WorkflowStep {
   name: string;
   /** 引用的子 Tool id（按需） */
   toolId?: string;
   description?: string;
+  /** 步骤入参绑定（http_query / action / notification） */
+  paramBindings?: WorkflowStepParamBinding[];
 }
 
 export const EMPTY_TOOL_CONFIG: ToolConfig = {};

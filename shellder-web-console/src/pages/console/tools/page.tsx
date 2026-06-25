@@ -29,10 +29,7 @@ import {
   withNowrap,
 } from '@/components/console/tableEllipsis';
 import { ToolTestResultView } from '@/components/console/ToolTestResultView';
-import {
-  WorkflowStepFormValue,
-  WorkflowStepsEditor,
-} from '@/components/console/WorkflowStepsEditor';
+import { WorkflowStepsModal } from '@/components/console/WorkflowStepsModal';
 import { Connector, listConnectors } from '@/lib/connector';
 import {
   CreateToolInput,
@@ -49,6 +46,7 @@ import {
   TOOL_TYPE_META,
   TOOL_TYPE_OPTIONS_EXCLUDING_QUERY,
   TOOL_TYPE_OPTIONS_QUERY_ONLY,
+  WorkflowStepDef,
   UpdateToolInput,
   createTool,
   deleteTool,
@@ -94,8 +92,6 @@ interface ToolFormValues {
   httpQueryMappingText?: string;
   httpBodyMappingText?: string;
   httpResponseMappingText?: string;
-  // workflow
-  workflowSteps?: WorkflowStepFormValue[];
 }
 
 function parseJsonOr<T>(text: string | undefined, fallback: T): T {
@@ -103,7 +99,7 @@ function parseJsonOr<T>(text: string | undefined, fallback: T): T {
   return JSON.parse(text) as T;
 }
 
-function buildConfig(v: ToolFormValues): ToolConfig {
+function buildConfig(v: ToolFormValues, preserveWorkflowSteps?: WorkflowStepDef[]): ToolConfig {
   switch (v.type) {
     case 'query':
       return {
@@ -139,15 +135,7 @@ function buildConfig(v: ToolFormValues): ToolConfig {
       };
     }
     case 'workflow':
-      return {
-        workflow: {
-          steps: (v.workflowSteps ?? []).map((s) => ({
-            name: s.name.trim(),
-            toolId: s.toolId,
-            description: s.description?.trim() || undefined,
-          })),
-        },
-      };
+      return { workflow: { steps: preserveWorkflowSteps ?? [] } };
     default:
       return {};
   }
@@ -200,6 +188,7 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
   const [detailLoading, setDetailLoading] = useState(false);
 
   const [testTarget, setTestTarget] = useState<Tool | undefined>();
+  const [workflowTarget, setWorkflowTarget] = useState<Tool | undefined>();
 
   const activeTenantName = useMemo(
     () => tenants.find((t) => t.id === activeTenantId)?.name,
@@ -317,13 +306,6 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
       httpResponseMappingText: t.config.http?.responseMapping
         ? JSON.stringify(t.config.http.responseMapping, null, 2)
         : undefined,
-      workflowSteps: t.config.workflow?.steps?.length
-        ? t.config.workflow.steps.map((s) => ({
-            name: s.name,
-            toolId: s.toolId,
-            description: s.description,
-          }))
-        : [],
     });
     void loadConnectors();
     setDrawerOpen(true);
@@ -365,7 +347,7 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
       return;
     }
     try {
-      config = buildConfig(v);
+      config = buildConfig(v, editing?.config.workflow?.steps);
     } catch {
       message.error('类型配置（模板 / Headers）不是合法 JSON');
       return;
@@ -407,7 +389,15 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
           connectorId: v.connectorId,
           config,
         };
-        await createTool(payload);
+        const created = await createTool(payload);
+        setDrawerOpen(false);
+        message.success('保存成功');
+        void load();
+        if (created.type === 'workflow') {
+          setWorkflowTarget(created);
+          message.info('请配置流程编排步骤');
+        }
+        return;
       }
       setDrawerOpen(false);
       message.success('保存成功');
@@ -506,9 +496,12 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
     withNowrap<Tool>({
       title: '操作',
       key: 'actions',
-      width: 180,
+      width: isQueryOnly ? 180 : 240,
       render: (_, row) => (
-        <Space size="small">
+        <Space size="small" wrap>
+          {row.type === 'workflow' && (
+            <a onClick={() => setWorkflowTarget(row)}>流程编排</a>
+          )}
           <a onClick={() => setTestTarget(row)}>调用测试</a>
           <a onClick={() => openEdit(row)}>编辑</a>
           <a className="text-red-500" onClick={() => handleDelete(row)}>
@@ -613,10 +606,17 @@ export function ToolPage({ variant = 'default' }: { variant?: ToolPageVariant })
         typeLocked={isQueryOnly}
         connectorOptions={connectorOptions}
         submitting={submitting}
-        activeTenantId={activeTenantId}
         onTypeChange={setFormType}
         onClose={() => setDrawerOpen(false)}
         onSubmit={handleSubmit}
+      />
+
+      <WorkflowStepsModal
+        tool={workflowTarget}
+        tenantId={activeTenantId}
+        open={!!workflowTarget}
+        onClose={() => setWorkflowTarget(undefined)}
+        onSaved={() => void load()}
       />
 
       <Drawer
@@ -650,7 +650,6 @@ function ToolFormDrawer({
   typeLocked,
   connectorOptions,
   submitting,
-  activeTenantId,
   onTypeChange,
   onClose,
   onSubmit,
@@ -663,7 +662,6 @@ function ToolFormDrawer({
   typeLocked?: boolean;
   connectorOptions: { value: string; label: string }[];
   submitting: boolean;
-  activeTenantId?: string;
   onTypeChange: (t: ToolType) => void;
   onClose: () => void;
   onSubmit: () => void;
@@ -701,13 +699,8 @@ function ToolFormDrawer({
           <Form.Item label="类型" name="type" rules={[{ required: true }]} style={{ width: 150 }}>
             <Select
               options={typeOptions}
-              disabled={typeLocked}
-              onChange={(t: ToolType) => {
-                onTypeChange(t);
-                if (t === 'workflow' && !form.getFieldValue('workflowSteps')?.length) {
-                  form.setFieldsValue({ workflowSteps: [] });
-                }
-              }}
+              disabled={typeLocked || !!editing}
+              onChange={onTypeChange}
             />
           </Form.Item>
           <Form.Item
@@ -768,8 +761,16 @@ function ToolFormDrawer({
           </Form.Item>
         )}
 
+        {formType === 'workflow' && (
+          <Alert
+            className="mb-2"
+            type="info"
+            showIcon
+            message="流程编排请在工具列表中点击「流程编排」单独配置"
+          />
+        )}
+
         <Form.Item
-          label="入参 Schema（JSON Schema）"
           name="inputSchemaText"
           rules={[{ required: true, message: '请输入入参 Schema' }]}
           tooltip="保存时校验是否为合法 JSON Schema，非法拒绝"
@@ -872,19 +873,6 @@ function ToolFormDrawer({
             >
               <Input.TextArea rows={4} className="font-mono text-xs" />
             </Form.Item>
-          </>
-        )}
-
-        {formType === 'workflow' && (
-          <>
-            <Typography.Title level={5}>流程编排</Typography.Title>
-            <Alert
-              className="mb-3"
-              type="info"
-              showIcon
-              message="按顺序配置流程步骤，每步选择一个已注册的工具（查询 / HTTP 查询 / 操作 / 通知）。保存后由 Agent 运行时按序调用。"
-            />
-            <WorkflowStepsEditor tenantId={activeTenantId} excludeToolId={editing?.id} />
           </>
         )}
       </Form>
@@ -992,6 +980,23 @@ function ToolDetailView({ detail }: { detail: ToolDetail }) {
               title: '调用工具 ID',
               dataIndex: 'toolId',
               render: (v: string | undefined) => v || '—',
+            },
+            {
+              title: '入参配置',
+              dataIndex: 'paramBindings',
+              render: (bindings: WorkflowStepDef['paramBindings']) =>
+                bindings?.length
+                  ? bindings
+                      .map((b) => {
+                        if (b.source === 'fixed') return `${b.paramName}=固定值`;
+                        if (b.source === 'previous_step') {
+                          const step = b.fromStep ? `步骤${b.fromStep}` : '上一步';
+                          return `${b.paramName}←${step}${b.valuePath ? `.${b.valuePath}` : ''}`;
+                        }
+                        return `${b.paramName}←用户问句`;
+                      })
+                      .join('；')
+                  : '—',
             },
             {
               title: '说明',

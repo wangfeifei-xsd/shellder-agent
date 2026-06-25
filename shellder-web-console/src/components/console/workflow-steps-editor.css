@@ -1,0 +1,187 @@
+.workflow-steps-editor {
+  --wf-accent: #722ed1;
+  --wf-accent-hover: #531dab;
+  --wf-accent-soft: #f9f0ff;
+  --wf-line: #b37feb;
+  --wf-card-border: #d3adf7;
+  --wf-node-bg: #fff;
+}
+
+/* ── 竖向流水线容器 ── */
+.workflow-pipeline {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 4px 0 8px;
+}
+
+/* ── 开始 / 结束 节点 ── */
+.workflow-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 20px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  align-self: center;
+  min-width: 100px;
+  border: 2px solid #d9d9d9;
+  background: #fafafa;
+  color: #595959;
+}
+
+.workflow-node--start {
+  border-color: #52c41a;
+  background: #f6ffed;
+  color: #389e0d;
+}
+
+.workflow-node--end {
+  border-color: #ff7875;
+  background: #fff2f0;
+  color: #cf1322;
+}
+
+.workflow-node__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ── 步骤间连接段 ── */
+.workflow-link {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 4px 0;
+  color: var(--wf-line);
+  user-select: none;
+}
+
+.workflow-link__line {
+  width: 2px;
+  height: 16px;
+  background: var(--wf-line);
+}
+
+.workflow-link__arrow {
+  font-size: 16px;
+  color: var(--wf-accent);
+  line-height: 1;
+}
+
+.workflow-link__label {
+  font-size: 11px;
+  color: #9254de;
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+}
+
+/* ── 步骤卡片 ── */
+.workflow-step {
+  position: relative;
+  border: 2px solid var(--wf-card-border);
+  border-radius: 12px;
+  background: var(--wf-node-bg);
+  box-shadow: 0 2px 8px rgba(114, 46, 209, 0.08);
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.workflow-step:hover {
+  border-color: var(--wf-accent);
+  box-shadow: 0 4px 12px rgba(114, 46, 209, 0.14);
+}
+
+.workflow-step__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, var(--wf-accent-soft) 0%, #fff 100%);
+  border-bottom: 1px solid var(--wf-card-border);
+}
+
+.workflow-step__index {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+  color: #fff;
+  background: var(--wf-accent);
+  box-shadow: 0 2px 4px rgba(114, 46, 209, 0.3);
+}
+
+.workflow-step__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workflow-step__title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workflow-step__title--empty {
+  color: #bfbfbf;
+  font-weight: 500;
+}
+
+.workflow-step__actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 2px;
+}
+
+.workflow-step__body {
+  padding: 14px 16px 16px;
+}
+
+.workflow-step__body .ant-form-item-label > label {
+  font-size: 13px;
+  color: #595959;
+}
+
+/* ── 添加步骤 ── */
+.workflow-add-step {
+  align-self: center;
+  min-width: 200px;
+  margin: 4px 0;
+  border-color: var(--wf-line) !important;
+  color: var(--wf-accent) !important;
+  border-width: 2px !important;
+  border-style: dashed !important;
+  height: 40px;
+  font-weight: 500;
+}
+
+.workflow-add-step:hover {
+  border-color: var(--wf-accent) !important;
+  color: var(--wf-accent-hover) !important;
+  background: var(--wf-accent-soft) !important;
+}
+
+/* ── 空状态 ── */
+.workflow-empty {
+  padding: 32px 16px;
+  text-align: center;
+  border: 2px dashed #e8e8e8;
+  border-radius: 12px;
+  background: #fafafa;
+  margin-bottom: 8px;
+}

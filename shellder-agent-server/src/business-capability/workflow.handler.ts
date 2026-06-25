@@ -123,6 +123,7 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
     const textChunks: string[] = [`开始执行流程「${workflowTool.name}」...\n\n`];
     let allSuccess = true;
     const visitedToolIds = new Set<string>();
+    const previousStepOutputs: unknown[] = [];
 
     for (let i = 0; i < workflowConfig.steps.length; i++) {
       const step = workflowConfig.steps[i];
@@ -165,8 +166,15 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
               sessionId: ctx.sessionId,
               callerName: ctx.username,
               source: 'runtime',
+              principalContext: ctx.principalContext,
             },
-            { visitedToolIds, depth: 1 },
+            {
+              visitedToolIds,
+              depth: 1,
+              step,
+              stepIndex: i,
+              previousStepOutputs,
+            },
           );
         } else {
           stepOutput = { message: `步骤「${step.name}」执行完成（无关联子工具）` };
@@ -198,6 +206,7 @@ export class WorkflowCapabilityHandler implements CapabilityHandler {
           output: stepOutput,
           durationMs: stepDuration,
         });
+        previousStepOutputs.push(stepOutput);
       } catch (err) {
         const stepDuration = Date.now() - stepStartTime;
         stepError = err instanceof Error ? err.message : String(err);
