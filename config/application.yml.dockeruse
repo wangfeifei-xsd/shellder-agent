@@ -1,5 +1,6 @@
-# 加载顺序：application.yml.example → application.yml → application-{profile}.yml
-# 敏感项使用 ${ENV_NAME:默认值}，由 config/.env 或容器环境注入
+# Docker / 部署默认配置（提交仓库）
+# 加载顺序：application.yml.dockeruse → application-{profile}.yml.dockeruse
+# 敏感项使用 ${ENV_NAME:默认值}，由 config/.env.dockeruse 或容器环境注入
 
 profile: ${SHELLDER_PROFILE:default}
 

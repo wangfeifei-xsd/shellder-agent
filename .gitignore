@@ -8,7 +8,7 @@ shellder-web-console/shellder/
 out/
 build/
 
-# Env — 密钥与本地 profile（均在 config/ 目录）
+# 本地配置（均在 config/ 目录，不提交）
 .env
 .env.local
 .env.*.local
@@ -16,6 +16,8 @@ config/.env
 config/application.yml
 config/application-local.yml
 config/application-prod.yml
+config/application-*.yml
+!config/application*.yml.dockeruse
 
 # IDE
 .idea/

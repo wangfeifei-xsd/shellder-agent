@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Jenkins / 生产部署：只启动应用容器，连接信息来自 config/.env.example
+# Jenkins / 生产部署：只启动应用容器，连接信息来自 config/.env.dockeruse
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-ENV_FILE=config/.env.example
+ENV_FILE=config/.env.dockeruse
 
 COMPOSE=(docker compose)
 if ! docker compose version >/dev/null 2>&1; then
@@ -17,7 +17,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-# 宿主机根目录 .env 会被 docker compose 用于 ${VAR} 插值，覆盖 env_file；生产只用 config/.env.example
+# 宿主机根目录 .env 会被 docker compose 用于 ${VAR} 插值，覆盖 env_file；生产只用 config/.env.dockeruse
 if [[ -f .env ]]; then
   backup=".env.bak.$(date +%s)"
   echo "WARN: moving stale root .env -> $backup (config is $ENV_FILE only)" >&2

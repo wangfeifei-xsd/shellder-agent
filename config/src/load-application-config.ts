@@ -8,6 +8,13 @@ import { bindApplicationConfig } from './bind-application-config';
 
 const PLACEHOLDER = /\$\{([^}:]+)(?::([^}]*))?\}/g;
 
+const CONFIG_MARKERS = [
+  'config/application.yml.dockeruse',
+  'config/application.yml',
+  'application.yml.dockeruse',
+  'application.yml',
+] as const;
+
 export function parseBool(value: unknown, fallback: boolean): boolean {
   if (typeof value === 'boolean') return value;
   if (value === undefined || value === null || value === '') return fallback;
@@ -15,6 +22,10 @@ export function parseBool(value: unknown, fallback: boolean): boolean {
   if (['false', '0', 'no', 'off'].includes(normalized)) return false;
   if (['true', '1', 'yes', 'on'].includes(normalized)) return true;
   return fallback;
+}
+
+function hasConfigMarker(root: string): boolean {
+  return CONFIG_MARKERS.some((marker) => existsSync(resolve(root, marker)));
 }
 
 function findConfigRoot(): string {
@@ -25,15 +36,26 @@ function findConfigRoot(): string {
     resolve(__dirname, '..'),
   ];
   for (const root of candidates) {
-    if (existsSync(resolve(root, 'config/application.yml.example'))) {
-      return root;
-    }
+    if (hasConfigMarker(root)) return root;
   }
   return resolve(__dirname, '..');
 }
 
-function configPath(root: string, name: string): string {
-  return resolve(root, 'config', name);
+function resolveConfigFile(root: string, name: string): string {
+  const nested = resolve(root, 'config', name);
+  if (existsSync(nested)) return nested;
+  return resolve(root, name);
+}
+
+function useDockerConfigFiles(root: string): boolean {
+  if (process.env.SHELLDER_CONFIG_SOURCE === 'docker') return true;
+  const dockerBase = resolveConfigFile(root, 'application.yml.dockeruse');
+  const localBase = resolveConfigFile(root, 'application.yml');
+  return (
+    process.env.NODE_ENV === 'production' &&
+    existsSync(dockerBase) &&
+    !existsSync(localBase)
+  );
 }
 
 function loadYamlFile(path: string): Record<string, unknown> {
@@ -96,22 +118,25 @@ export function loadApplicationConfig(force = false): ApplicationConfig {
   if (cached && !force) return cached;
 
   const root = findConfigRoot();
-  const envPath = configPath(root, '.env');
+  const docker = useDockerConfigFiles(root);
+
+  const envFile = docker ? '.env.dockeruse' : '.env';
+  const envPath = resolveConfigFile(root, envFile);
   if (existsSync(envPath)) {
     loadDotenv({ path: envPath, override: true });
   }
 
-  let merged = loadYamlFile(configPath(root, 'application.yml.example'));
-  merged = deepMerge(merged, loadYamlFile(configPath(root, 'application.yml')));
+  const baseYaml = docker ? 'application.yml.dockeruse' : 'application.yml';
+  let merged = loadYamlFile(resolveConfigFile(root, baseYaml));
 
   const profile =
     process.env.SHELLDER_PROFILE ??
     (typeof merged.profile === 'string' ? merged.profile : AppProfile.DEFAULT);
   if (profile && profile !== AppProfile.DEFAULT) {
-    merged = deepMerge(
-      merged,
-      loadYamlFile(configPath(root, `application-${profile}.yml`)),
-    );
+    const profileYaml = docker
+      ? `application-${profile}.yml.dockeruse`
+      : `application-${profile}.yml`;
+    merged = deepMerge(merged, loadYamlFile(resolveConfigFile(root, profileYaml)));
   }
 
   const resolved = resolvePlaceholders(merged) as Record<string, unknown>;
