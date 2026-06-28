@@ -34,8 +34,6 @@ auth:
     dev-fallback-key: ${CONNECTOR_SECRET_DEV_FALLBACK_KEY:shellder-agent-dev-connector-secret-key}
   bootstrap:
     enabled: ${AUTH_BOOTSTRAP:true}
-    admin-username: ${ADMIN_USERNAME:admin}
-    admin-password: ${ADMIN_PASSWORD:admin123}
   worker:
     internal-token: ${WORKER_INTERNAL_TOKEN:}
   openapi:
@@ -89,7 +87,3 @@ app:
     llm-classify-enabled: false
   query:
     result-max-rows-for-llm: 50
-
-monitoring:
-  grafana:
-    admin-password: ${GRAFANA_ADMIN_PASSWORD:changeme_grafana}

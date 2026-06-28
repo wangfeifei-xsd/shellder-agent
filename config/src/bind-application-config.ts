@@ -64,9 +64,6 @@ export function bindApplicationConfig(
   const routing = section(app, 'routing');
   const query = section(app, 'query');
 
-  const monitoring = section(raw, 'monitoring');
-  const grafana = section(monitoring, 'grafana');
-
   const agentPort = num(agentServer.port, 3001);
 
   return {
@@ -109,8 +106,6 @@ export function bindApplicationConfig(
       },
       bootstrap: {
         enabled: parseBool(bootstrap.enabled, true),
-        adminUsername: str(bootstrap['admin-username'], 'admin'),
-        adminPassword: str(bootstrap['admin-password'], 'admin123'),
       },
       worker: { internalToken: str(worker['internal-token']) },
       openapi: { tokenExpiresIn: str(openapi['token-expires-in'], '2h') },
@@ -167,9 +162,6 @@ export function bindApplicationConfig(
       connector: { defaultTimeoutMs: num(connectorApp['default-timeout-ms'], 10_000) },
       routing: { llmClassifyEnabled: parseBool(routing['llm-classify-enabled'], false) },
       query: { resultMaxRowsForLlm: num(query['result-max-rows-for-llm'], 50) },
-    },
-    monitoring: {
-      grafana: { adminPassword: str(grafana['admin-password'], 'changeme_grafana') },
     },
   };
 }

@@ -10,9 +10,13 @@ import {
 } from './permissions';
 import { hashPassword } from './password.util';
 
+/** 与 project-sql/03-user-rbac/seed.sql 默认管理员一致；仅首次建号时使用 */
+const DEFAULT_ADMIN_USERNAME = 'admin';
+const DEFAULT_ADMIN_PASSWORD = 'admin123';
+
 /**
  * 启动时确保存在默认超级管理员角色与账号，便于本地与首次部署登录。
- * 幂等：按 code/username upsert；已存在不覆盖密码。
+ * 幂等：按 code/username upsert；已存在用户不覆盖密码（登录口令以库内 password_hash 为准）。
  * 关闭：设置环境变量 AUTH_BOOTSTRAP=false。
  */
 @Injectable()
@@ -58,8 +62,7 @@ export class AuthBootstrapService implements OnModuleInit {
       },
     });
 
-    const { adminUsername, adminPassword } = applicationProperties.get().auth.bootstrap;
-    const username = adminUsername;
+    const username = DEFAULT_ADMIN_USERNAME;
     const existing = await this.prisma.user.findUnique({ where: { username } });
 
     const user =
@@ -67,7 +70,7 @@ export class AuthBootstrapService implements OnModuleInit {
       (await this.prisma.user.create({
         data: {
           username,
-          passwordHash: hashPassword(adminPassword),
+          passwordHash: hashPassword(DEFAULT_ADMIN_PASSWORD),
           displayName: '平台管理员',
           status: 'enabled',
           isSystem: true,
@@ -76,7 +79,7 @@ export class AuthBootstrapService implements OnModuleInit {
 
     if (!existing) {
       this.logger.log(
-        `已创建默认管理员：${username} / ${adminPassword}（请尽快修改密码）`,
+        `已创建默认管理员：${username} / ${DEFAULT_ADMIN_PASSWORD}（请尽快修改密码）`,
       );
     }
 

@@ -31,8 +31,8 @@
 4. 应用层：在仓库根目录运行 `npm run prisma:generate`；建表执行 `project-sql/` 对应模块 SQL
 
 > `shellder-agent-server` 启动时还会**自动幂等创建**默认管理员（见 `auth/auth-bootstrap.service.ts`），
-> 因此本地即使未手动执行 `seed.sql` 也能用 `admin/admin123` 登录。设置环境变量 `AUTH_BOOTSTRAP=false` 可关闭该行为；
-> `ADMIN_USERNAME` / `ADMIN_PASSWORD` 可覆盖默认账号口令。
+> 因此本地即使未手动执行 `seed.sql` 也能用 `admin/admin123` 登录。设置环境变量 `AUTH_BOOTSTRAP=false` 可关闭该行为。
+> 登录口令以数据库 `user.password_hash` 为准；改环境变量不会改变已存在用户的密码。
 
 ## 与 Prisma 对齐
 

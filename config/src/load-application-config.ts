@@ -5,6 +5,10 @@ import { parse as parseYaml } from 'yaml';
 import { AppProfile } from './enums';
 import type { ApplicationConfig } from './application-config.types';
 import { bindApplicationConfig } from './bind-application-config';
+import {
+  ensureLocalConfigFiles,
+  shouldEnsureLocalConfigFiles,
+} from './ensure-local-config';
 
 const PLACEHOLDER = /\$\{([^}:]+)(?::([^}]*))?\}/g;
 
@@ -41,10 +45,23 @@ function findConfigRoot(): string {
   return resolve(__dirname, '..');
 }
 
+function resolveConfigDir(root: string): string {
+  const configDir = resolve(root, 'config');
+  const markers = [
+    'application.yml.dockeruse',
+    'application.yml',
+    '.env.dockeruse',
+    '.env.example',
+    '.env',
+  ];
+  if (markers.some((name) => existsSync(resolve(configDir, name)))) {
+    return configDir;
+  }
+  return root;
+}
+
 function resolveConfigFile(root: string, name: string): string {
-  const nested = resolve(root, 'config', name);
-  if (existsSync(nested)) return nested;
-  return resolve(root, name);
+  return resolve(resolveConfigDir(root), name);
 }
 
 function useDockerConfigFiles(root: string): boolean {
@@ -120,23 +137,48 @@ export function loadApplicationConfig(force = false): ApplicationConfig {
   const root = findConfigRoot();
   const docker = useDockerConfigFiles(root);
 
-  const envFile = docker ? '.env.dockeruse' : '.env';
-  const envPath = resolveConfigFile(root, envFile);
+  if (!docker && shouldEnsureLocalConfigFiles()) {
+    ensureLocalConfigFiles({
+      envLocal: resolveConfigFile(root, '.env'),
+      envExample: resolveConfigFile(root, '.env.example'),
+      ymlLocal: resolveConfigFile(root, 'application.yml'),
+      ymlDocker: resolveConfigFile(root, 'application.yml.dockeruse'),
+    });
+  }
+
+  const envPath = docker
+    ? resolveConfigFile(root, '.env.dockeruse')
+    : resolveConfigFile(root, '.env');
   if (existsSync(envPath)) {
     loadDotenv({ path: envPath, override: true });
   }
 
-  const baseYaml = docker ? 'application.yml.dockeruse' : 'application.yml';
-  let merged = loadYamlFile(resolveConfigFile(root, baseYaml));
+  const baseYamlPath = docker
+    ? resolveConfigFile(root, 'application.yml.dockeruse')
+    : resolveConfigFile(root, 'application.yml');
+  let merged = existsSync(baseYamlPath) ? loadYamlFile(baseYamlPath) : {};
 
   const profile =
     process.env.SHELLDER_PROFILE ??
     (typeof merged.profile === 'string' ? merged.profile : AppProfile.DEFAULT);
-  if (profile && profile !== AppProfile.DEFAULT) {
-    const profileYaml = docker
-      ? `application-${profile}.yml.dockeruse`
-      : `application-${profile}.yml`;
-    merged = deepMerge(merged, loadYamlFile(resolveConfigFile(root, profileYaml)));
+
+  if (docker) {
+    if (profile && profile !== AppProfile.DEFAULT) {
+      merged = deepMerge(
+        merged,
+        loadYamlFile(resolveConfigFile(root, `application-${profile}.yml.dockeruse`)),
+      );
+    }
+  } else {
+    const localOverlay = resolveConfigFile(root, 'application-local.yml');
+    if (existsSync(localOverlay)) {
+      merged = deepMerge(merged, loadYamlFile(localOverlay));
+    } else if (profile && profile !== AppProfile.DEFAULT) {
+      merged = deepMerge(
+        merged,
+        loadYamlFile(resolveConfigFile(root, `application-${profile}.yml`)),
+      );
+    }
   }
 
   const resolved = resolvePlaceholders(merged) as Record<string, unknown>;

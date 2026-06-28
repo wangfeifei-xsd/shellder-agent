@@ -18,7 +18,7 @@ export interface ApplicationConfig {
   auth: {
     jwt: { secret: string; expiresIn: string };
     connector: { secretKey: string; devFallbackKey: string };
-    bootstrap: { enabled: boolean; adminUsername: string; adminPassword: string };
+    bootstrap: { enabled: boolean };
     worker: { internalToken: string };
     openapi: { tokenExpiresIn: string };
   };
@@ -59,8 +59,5 @@ export interface ApplicationConfig {
     connector: { defaultTimeoutMs: number };
     routing: { llmClassifyEnabled: boolean };
     query: { resultMaxRowsForLlm: number };
-  };
-  monitoring: {
-    grafana: { adminPassword: string };
   };
 }

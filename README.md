@@ -17,6 +17,7 @@
 - [技术栈](#技术栈)
 - [仓库结构](#仓库结构)
 - [前置要求](#前置要求)
+- [配置说明](#配置说明)
 - [快速开始](#快速开始)
   - [Docker 部署（外置 MySQL / Redis）](#docker-部署外置-mysql--redis)
   - [本地开发（推荐）](#本地开发推荐)
@@ -53,7 +54,7 @@
 ├── shellder-job-worker/            # 异步 Worker（BullMQ）
 ├── project-analysis-v1-completed/  # V1 已验收方案文档（二次开发入口）
 ├── project-sql/                    # 按模块交付的 SQL 演进
-├── config/                         # 统一配置（本地 gitignore；Docker 用 *.dockeruse）
+├── config/                         # 统一配置（见 README「配置说明」；本地 .env 不提交）
 ├── docker-compose.yml
 └── scripts/deploy.sh
 ```
@@ -73,6 +74,67 @@
 - **Docker & Docker Compose**（MySQL / Redis；Docker 方式也可直接起三端应用）
 
 > 以下命令均在 **本仓库根目录**执行（克隆后 `cd shellder-agent` 即为此目录）。
+
+## 配置说明
+
+配置文件均在 `config/` 目录。**本地 npm 开发**与 **Docker / 部署**使用两套模板，不要混用。
+
+### 文件一览
+
+| 文件 | 提交 Git | 用途 |
+|------|:--------:|------|
+| `config/.env.example` | 是 | **本地开发**环境变量模板（localhost、dev 密钥） |
+| `config/.env.dockeruse` | 是 | **Docker / 部署**环境变量（远程 MySQL、Redis 等） |
+| `config/application.yml.dockeruse` | 是 | 全量业务配置 YAML 模板 |
+| `config/.env` | 否 | 本地实际运行用的环境变量（每人一份） |
+| `config/application.yml` | 否 | 本地实际运行用的 YAML |
+| `config/application-local.yml` | 否 | 可选个人覆盖，有则合并，无则跳过 |
+
+更细说明见 [`config/README.md`](config/README.md)。
+
+### 本地 npm 开发：如何生成 `config/.env`
+
+首次 `npm run dev:server` / `dev:worker` / `dev:web`，或手动执行 `bash scripts/setup-local-config.sh` 时，若本地文件不存在会自动复制：
+
+```
+config/.env.example          ──复制──→  config/.env
+config/application.yml.dockeruse  ──复制──→  config/application.yml
+```
+
+- **已存在的 `config/.env` 不会被覆盖**；要换模板请手动删除后重新生成。
+- 复制后请按本机 MySQL / Redis **编辑 `config/.env`**（不要改 `.env.example`）。
+- 默认 `DATABASE_URL` 与 [`docker-compose.bundled-infra.yml`](docker-compose.bundled-infra.yml) 一致：`agent` / `changeme_agent` @ `localhost:3306`。
+
+### Docker / 部署：读哪些文件
+
+容器与 `docker compose` **直接读 `*.dockeruse`**，不会生成 `config/.env`：
+
+```
+config/.env.dockeruse
+config/application.yml.dockeruse
+```
+
+部署前在服务器上编辑 `config/.env.dockeruse` 中的 `DATABASE_URL`、`REDIS_HOST` 等。
+
+### 为什么分 `.env.example` 和 `.env.dockeruse`
+
+| | 本地 `.env.example` → `.env` | 部署 `.env.dockeruse` |
+|--|------------------------------|------------------------|
+| 典型 MySQL | `localhost:3306` | 远程 IP / 内网地址 |
+| 典型 Redis | `localhost:6379` | 远程 Redis 集群 |
+| 谁修改 | 各开发者改自己的 `config/.env` | 运维 / Jenkins 改 dockeruse |
+| 是否进 Git | 模板进 Git，`.env` 不进 | dockeruse 进 Git |
+
+**不要在代码里硬编码连接串**；本地以 `.env.example` 为起点，部署以 `.env.dockeruse` 为准。
+
+### YAML 与环境变量的关系
+
+`application.yml` 中部分项写成 `${ENV_NAME:默认值}`（如 `DATABASE_URL`、`JWT_SECRET`）。规则：
+
+- `config/.env`（或 dockeruse）**有**该变量 → 用环境变量的值
+- **没有** → 用 YAML 里冒号后的默认值
+
+因此 YAML 里出现的变量**不必全部**写在 `.env` 里；`.env` 主要放密钥与因环境而异的连接信息。例如本地开发 `VITE_API_BASE_URL` 通常留空，前端走 Vite 同源 `/api` 代理。
 
 ## 快速开始
 
@@ -129,8 +191,9 @@ docker compose --env-file config/.env.dockeruse --profile bundled-infra \
 **首次克隆 / 依赖变更后（初始化一次）：**
 
 ```bash
-bash scripts/setup-local-config.sh
-docker compose --env-file config/.env.dockeruse --profile bundled-infra \
+bash scripts/setup-local-config.sh   # 或首次 npm run dev:* 自动复制模板
+# 默认 config/.env 与 bundled-infra 一致（agent/changeme_agent）；本机库不同请改 config/.env
+docker compose --env-file config/.env --profile bundled-infra \
   -f docker-compose.yml -f docker-compose.bundled-infra.yml up -d mysql redis
 
 npm install
@@ -139,7 +202,7 @@ npm run prisma:generate
 # 首次建库：手动执行 project-sql/00-all-schema.sql、00-all-seed.sql
 ```
 
-本地 npm 开发使用 `config/.env`、`config/application.yml`、`config/application-local.yml`（均由 `setup-local-config.sh` 生成，gitignore）。
+配置生成规则见上文 [配置说明](#配置说明)。
 
 **日常启动（开 3 个终端）：**
 
@@ -197,10 +260,9 @@ npm run prisma:generate
 
 ### 默认管理员
 
-首次启动自动创建 **`admin` / `admin123`**，请尽快修改。
+首次启动若库中尚无 admin 用户，会自动创建 **`admin` / `admin123`**（与 `project-sql/03-user-rbac/seed.sql` 一致），请尽快在库内修改密码。登录校验的是数据库 `password_hash`，不是环境变量。
 
-- 关闭自动创建：`AUTH_BOOTSTRAP=false`
-- 自定义账号：`ADMIN_USERNAME` / `ADMIN_PASSWORD`
+- 关闭自动建号/绑角色：`AUTH_BOOTSTRAP=false`
 
 ## 二次开发指引
 
@@ -348,4 +410,5 @@ curl http://localhost:3001/health
 | 实施约束（已落地） | [`project-analysis-v1-completed/06-实施约束-已落地.md`](project-analysis-v1-completed/06-实施约束-已落地.md) |
 | 已知缺口（方案层） | [01-范围与边界 §6](project-analysis-v1-completed/01-范围与边界.md#6-已知缺口与后续强化) |
 | SQL 演进 | [`project-sql/README.md`](project-sql/README.md) |
+| 配置目录说明 | [`config/README.md`](config/README.md) |
 | 实验中模块边界（技能书） | [01-范围与边界 §2](project-analysis-v1-completed/01-范围与边界.md#2-v1-未完成--实验中范围) |

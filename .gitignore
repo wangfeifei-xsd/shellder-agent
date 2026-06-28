@@ -14,7 +14,6 @@ build/
 .env.*.local
 config/.env
 config/application.yml
-config/application-local.yml
 config/application-prod.yml
 config/application-*.yml
 !config/application*.yml.dockeruse

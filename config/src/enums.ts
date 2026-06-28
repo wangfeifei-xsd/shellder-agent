@@ -1,4 +1,4 @@
-/** 运行 Profile；由 SHELLDER_PROFILE 激活，加载 application-{profile}.yml */
+/** 运行 Profile；Docker 部署时加载 application-{profile}.yml.dockeruse */
 export enum AppProfile {
   DEFAULT = 'default',
   LOCAL = 'local',
