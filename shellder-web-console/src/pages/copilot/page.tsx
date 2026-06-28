@@ -134,6 +134,24 @@ async function resolvePendingApprovalId(
   return items.find((c) => c.sessionId === sessionId)?.id ?? null;
 }
 
+function isCapabilityTypeKey(value: string): value is CapabilityTypeKey {
+  return value === 'qa' || value === 'query' || value === 'action' || value === 'workflow';
+}
+
+/** 自动路由后同步 Tab；定向锁定时以 Session 为准，避免覆盖用户已选能力 */
+function resolveCapabilityTypeForSelector(
+  detail: { capabilityType: string | null; messages: CopilotMessage[] },
+  currentSelection: CapabilityTypeKey | null,
+): CapabilityTypeKey | null {
+  const cap = detail.capabilityType;
+  if (!cap || !isCapabilityTypeKey(cap)) return null;
+
+  const routing = findLatestRoutingResult(detail.messages);
+  const wasPinned = routing?.typeStage?.pinned ?? routing?.pinnedCapability;
+  if (wasPinned || !currentSelection) return cap;
+  return currentSelection;
+}
+
 interface PendingCapabilityClarify {
   detectedType: CapabilityTypeKey;
   detectedName: string;
@@ -192,6 +210,14 @@ export default function CopilotPage() {
       });
     },
     [config],
+  );
+
+  const syncSelectedCapabilityFromSession = useCallback(
+    (detail: { capabilityType: string | null; messages: CopilotMessage[] }) => {
+      const next = resolveCapabilityTypeForSelector(detail, selectedCapabilityType);
+      if (next) setSelectedCapabilityType(next);
+    },
+    [selectedCapabilityType],
   );
 
   const [sessions, setSessions] = useState<CopilotSession[]>([]);
@@ -301,18 +327,15 @@ export default function CopilotPage() {
       return null;
     }
 
-    const createOptions =
-      routingMode === 'pinned' || (routingMode === 'hybrid' && selectedCapabilityType)
-        ? { capabilityType: selectedCapabilityType! }
-        : undefined;
+    // auto / hybrid：未选择时首条自动路由；已选择时写入 Session 作为定向锁定
+    const createOptions = selectedCapabilityType
+      ? { capabilityType: selectedCapabilityType }
+      : undefined;
 
     const session = await copilotCreateSession(authToken, createOptions);
     setSessionId(session.id);
-    if (session.capabilityType) {
-      const cap = session.capabilityType;
-      if (cap === 'qa' || cap === 'query' || cap === 'action' || cap === 'workflow') {
-        setSelectedCapabilityType(cap);
-      }
+    if (session.capabilityType && isCapabilityTypeKey(session.capabilityType)) {
+      setSelectedCapabilityType(session.capabilityType);
     }
     return session.id;
   }, [sessionId, selectedCapabilityType, routingMode]);
@@ -448,12 +471,7 @@ export default function CopilotPage() {
           void refreshSessionDetail(sid, authToken)
             .then((detail) => {
               checkLowConfidenceClarify(detail.messages);
-              if (detail.capabilityType) {
-                const cap = detail.capabilityType;
-                if (cap === 'qa' || cap === 'query' || cap === 'action' || cap === 'workflow') {
-                  setSelectedCapabilityType(cap);
-                }
-              }
+              syncSelectedCapabilityFromSession(detail);
               if (detail.status === 'pending_confirm') {
                 void hydrateInlineConfirm(sid, authToken);
               }
@@ -480,6 +498,7 @@ export default function CopilotPage() {
         setStreaming(false);
         const detail = await refreshSessionDetail(sid, authToken);
         checkLowConfidenceClarify(detail.messages);
+        syncSelectedCapabilityFromSession(detail);
       }
     } catch (e: unknown) {
       message.error(e instanceof Error ? e.message : '发送失败');
@@ -509,7 +528,7 @@ export default function CopilotPage() {
       const detail = await refreshSessionDetail(sid, authToken);
       setSessionId(sid);
       const cap = detail.capabilityType;
-      if (cap === 'qa' || cap === 'query' || cap === 'action' || cap === 'workflow') {
+      if (cap && isCapabilityTypeKey(cap)) {
         setSelectedCapabilityType(cap);
       }
       setActiveTab('chat');
