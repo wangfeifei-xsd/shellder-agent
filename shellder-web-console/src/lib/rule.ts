@@ -164,10 +164,10 @@ export function listRuleHits(
 // ── 展示元数据 ────────────────────────────────────────────
 
 export const RULE_TYPE_META: Record<RuleType, { label: string; color: string }> = {
-  high_risk: { label: '高风险识别', color: 'volcano' },
+  high_risk: { label: '高风险识别（未测试）', color: 'volcano' },
   confirm: { label: '确认拦截', color: 'orange' },
-  capability_limit: { label: '能力级限制', color: 'geekblue' },
-  custom: { label: '通用规则', color: 'default' },
+  capability_limit: { label: '能力级限制（未测试）', color: 'geekblue' },
+  custom: { label: '通用规则（未测试）', color: 'default' },
 };
 
 export const RULE_ACTION_META: Record<RuleAction, { label: string; color: string }> = {

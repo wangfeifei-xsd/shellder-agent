@@ -108,6 +108,15 @@ export const consoleMenuItems: MenuProps['items'] = [
     ],
   },
   {
+    key: 'rule',
+    icon: <ControlOutlined />,
+    label: '策略引擎',
+    children: [
+      { key: '/rules', label: <Link to="/rules">规则配置</Link> },
+      { key: '/rule-hits', label: <Link to="/rule-hits">规则命中记录</Link> },
+    ],
+  },
+  {
     key: 'prompt',
     icon: <FileTextOutlined />,
     label: 'Prompt 管理',
@@ -148,15 +157,6 @@ export const consoleMenuItems: MenuProps['items'] = [
       { key: '/openapi/apps', label: <Link to="/openapi/apps">应用接入</Link> },
       { key: '/openapi/logs', label: <Link to="/openapi/logs">调用日志</Link> },
       { key: '/openapi/docs', label: <Link to="/openapi/docs">接口文档</Link> },
-    ],
-  },
-  {
-    key: 'rule',
-    icon: <ControlOutlined />,
-    label: '规则',
-    children: [
-      { key: '/rules', label: <Link to="/rules">规则配置</Link> },
-      { key: '/rule-hits', label: <Link to="/rule-hits">规则命中记录</Link> },
     ],
   },
   {
