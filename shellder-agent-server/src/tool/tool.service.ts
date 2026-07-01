@@ -9,8 +9,8 @@ import { randomUUID } from 'crypto';
 import { ErDiagramService } from '../connector/er-diagram.service';
 import { ErDiagram } from '../connector/connector-schema.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { CreateToolDto } from './dto/create-tool.dto';
 import { QueryToolDto } from './dto/query-tool.dto';
 import { UpdateToolDto } from './dto/update-tool.dto';
@@ -54,13 +54,13 @@ const CONNECTOR_SELECT = {
 export class ToolService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
     private readonly erDiagram: ErDiagramService,
   ) {}
 
   async create(user: AuthUser, dto: CreateToolDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
-    await this.assertTenantEnabled(dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '工具' });
+    await this.tenantScope.assertEnabled(dto.tenantId, { action: '新建工具' });
 
     this.validateSchemas(dto.inputSchema, dto.outputSchema);
     const config = this.normalizeConfig(dto.type, dto.config);
@@ -102,7 +102,7 @@ export class ToolService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.ToolWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.type) where.type = query.type;
     if (query.status) where.status = query.status;
@@ -133,7 +133,7 @@ export class ToolService {
   /** 详情：定义 / 约束 / 权限 / 关联连接器 + 最近调用与成功率/失败率/耗时（04 tool_call_audit）。 */
   async findOne(user: AuthUser, id: string) {
     const tool = await this.getOrThrow(id, { withConnector: true });
-    await this.assertTenantAccess(user, tool.tenantId);
+    await this.tenantScope.assertAccess(user, tool.tenantId, { resource: '工具' });
 
     const [recentCalls, sample] = await this.prisma.$transaction([
       this.prisma.toolCallAudit.findMany({
@@ -183,7 +183,7 @@ export class ToolService {
 
   async update(user: AuthUser, id: string, dto: UpdateToolDto) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '工具' });
 
     const nextType = dto.type ?? existing.type;
     if (dto.inputSchema !== undefined || dto.outputSchema !== undefined) {
@@ -256,7 +256,7 @@ export class ToolService {
 
   async updateStatus(user: AuthUser, id: string, status: Tool['status']) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '工具' });
     const tool = await this.prisma.tool.update({
       where: { id },
       data: { status },
@@ -267,7 +267,7 @@ export class ToolService {
 
   async remove(user: AuthUser, id: string) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '工具' });
     await this.prisma.tool.delete({ where: { id } });
     return { id };
   }
@@ -523,54 +523,10 @@ export class ToolService {
     }
   }
 
-  // ── 隔离与查询辅助（同 06 连接器） ────────────────────────
-
-  async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的工具访问权限',
-      });
-    }
-  }
-
-  private async assertTenantEnabled(tenantId: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) {
-      throw new NotFoundException({
-        code: 'TENANT_NOT_FOUND',
-        message: `租户不存在：${tenantId}`,
-      });
-    }
-    if (tenant.status === 'disabled') {
-      throw new ForbiddenException({
-        code: 'TENANT_DISABLED',
-        message: '该租户已禁用，不可新建工具',
-      });
-    }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
-  }
-
   /** 供调用测试服务复用：取 Tool 并校验租户访问权。 */
   async getForUser(user: AuthUser, id: string): Promise<Tool> {
     const tool = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, tool.tenantId);
+    await this.tenantScope.assertAccess(user, tool.tenantId, { resource: '工具' });
     return tool;
   }
 

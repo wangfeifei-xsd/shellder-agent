@@ -8,6 +8,7 @@ import {
 import { Connector, ConnectorType } from '@prisma/client';
 import { AuthUser } from '../auth/jwt.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { ErDiagram } from './connector-schema.types';
 import { ConnectorIntrospectionService } from './connector-introspection.service';
 import { ConnectorService } from './connector.service';
@@ -43,6 +44,7 @@ export class ConnectorSchemaService {
     private readonly introspection: ConnectorIntrospectionService,
     private readonly erDiagram: ErDiagramService,
     private readonly erDataScope: ErDataScopeService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   /** 库表结构页：db_readonly 连接器 + 元数据摘要 */
@@ -83,7 +85,7 @@ export class ConnectorSchemaService {
 
   private async requireDbConnector(user: AuthUser, id: string): Promise<Connector> {
     const connector = await this.getConnectorOrThrow(id);
-    await this.connectorService.assertTenantAccess(user, connector.tenantId);
+    await this.tenantScope.assertAccess(user, connector.tenantId, { resource: '连接器' });
     if (connector.type !== 'db_readonly') {
       throw new NotFoundException({
         code: 'CONNECTOR_NOT_DB_READONLY',

@@ -6,7 +6,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { AuthUser } from '../auth/jwt.types';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { LlmService } from '../llm/llm.service';
 import { HttpQueryPolishDto } from './dto/http-query-polish.dto';
 
@@ -69,11 +69,11 @@ export class HttpQueryAssistService {
 
   constructor(
     private readonly llm: LlmService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async polishDraft(user: AuthUser, dto: HttpQueryPolishDto): Promise<HttpQueryPolishResult> {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '工具' });
 
     try {
       await this.llm.assertConfigured();
@@ -197,17 +197,6 @@ responseType, successPath, successValue(string), fieldMappingText(string), reply
       JSON.parse(value);
     } catch {
       warnings.push(`${field} 不是合法 JSON`);
-    }
-  }
-
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的工具访问权限',
-      });
     }
   }
 }

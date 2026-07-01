@@ -32,6 +32,7 @@ import { truncate } from '../audit/audit.constants';
 import { SendMessageDto } from './dto/send-message.dto';
 import { ConfirmationActor } from '../approval/approval-runtime.types';
 import { SessionTitleService } from './session-title.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { applicationProperties } from '@shellder/config';
 
 /**
@@ -59,6 +60,7 @@ export class AgentRuntimeService {
     private readonly sseEmitter: SseEmitterService,
     private readonly systemSettings: SystemSettingsService,
     private readonly sessionTitleService: SessionTitleService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   /** 能力 Handler 总超时（Copilot 预览 / 嵌入会话共用） */
@@ -100,7 +102,7 @@ export class AgentRuntimeService {
     reply?: unknown;
   }> {
     const session = await this.sessionService.getOrThrow(sessionId);
-    await this.sessionService.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '会话' });
 
     if (session.status === 'completed' || session.status === 'cancelled') {
       throw new BadRequestException({

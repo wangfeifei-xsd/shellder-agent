@@ -6,6 +6,7 @@ import {
 import { Prisma, PromptScope, PromptTemplate, PromptVersionState } from '@prisma/client';
 import { AuthUser } from '../auth/jwt.types';
 import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePromptTemplateDto } from './dto/create-prompt-template.dto';
 import { QueryPromptTemplateDto } from './dto/query-prompt-template.dto';
@@ -17,6 +18,7 @@ import { sha256Content } from './prompt-render.util';
 export class PromptTemplateService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly tenantScope: TenantScopeService,
     private readonly permissionService: PermissionService,
   ) {}
 
@@ -34,7 +36,7 @@ export class PromptTemplateService {
     const isSuper = perms.isSuperAdmin;
     if (query.tenantId) {
       if (!isSuper) {
-        await this.assertTenantAccess(user, query.tenantId);
+        await this.tenantScope.assertAccess(user, query.tenantId, { forbiddenMessage: '无权访问该租户 Prompt 模板' });
       }
       where.tenantId = query.tenantId;
     } else if (!isSuper) {
@@ -102,7 +104,7 @@ export class PromptTemplateService {
       if (!dto.tenantId) {
         throw new BadRequestException('scope=tenant 时必须指定 tenantId');
       }
-      await this.assertTenantAccess(user, dto.tenantId);
+      await this.tenantScope.assertAccess(user, dto.tenantId, { forbiddenMessage: '无权访问该租户 Prompt 模板' });
     } else if (dto.tenantId) {
       throw new BadRequestException('scope=global 时不可指定 tenantId');
     }
@@ -209,20 +211,7 @@ export class PromptTemplateService {
   async assertTemplateAccess(user: AuthUser, template: PromptTemplate) {
     if (template.scope === PromptScope.global) return;
     if (!template.tenantId) return;
-    await this.assertTenantAccess(user, template.tenantId);
-  }
-
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const perms = await this.permissionService.resolveForUser(user.id);
-    const isSuper = perms.isSuperAdmin;
-    if (isSuper) return;
-    const ids = await this.userTenantIds(user);
-    if (!ids.includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无权访问该租户 Prompt 模板',
-      });
-    }
+    await this.tenantScope.assertAccess(user, template.tenantId, { forbiddenMessage: '无权访问该租户 Prompt 模板' });
   }
 
   private async userTenantIds(user: AuthUser): Promise<string[]> {

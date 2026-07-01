@@ -9,18 +9,18 @@ import { applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCopilotConfigDto, UpdateCopilotConfigDto } from './dto/copilot-config.dto';
 import { AuthUser } from '../auth/jwt.types';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { mergeCopilotFeatures } from './copilot-routing.features';
 
 @Injectable()
 export class CopilotConfigService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async create(user: AuthUser, dto: CreateCopilotConfigDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId);
 
     const existing = await this.prisma.copilotConfig.findUnique({
       where: { appId: dto.appId },
@@ -74,13 +74,13 @@ export class CopilotConfigService {
 
   async findOne(user: AuthUser, id: string) {
     const config = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, config.tenantId);
+    await this.tenantScope.assertAccess(user, config.tenantId);
     return this.toView(config);
   }
 
   async update(user: AuthUser, id: string, dto: UpdateCopilotConfigDto) {
     const config = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, config.tenantId);
+    await this.tenantScope.assertAccess(user, config.tenantId);
 
     const data: Prisma.CopilotConfigUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
@@ -106,7 +106,7 @@ export class CopilotConfigService {
 
   async delete(user: AuthUser, id: string) {
     const config = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, config.tenantId);
+    await this.tenantScope.assertAccess(user, config.tenantId);
     await this.prisma.copilotConfig.delete({ where: { id } });
   }
 
@@ -127,27 +127,11 @@ export class CopilotConfigService {
     return config;
   }
 
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的访问权限',
-      });
-    }
-  }
-
   private async buildTenantFilter(user: AuthUser, requestedTenantId?: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId ? { tenantId: requestedTenantId } : {};
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return { tenantId: requestedTenantId };
-    }
-    return { tenantId: { in: allowed } };
+    const filter = await this.tenantScope.resolveFilter(user, requestedTenantId);
+    if (filter === undefined) return {};
+    if (typeof filter === 'string') return { tenantId: filter };
+    return { tenantId: filter };
   }
 
   private toView(config: any) {

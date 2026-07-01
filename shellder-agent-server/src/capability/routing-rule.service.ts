@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, RoutingRule } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuthUser } from '../auth/jwt.types';
 import { CreateRoutingRuleDto } from './dto/create-routing-rule.dto';
 import { QueryRoutingRuleDto } from './dto/query-routing-rule.dto';
@@ -22,11 +22,11 @@ import { UpdateRoutingRuleDto } from './dto/update-routing-rule.dto';
 export class RoutingRuleService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async create(user: AuthUser, dto: CreateRoutingRuleDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '路由规则' });
 
     const capability = await this.prisma.capability.findUnique({ where: { id: dto.capabilityId } });
     if (!capability) {
@@ -56,7 +56,7 @@ export class RoutingRuleService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.RoutingRuleWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.capabilityId) where.capabilityId = query.capabilityId;
     if (query.status) where.status = query.status;
@@ -83,7 +83,7 @@ export class RoutingRuleService {
 
   async findOne(user: AuthUser, id: string) {
     const rule = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, rule.tenantId);
+    await this.tenantScope.assertAccess(user, rule.tenantId, { resource: '路由规则' });
     return this.prisma.routingRule.findUnique({
       where: { id },
       include: { capability: { select: { id: true, name: true, type: true } } },
@@ -92,7 +92,7 @@ export class RoutingRuleService {
 
   async update(user: AuthUser, id: string, dto: UpdateRoutingRuleDto) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '路由规则' });
 
     if (dto.capabilityId) {
       const cap = await this.prisma.capability.findUnique({ where: { id: dto.capabilityId } });
@@ -122,7 +122,7 @@ export class RoutingRuleService {
 
   async updateStatus(user: AuthUser, id: string, status: RoutingRule['status']) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '路由规则' });
     return this.prisma.routingRule.update({
       where: { id },
       data: { status },
@@ -132,7 +132,7 @@ export class RoutingRuleService {
 
   async remove(user: AuthUser, id: string) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '路由规则' });
     await this.prisma.routingRule.delete({ where: { id } });
     return { id };
   }
@@ -145,28 +145,5 @@ export class RoutingRuleService {
       throw new NotFoundException({ code: 'ROUTING_RULE_NOT_FOUND', message: `路由规则不存在：${id}` });
     }
     return rule;
-  }
-
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({ code: 'TENANT_FORBIDDEN', message: '无该租户的路由规则访问权限' });
-    }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 }

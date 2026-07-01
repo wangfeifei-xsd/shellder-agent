@@ -1,12 +1,11 @@
 import {
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { MessageType, Prisma, Session } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { CreateSessionDto } from './dto/create-session.dto';
 import { QuerySessionDto } from './dto/query-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
@@ -15,14 +14,14 @@ import { UpdateSessionDto } from './dto/update-session.dto';
 export class SessionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   // ── 创建 ───────────────────────────────────────────────────
 
   async create(user: AuthUser, dto: CreateSessionDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
-    await this.assertTenantEnabled(dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '会话' });
+    await this.tenantScope.assertEnabled(dto.tenantId, { action: '创建会话' });
 
     const session = await this.prisma.session.create({
       data: {
@@ -42,7 +41,7 @@ export class SessionService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.SessionWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.userId) where.userId = query.userId;
     if (query.status) where.status = query.status;
@@ -78,7 +77,7 @@ export class SessionService {
 
   async findOne(user: AuthUser, id: string) {
     const session = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '会话' });
 
     const [messages, tasks] = await this.prisma.$transaction([
       this.prisma.message.findMany({
@@ -123,7 +122,7 @@ export class SessionService {
     query: { page?: number; pageSize?: number; type?: MessageType },
   ) {
     const session = await this.getOrThrow(sessionId);
-    await this.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '会话' });
 
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 50;
@@ -162,8 +161,8 @@ export class SessionService {
     user: AuthUser,
     dto: { tenantId: string; scenario?: string; simulateUserId?: string },
   ) {
-    await this.assertTenantAccess(user, dto.tenantId);
-    await this.assertTenantEnabled(dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '会话' });
+    await this.tenantScope.assertEnabled(dto.tenantId, { action: '创建会话' });
 
     const debugTitle = dto.scenario
       ? `[调试] ${dto.scenario}`
@@ -187,7 +186,7 @@ export class SessionService {
 
   async update(user: AuthUser, id: string, dto: UpdateSessionDto) {
     const session = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '会话' });
 
     const data: Prisma.SessionUpdateInput = {};
     if (dto.title !== undefined) data.title = dto.title;
@@ -204,7 +203,7 @@ export class SessionService {
   /** 删除会话及其消息；关联任务与待办审批一并清理 */
   async remove(user: AuthUser, id: string) {
     const session = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '会话' });
 
     const messageIds = (
       await this.prisma.message.findMany({
@@ -235,7 +234,7 @@ export class SessionService {
 
   async getContext(user: AuthUser, id: string, limit: number) {
     const session = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '会话' });
 
     const messages = await this.prisma.message.findMany({
       where: { sessionId: id },
@@ -260,50 +259,6 @@ export class SessionService {
         createdAt: m.createdAt,
       })),
     };
-  }
-
-  // ── 隔离与查询辅助 ────────────────────────────────────────
-
-  async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的会话访问权限',
-      });
-    }
-  }
-
-  private async assertTenantEnabled(tenantId: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) {
-      throw new NotFoundException({
-        code: 'TENANT_NOT_FOUND',
-        message: `租户不存在：${tenantId}`,
-      });
-    }
-    if (tenant.status === 'disabled') {
-      throw new ForbiddenException({
-        code: 'TENANT_DISABLED',
-        message: '该租户已禁用，不可创建会话',
-      });
-    }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 
   async getOrThrow(id: string): Promise<Session> {

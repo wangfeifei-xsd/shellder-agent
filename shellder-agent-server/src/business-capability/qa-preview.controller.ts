@@ -11,6 +11,7 @@ import { RequireMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
 import { hasPermission } from '../auth/permissions';
 import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { PROMPT_KEYS } from '../prompt/prompt-keys';
 import { KnowledgeProxyService } from '../knowledge/knowledge-proxy.service';
 import { QaPipelineService } from './qa-pipeline.service';
@@ -25,6 +26,7 @@ export class QaPreviewController {
     private readonly qaPipeline: QaPipelineService,
     private readonly knowledgeProxy: KnowledgeProxyService,
     private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   @Post('dialogue/qa-preview')
@@ -43,7 +45,7 @@ export class QaPreviewController {
     @Query('channel') channel?: 'published' | 'draft',
     @Query('prompt_key') promptKey?: string,
   ) {
-    await this.knowledgeProxy.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
 
     const resolvedChannel = channel ?? 'published';
     if (resolvedChannel === 'draft') {

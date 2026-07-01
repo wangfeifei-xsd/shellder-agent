@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Approval, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuthUser } from '../auth/jwt.types';
 import { CreateApprovalDto } from './dto/create-approval.dto';
 import { QueryApprovalDto } from './dto/query-approval.dto';
@@ -36,7 +36,7 @@ export class ApprovalService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
     @Inject(forwardRef(() => ApprovalRuntimeService))
     private readonly approvalRuntime: ApprovalRuntimeService,
     private readonly notificationQueue: NotificationQueueService,
@@ -103,7 +103,7 @@ export class ApprovalService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.ApprovalWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.status) where.status = query.status;
     if (query.actionType) where.actionType = { contains: query.actionType };
@@ -142,7 +142,7 @@ export class ApprovalService {
    */
   async findOne(user: AuthUser, id: string) {
     const approval = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, approval.tenantId);
+    await this.tenantScope.assertAccess(user, approval.tenantId, { resource: '审批' });
     return this.toView(approval);
   }
 
@@ -189,32 +189,6 @@ export class ApprovalService {
         message: `租户不存在：${tenantId}`,
       });
     }
-  }
-
-  async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的审批访问权限',
-      });
-    }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 
   private toView(approval: Approval) {

@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, Rule, RuleStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PermissionService } from '../../auth/permission.service';
+import { TenantScopeService } from '../../tenant/tenant-scope.service';
 import { AuthUser } from '../../auth/jwt.types';
 import { CreateRuleDto } from './dto/create-rule.dto';
 import { QueryRuleDto } from './dto/query-rule.dto';
@@ -22,11 +22,11 @@ import { UpdateRuleDto } from './dto/update-rule.dto';
 export class RuleService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async create(user: AuthUser, dto: CreateRuleDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '规则' });
     await this.ensureTenantExists(dto.tenantId);
 
     const rule = await this.prisma.rule.create({
@@ -48,7 +48,7 @@ export class RuleService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.RuleWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.type) where.type = query.type;
     if (query.action) where.action = query.action;
@@ -70,13 +70,13 @@ export class RuleService {
 
   async findOne(user: AuthUser, id: string) {
     const rule = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, rule.tenantId);
+    await this.tenantScope.assertAccess(user, rule.tenantId, { resource: '规则' });
     return this.toView(rule);
   }
 
   async update(user: AuthUser, id: string, dto: UpdateRuleDto) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '规则' });
 
     const data: Prisma.RuleUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
@@ -94,14 +94,14 @@ export class RuleService {
 
   async updateStatus(user: AuthUser, id: string, status: RuleStatus) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '规则' });
     const rule = await this.prisma.rule.update({ where: { id }, data: { status } });
     return this.toView(rule);
   }
 
   async remove(user: AuthUser, id: string) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '规则' });
     // rule_hit.rule_id 外键 ON DELETE SET NULL：命中历史保留，仅断开关联
     await this.prisma.rule.delete({ where: { id } });
     return { id };
@@ -112,7 +112,7 @@ export class RuleService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.RuleHitWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.ruleId) where.ruleId = query.ruleId;
     if (query.ruleType) where.ruleType = query.ruleType;
@@ -159,37 +159,6 @@ export class RuleService {
         message: `租户不存在：${tenantId}`,
       });
     }
-  }
-
-  /** 校验用户对指定租户有访问权（非超管须为其绑定租户）。 */
-  async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的规则访问权限',
-      });
-    }
-  }
-
-  /**
-   * 计算租户过滤值；非超管强制限定在其绑定租户内。
-   * 超管未指定 tenantId 时返回 undefined（不限定）。
-   */
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 
   private toView(rule: Rule) {

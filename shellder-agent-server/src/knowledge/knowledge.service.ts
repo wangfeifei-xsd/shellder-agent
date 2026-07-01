@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { KnowledgeBase, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuthUser } from '../auth/jwt.types';
 import { CreateKnowledgeBaseDto } from './dto/create-knowledge-base.dto';
 import { UpdateKnowledgeBaseDto } from './dto/update-knowledge-base.dto';
@@ -20,11 +20,11 @@ import { QueryKnowledgeBaseDto } from './dto/query-knowledge-base.dto';
 export class KnowledgeService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async create(user: AuthUser, dto: CreateKnowledgeBaseDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '知识库' });
 
     try {
       return await this.prisma.knowledgeBase.create({
@@ -60,7 +60,7 @@ export class KnowledgeService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.KnowledgeBaseWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
       deletedAt: null,
     };
     if (query.status) where.status = query.status as KnowledgeBase['status'];
@@ -86,13 +86,13 @@ export class KnowledgeService {
 
   async findOne(user: AuthUser, id: string) {
     const kb = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, kb.tenantId);
+    await this.tenantScope.assertAccess(user, kb.tenantId, { resource: '知识库' });
     return kb;
   }
 
   async update(user: AuthUser, id: string, dto: UpdateKnowledgeBaseDto) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '知识库' });
 
     const data: Prisma.KnowledgeBaseUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
@@ -128,7 +128,7 @@ export class KnowledgeService {
 
   async remove(user: AuthUser, id: string) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '知识库' });
 
     await this.prisma.knowledgeBase.update({
       where: { id },
@@ -147,31 +147,5 @@ export class KnowledgeService {
       });
     }
     return kb;
-  }
-
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的知识库访问权限',
-      });
-    }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 }

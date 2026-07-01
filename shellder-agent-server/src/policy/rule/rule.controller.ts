@@ -12,6 +12,7 @@ import { Audit } from '../../audit/decorators/audit.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { RequireMenu } from '../../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../../auth/jwt.types';
+import { TenantScopeService } from '../../tenant/tenant-scope.service';
 import { PolicyService } from '../policy.service';
 import { CreateRuleDto } from './dto/create-rule.dto';
 import { EvaluateDto } from './dto/evaluate.dto';
@@ -27,6 +28,7 @@ export class RuleController {
   constructor(
     private readonly ruleService: RuleService,
     private readonly policyService: PolicyService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   @Get()
@@ -46,7 +48,7 @@ export class RuleController {
    */
   @Post('evaluate')
   async evaluate(@CurrentUser() user: AuthUser, @Body() dto: EvaluateDto) {
-    await this.ruleService.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '规则' });
     return this.policyService.evaluate(
       {
         tenantId: dto.tenantId,

@@ -1,12 +1,11 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Capability, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuthUser } from '../auth/jwt.types';
 import { DEFAULT_TENANT_CAPABILITIES } from './capability-defaults';
 import { CreateCapabilityDto } from './dto/create-capability.dto';
@@ -25,12 +24,12 @@ import { TENANT_CAPABILITIES } from '../tenant/dto/tenant-config.dto';
 export class CapabilityService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async create(user: AuthUser, dto: CreateCapabilityDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
-    await this.assertTenantEnabled(dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '能力' });
+    await this.tenantScope.assertEnabled(dto.tenantId, { action: '新建能力' });
     this.assertCapabilityInTenantConfig(dto.tenantId, dto.type);
 
     try {
@@ -55,7 +54,7 @@ export class CapabilityService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
-    const tenantFilter = await this.resolveTenantFilter(user, query.tenantId);
+    const tenantFilter = await this.tenantScope.resolveFilter(user, query.tenantId);
     if (typeof tenantFilter === 'string') {
       await this.ensureDefaultCapabilities(tenantFilter);
     }
@@ -89,7 +88,7 @@ export class CapabilityService {
 
   async findOne(user: AuthUser, id: string) {
     const cap = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, cap.tenantId);
+    await this.tenantScope.assertAccess(user, cap.tenantId, { resource: '能力' });
 
     const rules = await this.prisma.routingRule.findMany({
       where: { capabilityId: id },
@@ -101,7 +100,7 @@ export class CapabilityService {
 
   async update(user: AuthUser, id: string, dto: UpdateCapabilityDto) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '能力' });
 
     const data: Prisma.CapabilityUpdateInput = {};
     if (dto.type !== undefined) data.type = dto.type;
@@ -121,13 +120,13 @@ export class CapabilityService {
 
   async updateStatus(user: AuthUser, id: string, status: Capability['status']) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '能力' });
     return this.prisma.capability.update({ where: { id }, data: { status } });
   }
 
   async remove(user: AuthUser, id: string) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '能力' });
     await this.prisma.capability.delete({ where: { id } });
     return { id };
   }
@@ -202,24 +201,6 @@ export class CapabilityService {
     return cap;
   }
 
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({ code: 'TENANT_FORBIDDEN', message: '无该租户的能力访问权限' });
-    }
-  }
-
-  private async assertTenantEnabled(tenantId: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) {
-      throw new NotFoundException({ code: 'TENANT_NOT_FOUND', message: `租户不存在：${tenantId}` });
-    }
-    if (tenant.status === 'disabled') {
-      throw new ForbiddenException({ code: 'TENANT_DISABLED', message: '该租户已禁用，不可新建能力' });
-    }
-  }
-
   /** 验证租户 config.capabilities 中是否开通了该类型能力（验收标准 2） */
   private async assertCapabilityInTenantConfig(tenantId: string, type: string) {
     const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
@@ -238,21 +219,6 @@ export class CapabilityService {
         message: `该租户未开通 ${type} 类型能力，已开通：${allowed.join(', ')}`,
       });
     }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 
   private mapUniqueError(err: unknown): unknown {

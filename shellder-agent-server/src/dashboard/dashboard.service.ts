@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuthUser } from '../auth/jwt.types';
 
 export interface ToolStats {
@@ -43,11 +43,11 @@ export interface DashboardSummary {
 export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async getSummary(user: AuthUser, tenantId?: string): Promise<DashboardSummary> {
-    const tenantFilter = await this.resolveTenantFilter(user, tenantId);
+    const tenantFilter = await this.tenantScope.resolveFilter(user, tenantId);
 
     const [toolStats, pendingApprovals, pendingApprovalCount, recentFailedTasks, recentFailedTaskCount] =
       await Promise.all([
@@ -158,24 +158,5 @@ export class DashboardService {
         status: { in: ['failed', 'timeout'] },
       },
     });
-  }
-
-  /**
-   * 超管可查全部或按指定 tenantId 过滤；
-   * 非超管仅可见其绑定租户范围。
-   */
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 }

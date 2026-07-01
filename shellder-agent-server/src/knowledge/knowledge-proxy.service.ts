@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuthUser } from '../auth/jwt.types';
 import { KnowledgeProxyClient } from './knowledge-proxy.client';
 import { pickQueryInts } from './knowledge-proxy-query.util';
@@ -51,20 +51,9 @@ export interface DialogueRecallResponse {
 export class KnowledgeProxyService {
   constructor(
     private readonly client: KnowledgeProxyClient,
-    private readonly tenantScope: KnowledgeTenantScopeService,
-    private readonly permissionService: PermissionService,
+    private readonly wikiScope: KnowledgeTenantScopeService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
-
-  async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的知识库访问权限',
-      });
-    }
-  }
 
   async health() {
     return this.client.request<{ status: string; service: string }>({
@@ -76,7 +65,7 @@ export class KnowledgeProxyService {
   }
 
   async getConfig(user: AuthUser, tenantId: string) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({ method: 'GET', path: '/api/v1/config' });
   }
 
@@ -88,9 +77,9 @@ export class KnowledgeProxyService {
     layer: string,
     prefix?: string,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
-    const queryPrefixes = this.tenantScope.resolveListQueryPrefixes(
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    const queryPrefixes = this.wikiScope.resolveListQueryPrefixes(
       wikiPrefixes,
       prefix,
     );
@@ -115,7 +104,7 @@ export class KnowledgeProxyService {
         query: { prefix: qp },
       });
       for (const entry of result.entries ?? []) {
-        const relPath = this.tenantScope.stripPathToTenantRelative(
+        const relPath = this.wikiScope.stripPathToTenantRelative(
           wikiPrefixes,
           entry.path,
         );
@@ -136,8 +125,8 @@ export class KnowledgeProxyService {
     layer: string,
     query: { suffix?: string; max_files?: number },
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     const fileQuery: Record<string, string | number> = {};
     if (query.suffix) fileQuery.suffix = query.suffix;
     const intQuery = pickQueryInts({ max_files: query.max_files });
@@ -152,8 +141,8 @@ export class KnowledgeProxyService {
     });
     if (result.paths) {
       result.paths = result.paths
-        .filter((p) => this.tenantScope.isPathInTenantScope(wikiPrefixes, p))
-        .map((p) => this.tenantScope.stripPathToTenantRelative(wikiPrefixes, p));
+        .filter((p) => this.wikiScope.isPathInTenantScope(wikiPrefixes, p))
+        .map((p) => this.wikiScope.stripPathToTenantRelative(wikiPrefixes, p));
     }
     return result;
   }
@@ -164,12 +153,12 @@ export class KnowledgeProxyService {
     layer: string,
     path: string,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({
       method: 'GET',
       path: `/api/v1/layers/${layer}/file`,
-      query: { path: this.tenantScope.scopeLayerPath(wikiPrefixes, path) },
+      query: { path: this.wikiScope.scopeLayerPath(wikiPrefixes, path) },
     });
   }
 
@@ -180,12 +169,12 @@ export class KnowledgeProxyService {
     path: string,
     content: string,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({
       method: 'PUT',
       path: `/api/v1/layers/${layer}/file`,
-      query: { path: this.tenantScope.scopeLayerPath(wikiPrefixes, path) },
+      query: { path: this.wikiScope.scopeLayerPath(wikiPrefixes, path) },
       body: { content },
     });
   }
@@ -196,12 +185,12 @@ export class KnowledgeProxyService {
     layer: string,
     path: string,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({
       method: 'DELETE',
       path: `/api/v1/layers/${layer}/file`,
-      query: { path: this.tenantScope.scopeLayerPath(wikiPrefixes, path) },
+      query: { path: this.wikiScope.scopeLayerPath(wikiPrefixes, path) },
     });
   }
 
@@ -211,11 +200,11 @@ export class KnowledgeProxyService {
     layer: string,
     form: FormData,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     const pathField = form.get('path');
     if (typeof pathField === 'string' && pathField) {
-      form.set('path', this.tenantScope.scopeLayerPath(wikiPrefixes, pathField));
+      form.set('path', this.wikiScope.scopeLayerPath(wikiPrefixes, pathField));
     }
     return this.client.request({
       method: 'POST',
@@ -234,9 +223,9 @@ export class KnowledgeProxyService {
     layer: string,
     relativePath: string,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
-    const scopedPath = this.tenantScope.scopeLayerPath(wikiPrefixes, relativePath);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    const scopedPath = this.wikiScope.scopeLayerPath(wikiPrefixes, relativePath);
     if (!scopedPath.toLowerCase().endsWith('.md')) {
       throw new BadRequestException({
         code: 'UNSUPPORTED_FILE',
@@ -280,8 +269,8 @@ export class KnowledgeProxyService {
     layer: string,
     prefix?: string,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request<{
       buffer: Buffer;
       contentType: string;
@@ -289,7 +278,7 @@ export class KnowledgeProxyService {
     }>({
       method: 'GET',
       path: `/api/v1/layers/${layer}/archive.zip`,
-      query: { prefix: this.tenantScope.scopeLayerPrefix(wikiPrefixes, prefix ?? '') },
+      query: { prefix: this.wikiScope.scopeLayerPrefix(wikiPrefixes, prefix ?? '') },
       responseType: 'buffer',
     });
   }
@@ -303,8 +292,8 @@ export class KnowledgeProxyService {
     maxDepth?: number,
     maxNodes?: number,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     const intQuery = pickQueryInts({
       max_depth: maxDepth ?? 32,
       max_nodes: maxNodes ?? 2000,
@@ -314,7 +303,7 @@ export class KnowledgeProxyService {
       path: `/api/v1/data-structure/tree/${layer}`,
       ...(intQuery ? { query: intQuery } : {}),
     });
-    return this.tenantScope.filterDataTreeToTenantScope(tree, wikiPrefixes);
+    return this.wikiScope.filterDataTreeToTenantScope(tree, wikiPrefixes);
   }
 
   async createFolder(
@@ -322,18 +311,18 @@ export class KnowledgeProxyService {
     tenantId: string,
     body: { layer: string; name: string; parent?: string },
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
-    this.tenantScope.assertCreateFolderInTenantScope(
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    this.wikiScope.assertCreateFolderInTenantScope(
       wikiPrefixes,
       body.name,
       body.parent,
     );
     const parentRel = (body.parent ?? '').trim().replace(/^\//, '');
     const scopedParent = parentRel
-      ? this.tenantScope.scopeLayerPath(wikiPrefixes, parentRel)
+      ? this.wikiScope.scopeLayerPath(wikiPrefixes, parentRel)
       : wikiPrefixes.length === 1
-        ? this.tenantScope.scopeLayerPath(wikiPrefixes, '')
+        ? this.wikiScope.scopeLayerPath(wikiPrefixes, '')
         : '';
     return this.client.request({
       method: 'POST',
@@ -351,15 +340,15 @@ export class KnowledgeProxyService {
     tenantId: string,
     body: { layer: string; path: string; new_name: string },
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
-    this.tenantScope.assertRelativePathInTenantScope(wikiPrefixes, body.path);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    this.wikiScope.assertRelativePathInTenantScope(wikiPrefixes, body.path);
     return this.client.request({
       method: 'PATCH',
       path: '/api/v1/data-structure/folders/rename',
       body: {
         ...body,
-        path: this.tenantScope.scopeLayerPath(wikiPrefixes, body.path),
+        path: this.wikiScope.scopeLayerPath(wikiPrefixes, body.path),
       },
     });
   }
@@ -370,15 +359,15 @@ export class KnowledgeProxyService {
     layer: string,
     path: string,
   ) {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    await this.assertTenantAccess(user, tenantId);
-    this.tenantScope.assertRelativePathInTenantScope(wikiPrefixes, path);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    this.wikiScope.assertRelativePathInTenantScope(wikiPrefixes, path);
     return this.client.request({
       method: 'DELETE',
       path: '/api/v1/data-structure/folders',
       query: {
         layer,
-        path: this.tenantScope.scopeLayerPath(wikiPrefixes, path),
+        path: this.wikiScope.scopeLayerPath(wikiPrefixes, path),
       },
     });
   }
@@ -390,9 +379,9 @@ export class KnowledgeProxyService {
     body: Record<string, unknown>,
     user?: AuthUser,
   ): Promise<DialogueRecallResponse> {
-    if (user) await this.assertTenantAccess(user, tenantId);
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    const scopedBody = this.tenantScope.mergeRecallBody(
+    if (user) await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    const scopedBody = this.wikiScope.mergeRecallBody(
       wikiPrefixes,
       body as { wiki_prefix?: string; wiki_prefixes?: string[] },
     );
@@ -408,9 +397,9 @@ export class KnowledgeProxyService {
     tenantId: string,
     body: Record<string, unknown>,
   ) {
-    await this.assertTenantAccess(user, tenantId);
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    const scopedBody = this.tenantScope.mergeRecallBody(
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    const scopedBody = this.wikiScope.mergeRecallBody(
       wikiPrefixes,
       body as { wiki_prefix?: string; wiki_prefixes?: string[] },
     );
@@ -422,7 +411,7 @@ export class KnowledgeProxyService {
   }
 
   async getStopwords(user: AuthUser, tenantId: string) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({ method: 'GET', path: '/api/v1/dialogue/stopwords' });
   }
 
@@ -431,7 +420,7 @@ export class KnowledgeProxyService {
     tenantId: string,
     body: { words: string[] },
   ) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({
       method: 'PUT',
       path: '/api/v1/dialogue/stopwords',
@@ -445,13 +434,13 @@ export class KnowledgeProxyService {
     tenantId: string,
     code: string,
   ): Promise<void> {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
     const manifest = await this.client.request<{
       items?: { code: string; folder?: string; target_folder?: string }[];
     }>({ method: 'GET', path: '/api/v1/media/items' });
     const item = (manifest.items ?? []).find((i) => i.code === code);
     const folder = String(item?.folder ?? item?.target_folder ?? '');
-    if (!item || !this.tenantScope.isPathInTenantScope(wikiPrefixes, folder)) {
+    if (!item || !this.wikiScope.isPathInTenantScope(wikiPrefixes, folder)) {
       throw new NotFoundException({
         code: 'MEDIA_NOT_FOUND',
         message: '媒体不存在或无权访问',
@@ -463,8 +452,8 @@ export class KnowledgeProxyService {
     tenantId: string,
     raw: T,
   ): Promise<T & { tenant_wiki_prefixes?: string[] }> {
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
-    const items = this.tenantScope.filterMediaItems(
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
+    const items = this.wikiScope.filterMediaItems(
       wikiPrefixes,
       (raw.items ?? []) as { folder?: string; target_folder?: string; size?: number }[],
     );
@@ -479,7 +468,7 @@ export class KnowledgeProxyService {
   }
 
   async listMediaItems(user: AuthUser, tenantId: string) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     const raw = await this.client.request<{ items?: unknown[]; count?: number; bytes_total?: number }>({
       method: 'GET',
       path: '/api/v1/media/items',
@@ -488,11 +477,11 @@ export class KnowledgeProxyService {
   }
 
   async uploadMedia(user: AuthUser, tenantId: string, form: FormData) {
-    await this.assertTenantAccess(user, tenantId);
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
     const folder = form.get('target_folder');
     const rawFolder = typeof folder === 'string' ? folder : '';
-    const scoped = this.tenantScope.resolveMediaTargetFolder(
+    const scoped = this.wikiScope.resolveMediaTargetFolder(
       wikiPrefixes,
       rawFolder || undefined,
     );
@@ -509,7 +498,7 @@ export class KnowledgeProxyService {
   }
 
   async downloadMedia(user: AuthUser, tenantId: string, code: string) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     await this.assertMediaCodeInTenantScope(tenantId, code);
     return this.client.request<{
       buffer: Buffer;
@@ -523,7 +512,7 @@ export class KnowledgeProxyService {
   }
 
   async deleteMedia(user: AuthUser, tenantId: string, code: string) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     await this.assertMediaCodeInTenantScope(tenantId, code);
     return this.client.request({
       method: 'DELETE',
@@ -532,7 +521,7 @@ export class KnowledgeProxyService {
   }
 
   async mediaBackrefs(user: AuthUser, tenantId: string, code: string) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     await this.assertMediaCodeInTenantScope(tenantId, code);
     return this.client.request({
       method: 'GET',
@@ -541,7 +530,7 @@ export class KnowledgeProxyService {
   }
 
   async reindexMediaBackrefs(user: AuthUser, tenantId: string) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({
       method: 'POST',
       path: '/api/v1/media/reindex-backrefs',
@@ -549,7 +538,7 @@ export class KnowledgeProxyService {
   }
 
   async mediaMetaSummary(user: AuthUser, tenantId: string) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     const list = await this.listMediaItems(user, tenantId);
     return {
       count: list.count ?? (list.items as unknown[] | undefined)?.length ?? 0,
@@ -558,7 +547,7 @@ export class KnowledgeProxyService {
   }
 
   async exportMediaZip(user: AuthUser, tenantId: string, codes: string[]) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     for (const code of codes) {
       await this.assertMediaCodeInTenantScope(tenantId, code);
     }
@@ -576,11 +565,11 @@ export class KnowledgeProxyService {
   }
 
   async importMediaZip(user: AuthUser, tenantId: string, form: FormData) {
-    await this.assertTenantAccess(user, tenantId);
-    const wikiPrefixes = await this.tenantScope.resolveWikiPrefixes(tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
+    const wikiPrefixes = await this.wikiScope.resolveWikiPrefixes(tenantId);
     const folder = form.get('target_folder');
     const rawFolder = typeof folder === 'string' ? folder : '';
-    const scoped = this.tenantScope.resolveMediaTargetFolder(
+    const scoped = this.wikiScope.resolveMediaTargetFolder(
       wikiPrefixes,
       rawFolder || undefined,
     );
@@ -598,7 +587,7 @@ export class KnowledgeProxyService {
   }
 
   async batchDeleteMedia(user: AuthUser, tenantId: string, codes: string[]) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     for (const code of codes) {
       await this.assertMediaCodeInTenantScope(tenantId, code);
     }
@@ -614,7 +603,7 @@ export class KnowledgeProxyService {
     tenantId: string,
     body: { content: string; instruction?: string },
   ) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({
       method: 'POST',
       path: '/api/v1/tasks/polish-text',
@@ -628,7 +617,7 @@ export class KnowledgeProxyService {
     tenantId: string,
     body: { text?: string; codes?: string[] },
   ) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({
       method: 'POST',
       path: '/api/v1/media/resolve-from-text',
@@ -644,7 +633,7 @@ export class KnowledgeProxyService {
     body?: unknown,
     query?: Record<string, string | number | undefined>,
   ) {
-    await this.assertTenantAccess(user, tenantId);
+    await this.tenantScope.assertAccess(user, tenantId, { resource: '知识库' });
     return this.client.request({ method, path, body, query });
   }
 }

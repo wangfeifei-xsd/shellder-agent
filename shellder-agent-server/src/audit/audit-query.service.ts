@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuthUser } from '../auth/jwt.types';
 import {
   QueryExternalCallDto,
@@ -25,12 +25,12 @@ interface Paged {
 export class AuditQueryService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async findToolCalls(user: AuthUser, query: QueryToolCallDto) {
     const where: Prisma.ToolCallAuditWhereInput = {};
-    where.tenantId = await this.resolveTenantFilter(user, query.tenantId);
+    where.tenantId = await this.tenantScope.resolveFilter(user, query.tenantId);
     if (query.toolName) where.toolName = query.toolName;
     if (query.callerUserId) where.callerUserId = query.callerUserId;
     if (query.status) where.status = query.status;
@@ -51,7 +51,7 @@ export class AuditQueryService {
 
   async findUserActions(user: AuthUser, query: QueryUserActionDto) {
     const where: Prisma.UserActionAuditWhereInput = {};
-    where.tenantId = await this.resolveTenantFilter(user, query.tenantId);
+    where.tenantId = await this.tenantScope.resolveFilter(user, query.tenantId);
     if (query.action) where.action = query.action;
     if (query.module) where.module = query.module;
     if (query.operatorUserId) where.operatorUserId = query.operatorUserId;
@@ -77,7 +77,7 @@ export class AuditQueryService {
 
   async findExternalCalls(user: AuthUser, query: QueryExternalCallDto) {
     const where: Prisma.ExternalCallAuditWhereInput = {};
-    where.tenantId = await this.resolveTenantFilter(user, query.tenantId);
+    where.tenantId = await this.tenantScope.resolveFilter(user, query.tenantId);
     if (query.status) where.status = query.status;
     if (query.keyword) where.target = { contains: query.keyword };
 
@@ -101,7 +101,7 @@ export class AuditQueryService {
    */
   async findRiskActions(user: AuthUser, query: QueryRiskActionDto) {
     const where: Prisma.ToolCallAuditWhereInput = { highRisk: true };
-    where.tenantId = await this.resolveTenantFilter(user, query.tenantId);
+    where.tenantId = await this.tenantScope.resolveFilter(user, query.tenantId);
     if (query.keyword) where.toolName = { contains: query.keyword };
 
     const { page, pageSize, skip, take } = this.pageOf(query);
@@ -137,26 +137,5 @@ export class AuditQueryService {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     return { page, pageSize, skip: (page - 1) * pageSize, take: pageSize };
-  }
-
-  /**
-   * 计算租户过滤值；非超管强制限定在其绑定租户内。
-   * 返回 undefined 表示不限定（仅超级管理员未指定 tenantId 时）。
-   */
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringNullableFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 }

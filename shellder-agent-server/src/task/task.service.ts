@@ -1,5 +1,4 @@
 import {
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -8,8 +7,8 @@ import { Prisma, Task, TaskLog, TaskStatus, TaskStep } from '@prisma/client';
 import type { InputJsonValue } from '@prisma/client/runtime/library';
 import { applicationProperties } from '@shellder/config';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { QueryTaskDto } from './dto/query-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -21,14 +20,14 @@ export class TaskService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   // ── 创建任务 ────────────────────────────────────────────────
 
   async create(user: AuthUser, dto: CreateTaskDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
-    await this.assertTenantEnabled(dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '任务' });
+    await this.tenantScope.assertEnabled(dto.tenantId, { action: '创建任务' });
 
     const task = await this.prisma.task.create({
       data: {
@@ -61,7 +60,7 @@ export class TaskService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.TaskWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.userId) where.userId = query.userId;
     if (query.sessionId) where.sessionId = query.sessionId;
@@ -99,7 +98,7 @@ export class TaskService {
 
   async findOne(user: AuthUser, id: string) {
     const task = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, task.tenantId);
+    await this.tenantScope.assertAccess(user, task.tenantId, { resource: '任务' });
 
     const steps = await this.prisma.taskStep.findMany({
       where: { taskId: id },
@@ -116,7 +115,7 @@ export class TaskService {
 
   async update(user: AuthUser, id: string, dto: UpdateTaskDto) {
     const task = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, task.tenantId);
+    await this.tenantScope.assertAccess(user, task.tenantId, { resource: '任务' });
 
     const data: Prisma.TaskUpdateInput = {};
     if (dto.status !== undefined) {
@@ -150,7 +149,7 @@ export class TaskService {
 
   async getProgress(user: AuthUser, id: string) {
     const task = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, task.tenantId);
+    await this.tenantScope.assertAccess(user, task.tenantId, { resource: '任务' });
 
     const steps = await this.prisma.taskStep.findMany({
       where: { taskId: id },
@@ -177,7 +176,7 @@ export class TaskService {
 
   async getLogs(user: AuthUser, taskId: string, query: QueryTaskLogDto) {
     const task = await this.getOrThrow(taskId);
-    await this.assertTenantAccess(user, task.tenantId);
+    await this.tenantScope.assertAccess(user, task.tenantId, { resource: '任务' });
 
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 50;
@@ -305,50 +304,6 @@ export class TaskService {
     });
 
     return task;
-  }
-
-  // ── 隔离与查询辅助 ────────────────────────────────────────
-
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的任务访问权限',
-      });
-    }
-  }
-
-  private async assertTenantEnabled(tenantId: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) {
-      throw new NotFoundException({
-        code: 'TENANT_NOT_FOUND',
-        message: `租户不存在：${tenantId}`,
-      });
-    }
-    if (tenant.status === 'disabled') {
-      throw new ForbiddenException({
-        code: 'TENANT_DISABLED',
-        message: '该租户已禁用，不可创建任务',
-      });
-    }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 
   async getOrThrow(id: string): Promise<Task> {

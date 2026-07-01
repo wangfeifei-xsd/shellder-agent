@@ -12,8 +12,8 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuditService } from '../audit/audit.service';
 import { ConnectivityTestService } from './connectivity-test.service';
 import {
@@ -47,14 +47,14 @@ const STATS_SAMPLE_SIZE = 100;
 export class ConnectorService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
     private readonly audit: AuditService,
     private readonly connectivity: ConnectivityTestService,
   ) {}
 
   async create(user: AuthUser, dto: CreateConnectorDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
-    await this.assertTenantEnabled(dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '连接器' });
+    await this.tenantScope.assertEnabled(dto.tenantId, { action: '新建连接器' });
     this.assertDbReadonlyConfig(dto.type, dto.target, dto.properties ?? {});
     this.assertDbReadonlyAuth(dto.type, dto.authType, dto.secret, { isCreate: true });
     await this.assertDbEndpointUnique(
@@ -90,7 +90,7 @@ export class ConnectorService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.ConnectorWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.type) where.type = query.type;
     if (query.status) where.status = query.status;
@@ -117,7 +117,7 @@ export class ConnectorService {
   /** 详情：配置摘要（脱敏）+ 关联 Tool 列表（07 占位）+ 最近调用日志与统计（04 外部接口审计）。 */
   async findOne(user: AuthUser, id: string) {
     const connector = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, connector.tenantId);
+    await this.tenantScope.assertAccess(user, connector.tenantId, { resource: '连接器' });
 
     const [recentCalls, sample] = await this.prisma.$transaction([
       this.prisma.externalCallAudit.findMany({
@@ -169,7 +169,7 @@ export class ConnectorService {
 
   async update(user: AuthUser, id: string, dto: UpdateConnectorDto) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '连接器' });
 
     const current = this.readConfig(existing);
     const nextType = dto.type ?? existing.type;
@@ -217,7 +217,7 @@ export class ConnectorService {
 
   async updateStatus(user: AuthUser, id: string, status: ConnectorStatus) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '连接器' });
     const connector = await this.prisma.connector.update({
       where: { id },
       data: { status },
@@ -227,7 +227,7 @@ export class ConnectorService {
 
   async remove(user: AuthUser, id: string) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '连接器' });
     await this.prisma.connector.delete({ where: { id } });
     return { id };
   }
@@ -235,7 +235,7 @@ export class ConnectorService {
   /** 加载连接器并校验租户访问（供 SQL 测试等子能力复用）。 */
   async assertAccessible(user: AuthUser, id: string): Promise<Connector> {
     const connector = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, connector.tenantId);
+    await this.tenantScope.assertAccess(user, connector.tenantId, { resource: '连接器' });
     return connector;
   }
 
@@ -337,50 +337,6 @@ export class ConnectorService {
       });
     }
     return connector;
-  }
-
-  /** 禁用租户不可新建连接器（验收标准 3）。 */
-  private async assertTenantEnabled(tenantId: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) {
-      throw new NotFoundException({
-        code: 'TENANT_NOT_FOUND',
-        message: `租户不存在：${tenantId}`,
-      });
-    }
-    if (tenant.status === 'disabled') {
-      throw new ForbiddenException({
-        code: 'TENANT_DISABLED',
-        message: '该租户已禁用，不可新建连接器',
-      });
-    }
-  }
-
-  /** 校验用户对指定租户有访问权（非超管须为其绑定租户）。 */
-  async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的连接器访问权限',
-      });
-    }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 
   /** 只读库必须使用 Basic 认证且具备用户名与口令（方案 §2.2） */

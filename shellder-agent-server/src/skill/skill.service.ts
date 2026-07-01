@@ -1,13 +1,12 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, Skill } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
 import { AuthUser } from '../auth/jwt.types';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { CreateSkillDto } from './dto/create-skill.dto';
 import { UpdateSkillDto } from './dto/update-skill.dto';
 import { QuerySkillDto } from './dto/query-skill.dto';
@@ -18,14 +17,14 @@ import { QueryExecutionDto } from './dto/query-execution.dto';
 export class SkillService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   // ── 技能书 CRUD ──────────────────────────────────────────
 
   async create(user: AuthUser, dto: CreateSkillDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
-    await this.assertTenantEnabled(dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '技能书' });
+    await this.tenantScope.assertEnabled(dto.tenantId, { action: '新建技能书' });
 
     if (dto.entryMode === 'tool' && !dto.entryToolId) {
       throw new BadRequestException({
@@ -102,7 +101,7 @@ export class SkillService {
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.SkillWhereInput = {
-      tenantId: await this.resolveTenantFilter(user, query.tenantId),
+      tenantId: await this.tenantScope.resolveFilter(user, query.tenantId),
     };
     if (query.capabilityType) where.capabilityType = query.capabilityType as Skill['capabilityType'];
     if (query.category) where.category = query.category;
@@ -143,7 +142,7 @@ export class SkillService {
 
   async findOne(user: AuthUser, id: string) {
     const skill = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, skill.tenantId);
+    await this.tenantScope.assertAccess(user, skill.tenantId, { resource: '技能书' });
 
     const fullSkill = await this.prisma.skill.findUnique({
       where: { id },
@@ -183,7 +182,7 @@ export class SkillService {
 
   async update(user: AuthUser, id: string, dto: UpdateSkillDto) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '技能书' });
 
     const entryMode = dto.entryMode ?? existing.entryMode;
     if (entryMode === 'tool' && dto.entryToolId !== undefined && !dto.entryToolId) {
@@ -281,7 +280,7 @@ export class SkillService {
 
   async updateStatus(user: AuthUser, id: string, status: Skill['status']) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '技能书' });
     return this.prisma.skill.update({
       where: { id },
       data: { status },
@@ -290,7 +289,7 @@ export class SkillService {
 
   async remove(user: AuthUser, id: string) {
     const existing = await this.getOrThrow(id);
-    await this.assertTenantAccess(user, existing.tenantId);
+    await this.tenantScope.assertAccess(user, existing.tenantId, { resource: '技能书' });
     await this.prisma.skill.delete({ where: { id } });
     return { id };
   }
@@ -298,7 +297,7 @@ export class SkillService {
   // ── 触发测试 ─────────────────────────────────────────────
 
   async testTrigger(user: AuthUser, dto: SkillTestDto) {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { resource: '技能书' });
 
     const where: Prisma.SkillWhereInput = {
       tenantId: dto.tenantId,
@@ -420,7 +419,7 @@ export class SkillService {
 
   async getExecutions(user: AuthUser, skillId: string, query: QueryExecutionDto) {
     const skill = await this.getOrThrow(skillId);
-    await this.assertTenantAccess(user, skill.tenantId);
+    await this.tenantScope.assertAccess(user, skill.tenantId, { resource: '技能书' });
 
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
@@ -467,24 +466,6 @@ export class SkillService {
     return skill;
   }
 
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({ code: 'TENANT_FORBIDDEN', message: '无该租户的技能书访问权限' });
-    }
-  }
-
-  private async assertTenantEnabled(tenantId: string) {
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (!tenant) {
-      throw new NotFoundException({ code: 'TENANT_NOT_FOUND', message: `租户不存在：${tenantId}` });
-    }
-    if (tenant.status === 'disabled') {
-      throw new ForbiddenException({ code: 'TENANT_DISABLED', message: '该租户已禁用，不可新建技能书' });
-    }
-  }
-
   private async assertToolExists(toolId: string, tenantId: string) {
     const tool = await this.prisma.tool.findUnique({ where: { id: toolId } });
     if (!tool) {
@@ -493,21 +474,6 @@ export class SkillService {
     if (tool.tenantId !== tenantId) {
       throw new BadRequestException({ code: 'TOOL_TENANT_MISMATCH', message: '关联工具不属于该租户' });
     }
-  }
-
-  private async resolveTenantFilter(
-    user: AuthUser,
-    requestedTenantId?: string,
-  ): Promise<string | Prisma.StringFilter | undefined> {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) {
-      return requestedTenantId || undefined;
-    }
-    const allowed = user.tenantIds ?? [];
-    if (requestedTenantId && allowed.includes(requestedTenantId)) {
-      return requestedTenantId;
-    }
-    return { in: allowed };
   }
 
   private async getLastCallTimes(skillIds: string[]): Promise<Map<string, Date>> {

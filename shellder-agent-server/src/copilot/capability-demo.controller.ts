@@ -1,8 +1,8 @@
-import { Body, Controller, ForbiddenException, Post } from '@nestjs/common';
+import { Body, Controller, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequireMenu } from '../auth/decorators/require-permission.decorator';
 import { AuthUser } from '../auth/jwt.types';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { CopilotAuthService } from './copilot-auth.service';
 import { CapabilityDemoCopilotTokenDto } from './dto/capability-demo.dto';
 
@@ -15,7 +15,7 @@ import { CapabilityDemoCopilotTokenDto } from './dto/capability-demo.dto';
 export class CapabilityDemoController {
   constructor(
     private readonly copilotAuth: CopilotAuthService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   @Post('copilot-token')
@@ -23,7 +23,7 @@ export class CapabilityDemoController {
     @CurrentUser() user: AuthUser,
     @Body() dto: CapabilityDemoCopilotTokenDto,
   ) {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId);
     return this.copilotAuth.issueDemoToken({
       tenantId: dto.tenantId,
       copilotConfigId: dto.copilotConfigId,
@@ -32,16 +32,5 @@ export class CapabilityDemoController {
       scopeList: dto.scopeList,
       wikiPrefixes: dto.wikiPrefixes,
     });
-  }
-
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的访问权限',
-      });
-    }
   }
 }

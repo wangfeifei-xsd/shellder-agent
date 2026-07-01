@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { Message, MessageRole, MessageType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { AuthUser } from '../auth/jwt.types';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { QueryMessageDto } from './dto/query-message.dto';
@@ -21,7 +21,7 @@ const DEFAULT_ROLE: Record<MessageType, MessageRole> = {
 export class MessageService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   /**
@@ -38,7 +38,7 @@ export class MessageService {
         message: `会话不存在：${dto.sessionId}`,
       });
     }
-    await this.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '消息' });
 
     const lastMsg = await this.prisma.message.findFirst({
       where: { sessionId: dto.sessionId },
@@ -85,7 +85,7 @@ export class MessageService {
         message: `会话不存在：${sessionId}`,
       });
     }
-    await this.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '消息' });
 
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 50;
@@ -109,19 +109,6 @@ export class MessageService {
       page,
       pageSize,
     };
-  }
-
-  // ── 隔离辅助 ────────────────────────────────────────────────
-
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的消息访问权限',
-      });
-    }
   }
 
   private toView(message: Message) {

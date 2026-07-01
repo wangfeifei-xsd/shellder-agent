@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { CapabilityType } from '@prisma/client';
 import { AuthUser } from '../auth/jwt.types';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { LlmService } from '../llm/llm.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RoutingRuleAiSuggestDto } from './dto/routing-rule-ai-suggest.dto';
@@ -71,14 +71,14 @@ export class RoutingRuleAssistService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
   ) {}
 
   async suggest(
     user: AuthUser,
     dto: RoutingRuleAiSuggestDto,
   ): Promise<RoutingRuleAiSuggestion> {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { forbiddenMessage: '无该租户的路由规则管理权限' });
 
     try {
       await this.llm.assertConfigured();
@@ -184,7 +184,7 @@ name, description, keywords(string[]), patterns(string[]), intents(string[]), pr
     user: AuthUser,
     dto: RoutingRuleTestConditionsDto,
   ): Promise<RoutingConditionsTestResult> {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { forbiddenMessage: '无该租户的路由规则管理权限' });
     const conditions = readRoutingConditions(dto.conditions);
     return evaluateRoutingConditions(dto.input.trim(), conditions);
   }
@@ -194,7 +194,7 @@ name, description, keywords(string[]), patterns(string[]), intents(string[]), pr
     user: AuthUser,
     dto: RoutingRuleAiOptimizeDto,
   ): Promise<RoutingConditionsOptimizeResult> {
-    await this.assertTenantAccess(user, dto.tenantId);
+    await this.tenantScope.assertAccess(user, dto.tenantId, { forbiddenMessage: '无该租户的路由规则管理权限' });
 
     try {
       await this.llm.assertConfigured();
@@ -359,16 +359,5 @@ name, description, keywords(string[]), patterns(string[]), intents(string[]), pr
     const n = typeof value === 'number' ? value : Number(value);
     if (!Number.isFinite(n)) return 100;
     return Math.min(10000, Math.max(1, Math.round(n)));
-  }
-
-  private async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的路由规则管理权限',
-      });
-    }
   }
 }

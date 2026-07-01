@@ -12,7 +12,7 @@ import { AgentRuntimeService } from '../agent-runtime/agent-runtime.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthUser } from '../auth/jwt.types';
 import { PrismaService } from '../prisma/prisma.service';
-import { PermissionService } from '../auth/permission.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { TaskQueueService } from '../task/task-queue.service';
 import {
   ConfirmationAction,
@@ -32,7 +32,7 @@ export class ApprovalRuntimeService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly permissionService: PermissionService,
+    private readonly tenantScope: TenantScopeService,
     @Inject(forwardRef(() => AgentRuntimeService))
     private readonly agentRuntime: AgentRuntimeService,
     private readonly auditService: AuditService,
@@ -59,7 +59,7 @@ export class ApprovalRuntimeService {
         message: `会话不存在：${sessionId}`,
       });
     }
-    await this.assertTenantAccess(user, session.tenantId);
+    await this.tenantScope.assertAccess(user, session.tenantId, { resource: '审批' });
 
     if (session.status !== 'pending_confirm') {
       throw new BadRequestException({
@@ -197,7 +197,7 @@ export class ApprovalRuntimeService {
         message: `审批记录不存在：${approvalId}`,
       });
     }
-    await this.assertTenantAccess(user, approval.tenantId);
+    await this.tenantScope.assertAccess(user, approval.tenantId, { resource: '审批' });
 
     return this.submitConfirmation({
       approvalId,
@@ -418,17 +418,6 @@ export class ApprovalRuntimeService {
         seq: (lastMsg?.seq ?? 0) + 1,
       },
     });
-  }
-
-  async assertTenantAccess(user: AuthUser, tenantId: string) {
-    const permissions = await this.permissionService.resolveForUser(user.id);
-    if (permissions.isSuperAdmin) return;
-    if (!(user.tenantIds ?? []).includes(tenantId)) {
-      throw new ForbiddenException({
-        code: 'TENANT_FORBIDDEN',
-        message: '无该租户的审批访问权限',
-      });
-    }
   }
 
   private async logApprovalAudit(
