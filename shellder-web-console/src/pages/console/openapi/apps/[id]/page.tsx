@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useNavigate } from 'react-router-dom';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ellipsisTextColumn,
   renderOptionalText,
@@ -10,6 +10,7 @@ import {
 } from '@/components/console/tableEllipsis';
 import {
   App,
+  Alert,
   Button,
   Card,
   Col,
@@ -45,6 +46,7 @@ import {
   resetOpenApiAppSecret,
   updateOpenApiApp,
 } from '@/lib/openapi-management';
+import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import { useTenantSelectOptions } from '@/lib/tenant-select';
 
 const fmt = (s: string | null) =>
@@ -54,7 +56,13 @@ export default function OpenApiAppDetailPage() {
   const id = useParams().id!;
   const navigate = useNavigate();
   const { message, modal } = App.useApp();
+  const { activeTenantId, tenants } = useActiveTenant();
   const { items: tenantItems } = useTenantSelectOptions();
+
+  const activeTenantName = useMemo(
+    () => tenants.find((t) => t.id === activeTenantId)?.name,
+    [tenants, activeTenantId],
+  );
 
   const [app, setApp] = useState<OpenApiAppItem | null>(null);
   const [stats, setStats] = useState<CallStats | null>(null);
@@ -69,12 +77,20 @@ export default function OpenApiAppDetailPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [appData, statsData, logData] = await Promise.all([
-        getOpenApiApp(id),
-        getOpenApiAppStats(id),
-        getOpenApiAppCallLogs(id, { page: logPage, pageSize: 10 }),
-      ]);
+      const appData = await getOpenApiApp(id);
       setApp(appData);
+
+      if (!activeTenantId) {
+        setStats(null);
+        setLogs([]);
+        setLogTotal(0);
+        return;
+      }
+
+      const [statsData, logData] = await Promise.all([
+        getOpenApiAppStats(id, activeTenantId),
+        getOpenApiAppCallLogs(id, { page: logPage, pageSize: 10, tenantId: activeTenantId }),
+      ]);
       setStats(statsData);
       setLogs(logData.items);
       setLogTotal(logData.total);
@@ -83,7 +99,7 @@ export default function OpenApiAppDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [id, logPage, message]);
+  }, [id, logPage, activeTenantId, message]);
 
   useEffect(() => {
     void load();
@@ -236,7 +252,7 @@ export default function OpenApiAppDetailPage() {
         </Descriptions>
       </Card>
 
-      {stats && (
+      {activeTenantId && stats && (
         <Row gutter={16} className="mb-4">
           <Col span={4}>
             <Card>
@@ -272,21 +288,39 @@ export default function OpenApiAppDetailPage() {
       )}
 
       <Card title="调用日志">
-        <Table<OpenApiCallLogItem>
-          rowKey="id"
-          loading={loading}
-          columns={logColumns}
-          dataSource={logs}
-          size="small"
-          {...tableEllipsisLayout}
-          pagination={{
-            current: logPage,
-            pageSize: 10,
-            total: logTotal,
-            showTotal: (t) => `共 ${t} 条`,
-            onChange: (p) => setLogPage(p),
-          }}
-        />
+        {!activeTenantId ? (
+          <Alert
+            type="warning"
+            showIcon
+            message="请先在顶栏选择「当前操作租户」"
+            description="调用日志按租户隔离展示，需选定租户后查看该应用在当前租户下的调用记录。"
+          />
+        ) : (
+          <>
+            <Alert
+              type="info"
+              showIcon
+              className="mb-4"
+              message={`当前租户：${activeTenantName ?? activeTenantId}`}
+              description="统计与日志仅包含当前操作租户下的调用记录。"
+            />
+            <Table<OpenApiCallLogItem>
+              rowKey="id"
+              loading={loading}
+              columns={logColumns}
+              dataSource={logs}
+              size="small"
+              {...tableEllipsisLayout}
+              pagination={{
+                current: logPage,
+                pageSize: 10,
+                total: logTotal,
+                showTotal: (t) => `共 ${t} 条`,
+                onChange: (p) => setLogPage(p),
+              }}
+            />
+          </>
+        )}
       </Card>
 
       <Modal

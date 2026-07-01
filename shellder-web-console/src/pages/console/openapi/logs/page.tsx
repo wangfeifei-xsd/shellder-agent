@@ -2,6 +2,7 @@
 
 import { ReloadOutlined } from '@ant-design/icons';
 import {
+  Alert,
   App,
   Button,
   Card,
@@ -16,7 +17,8 @@ import {
   Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useActiveTenant } from '@/components/console/ActiveTenantContext';
 import {
   CALL_STATUS_META,
   CALL_STATUS_OPTIONS,
@@ -32,6 +34,7 @@ const fmt = (s: string | null) =>
 
 export default function OpenApiCallLogsPage() {
   const { message } = App.useApp();
+  const { activeTenantId, tenants } = useActiveTenant();
 
   const [data, setData] = useState<OpenApiCallLogItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -43,17 +46,29 @@ export default function OpenApiCallLogsPage() {
   const [statusFilter, setStatusFilter] = useState<OpenApiCallStatus | undefined>();
   const [pathFilter, setPathFilter] = useState('');
 
+  const activeTenantName = useMemo(
+    () => tenants.find((t) => t.id === activeTenantId)?.name,
+    [tenants, activeTenantId],
+  );
+
   const load = useCallback(async () => {
+    if (!activeTenantId) {
+      setData([]);
+      setTotal(0);
+      setStats(null);
+      return;
+    }
     setLoading(true);
     try {
       const [logRes, statsRes] = await Promise.all([
         listOpenApiCallLogs({
+          tenantId: activeTenantId,
           status: statusFilter,
           path: pathFilter || undefined,
           page,
           pageSize,
         }),
-        getCallLogStats(),
+        getCallLogStats({ tenantId: activeTenantId }),
       ]);
       setData(logRes.items);
       setTotal(logRes.total);
@@ -63,7 +78,7 @@ export default function OpenApiCallLogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, pathFilter, page, pageSize, message]);
+  }, [activeTenantId, statusFilter, pathFilter, page, pageSize, message]);
 
   useEffect(() => {
     void load();
@@ -131,6 +146,24 @@ export default function OpenApiCallLogsPage() {
         调用日志
       </Typography.Title>
 
+      {!activeTenantId ? (
+        <Alert
+          type="warning"
+          showIcon
+          className="mb-4"
+          message="请先在顶栏选择「当前操作租户」"
+          description="调用日志按租户隔离展示，需选定租户后查看该租户下的 OpenAPI 调用记录。"
+        />
+      ) : (
+        <Alert
+          type="info"
+          showIcon
+          className="mb-4"
+          message={`当前租户：${activeTenantName ?? activeTenantId}`}
+          description="仅展示当前操作租户下的调用记录与统计。"
+        />
+      )}
+
       {stats && (
         <Row gutter={16} className="mb-4">
           <Col span={4}>
@@ -181,7 +214,7 @@ export default function OpenApiCallLogsPage() {
           style={{ width: 240 }}
           onSearch={setPathFilter}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => void load()}>
+        <Button icon={<ReloadOutlined />} onClick={() => void load()} disabled={!activeTenantId}>
           刷新
         </Button>
       </Space>
