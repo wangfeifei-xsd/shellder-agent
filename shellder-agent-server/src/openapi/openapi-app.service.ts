@@ -183,24 +183,6 @@ export class OpenApiAppService {
     return app;
   }
 
-  /** 调用统计聚合（供调用日志页面摘要） */
-  async getCallStats(appId: string) {
-    const [total, success, failed, rateLimited] = await this.prisma.$transaction([
-      this.prisma.openApiCallLog.count({ where: { appId } }),
-      this.prisma.openApiCallLog.count({ where: { appId, status: 'success' } }),
-      this.prisma.openApiCallLog.count({ where: { appId, status: 'failed' } }),
-      this.prisma.openApiCallLog.count({ where: { appId, status: 'rate_limited' } }),
-    ]);
-    return {
-      total,
-      success,
-      failed,
-      rateLimited,
-      successRate: total > 0 ? +(success / total * 100).toFixed(2) : 0,
-      errorRate: total > 0 ? +(failed / total * 100).toFixed(2) : 0,
-    };
-  }
-
   /** 列表租户范围：指定 tenantId 时精确匹配；未指定时非超管限定在其绑定租户内 */
   private async buildTenantScopeFilter(
     user: AuthUser,

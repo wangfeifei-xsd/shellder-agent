@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { OpenApiCallStatus, Prisma } from '@prisma/client';
+import { AuthUser } from '../auth/jwt.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantScopeService } from '../tenant/tenant-scope.service';
 import { QueryOpenApiCallLogDto } from './dto/query-openapi-call-log.dto';
 
 @Injectable()
 export class OpenApiCallLogService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenantScope: TenantScopeService,
+  ) {}
 
   async log(data: {
     appId: string;
@@ -40,13 +45,14 @@ export class OpenApiCallLogService {
     }).catch(() => {});
   }
 
-  async findMany(query: QueryOpenApiCallLogDto) {
+  async findMany(user: AuthUser, query: QueryOpenApiCallLogDto) {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
 
     const where: Prisma.OpenApiCallLogWhereInput = {};
     if (query.appId) where.appId = query.appId;
-    if (query.tenantId) where.tenantId = query.tenantId;
+    const tenantFilter = await this.tenantScope.resolveFilter(user, query.tenantId);
+    if (tenantFilter !== undefined) where.tenantId = tenantFilter;
     if (query.status) where.status = query.status;
     if (query.path) where.path = { contains: query.path };
     if (query.startTime || query.endTime) {
@@ -88,9 +94,14 @@ export class OpenApiCallLogService {
     };
   }
 
-  async getStats(appId?: string) {
+  async getStats(
+    user: AuthUser,
+    query: { appId?: string; tenantId?: string } = {},
+  ) {
     const where: Prisma.OpenApiCallLogWhereInput = {};
-    if (appId) where.appId = appId;
+    if (query.appId) where.appId = query.appId;
+    const tenantFilter = await this.tenantScope.resolveFilter(user, query.tenantId);
+    if (tenantFilter !== undefined) where.tenantId = tenantFilter;
 
     const [total, success, failed, rateLimited] = await this.prisma.$transaction([
       this.prisma.openApiCallLog.count({ where }),

@@ -160,13 +160,16 @@ export function deleteOpenApiApp(id: string) {
   return apiFetch<{ ok: boolean }>(`${BASE}/${id}`, { method: 'DELETE' });
 }
 
-export function getOpenApiAppStats(id: string) {
-  return apiFetch<CallStats>(`${BASE}/${id}/stats`);
+export function getOpenApiAppStats(id: string, tenantId?: string) {
+  return apiFetch<CallStats>(`${BASE}/${id}/stats`, {
+    query: { tenantId } as QueryParams,
+  });
 }
 
 export function getOpenApiAppCallLogs(
   id: string,
   query: {
+    tenantId?: string;
     status?: OpenApiCallStatus;
     startTime?: string;
     endTime?: string;
@@ -197,8 +200,8 @@ export function listOpenApiCallLogs(
   });
 }
 
-export function getCallLogStats(appId?: string) {
+export function getCallLogStats(query?: { appId?: string; tenantId?: string }) {
   return apiFetch<CallStats>(`${LOG_BASE}/stats`, {
-    query: { appId } as QueryParams,
+    query: (query ?? {}) as QueryParams,
   });
 }

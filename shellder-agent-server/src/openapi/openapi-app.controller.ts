@@ -63,13 +63,21 @@ export class OpenApiAppController {
   }
 
   @Get(':id/stats')
-  stats(@Param('id') id: string) {
-    return this.appService.getCallStats(id);
+  stats(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.callLogService.getStats(user, { appId: id, tenantId });
   }
 
   @Get(':id/call-logs')
-  callLogs(@Param('id') id: string, @Query() query: QueryOpenApiCallLogDto) {
-    return this.callLogService.findMany({ ...query, appId: id });
+  callLogs(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query() query: QueryOpenApiCallLogDto,
+  ) {
+    return this.callLogService.findMany(user, { ...query, appId: id });
   }
 }
 
@@ -80,12 +88,16 @@ export class OpenApiCallLogController {
   constructor(private readonly callLogService: OpenApiCallLogService) {}
 
   @Get()
-  list(@Query() query: QueryOpenApiCallLogDto) {
-    return this.callLogService.findMany(query);
+  list(@CurrentUser() user: AuthUser, @Query() query: QueryOpenApiCallLogDto) {
+    return this.callLogService.findMany(user, query);
   }
 
   @Get('stats')
-  stats(@Query('appId') appId?: string) {
-    return this.callLogService.getStats(appId);
+  stats(
+    @CurrentUser() user: AuthUser,
+    @Query('appId') appId?: string,
+    @Query('tenantId') tenantId?: string,
+  ) {
+    return this.callLogService.getStats(user, { appId, tenantId });
   }
 }
